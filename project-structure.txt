@@ -1,0 +1,120 @@
+ARVORE DE ARQUIVOS:
+/package.json
+/tsconfig.json
+/vite.config.ts
+/index.html
+/src/main.tsx
+/src/App.tsx
+/src/index.css
+/src/config/branding.ts
+/src/domain/types.ts
+/src/data/default-content.ts
+/src/services/storage.ts
+/src/store/auth.tsx
+/src/store/content.tsx
+/src/router/ProtectedRoute.tsx
+/src/layouts/PublicLayout.tsx
+/src/components/common/Button.tsx
+/src/pages/public/HomePage.tsx
+/src/pages/admin/DashboardPage.tsx
+/README.md
+
+--- package.json ---
+{
+  "name": "posto-via-14",
+  "version": "1.0.0",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.15.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0",
+    "vite": "^4.4.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build"
+  }
+}
+
+--- src/domain/types.ts ---
+export interface SiteContent {
+  heroTitle: string;
+  heroSubtitle: string;
+  institutionalText: string;
+  contactPhone: string;
+}
+
+--- src/config/branding.ts ---
+export const BRANDING = {
+  name: "Posto Via 14",
+  colors: {
+    primary: "#002366",
+    secondary: "#FF8C00"
+  }
+};
+
+--- src/store/content.tsx ---
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { SiteContent } from '../domain/types';
+import { DEFAULT_CONTENT } from '../data/default-content';
+import { saveToStorage, getFromStorage } from '../services/storage';
+
+const ContentContext = createContext<{ content: SiteContent; updateContent: (c: SiteContent) => void }>(null!);
+
+export const ContentProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
+  const [content, setContent] = useState<SiteContent>(() => getFromStorage('content') || DEFAULT_CONTENT);
+  const updateContent = (newContent: SiteContent) => {
+    setContent(newContent);
+    saveToStorage('content', newContent);
+  };
+  return <ContentContext.Provider value={{ content, updateContent }}>{children}</ContentContext.Provider>;
+};
+export const useContent = () => useContext(ContentContext);
+
+--- src/index.css ---
+:root { --primary: #002366; --secondary: #FF8C00; }
+body { margin: 0; font-family: sans-serif; }
+.btn { padding: 10px 20px; background: var(--secondary); color: white; border: none; cursor: pointer; }
+.admin-layout { display: flex; min-height: 100vh; }
+.sidebar { width: 200px; background: var(--primary); color: white; padding: 20px; }
+
+--- src/App.tsx ---
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './store/auth';
+import { ContentProvider } from './store/content';
+import HomePage from './pages/public/HomePage';
+import DashboardPage from './pages/admin/DashboardPage';
+import ProtectedRoute from './router/ProtectedRoute';
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ContentProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/admin" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          </Routes>
+        </BrowserRouter>
+      </ContentProvider>
+    </AuthProvider>
+  );
+}
+
+--- README.md ---
+# Posto Via 14
+Projeto React + Vite + TS para gestão de conteúdo de posto de combustíveis.
+
+## Arquitetura
+- Context API para estado global (Auth e Conteúdo).
+- localStorage para persistência.
+- Roteamento com React Router v6.
+- CSS puro para estilização.
+
+## Como rodar
+1. npm install
+2. npm run dev

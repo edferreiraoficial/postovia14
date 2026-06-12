@@ -1,0 +1,1 @@
+export default function SettingsAdminPage() { return <div>Configurações do Sistema</div>; }

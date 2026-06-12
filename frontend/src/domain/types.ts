@@ -1,0 +1,1 @@
+export interface SiteContent { heroTitle: string; aboutText: string; products: string[]; contactEmail: string; }

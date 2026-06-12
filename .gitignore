@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+.env
+**/.env
+dist
+build
+uploads
+backend/uploads
+*.pdf
+*.xlsx
+*.xls
+*.log

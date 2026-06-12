@@ -1,0 +1,2 @@
+export const save = (key: string, data: any) => localStorage.setItem(key, JSON.stringify(data));
+export const load = (key: string) => { const d = localStorage.getItem(key); return d ? JSON.parse(d) : null; };
