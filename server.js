@@ -1,16 +1,5 @@
-import express from 'express';
+console.log('PASSO 1 - antes do backend');
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+import './backend/index.js';
 
-app.get('/', (req, res) => {
-  res.send('Servidor mínimo funcionando');
-});
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor mínimo rodando na porta ${PORT}`);
-});
+console.log('PASSO 2 - depois do backend');
