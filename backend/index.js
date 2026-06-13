@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { db } from './db.js';
+//import { db } from './db.js';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -15,6 +15,10 @@ const uploadArquivos = multer({ dest: 'backend/uploads/' });
 const PORT = process.env.PORT || 3001;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+app.get('/', (req, res) => {
+  res.send('Backend Posto Via 14 funcionando');
+});
 
 app.use(cors());
 app.use(express.json());
