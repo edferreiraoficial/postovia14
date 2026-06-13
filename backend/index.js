@@ -20,6 +20,10 @@ app.get('/', (req, res) => {
   res.send('Backend Posto Via 14 funcionando');
 });
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.use(cors());
 app.use(express.json());
 
