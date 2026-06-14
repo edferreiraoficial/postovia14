@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.get('/', (req, res) => {
   res.send('Servidor mínimo funcionando');
