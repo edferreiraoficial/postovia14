@@ -1,6 +1,7 @@
 import fs from 'fs';
-import express from 'express';//
-import cors from 'cors';
+import express from 'express';
+import mysql from 'mysql2/promise';
+/*import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
 import ExcelJS from 'exceljs';
@@ -26,10 +27,10 @@ import { gerarPlanilhaAuxiliarDoBanco } from './gerarAuxiliarBanco.js';*/
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const upload = multer({ storage: multer.memoryStorage() });
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config();
+c//onst upload = multer({ storage: multer.memoryStorage() });
+//const __filename = fileURLToPath(import.meta.url);
+//const __dirname = path.dirname(__filename);
+//dotenv.config();
 
 console.log('FS carregado:', !!fs);
 console.log('ExcelJS carregado:', !!ExcelJS); 
