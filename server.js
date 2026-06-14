@@ -1,4 +1,5 @@
-//import express from 'express';//
+import fs from 'fs';
+import express from 'express';//
 import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
@@ -6,7 +7,7 @@ import ExcelJS from 'exceljs';
 import pdf from 'pdf-parse';
 import pg from 'pg';
 import { processarPlanilhas } from './backend/processar.js';
-import { importarPdfsBanco } from './backend/importarPdfsBanco.js';
+//import { importarPdfsBanco } from './backend/importarPdfsBanco.js';
 
 /*import fs from 'fs';
 //import { db } from './db.js';
@@ -25,14 +26,15 @@ const PORT = process.env.PORT || 3001;
 const upload = multer({ storage: multer.memoryStorage() });
 dotenv.config();
 
+console.log('FS carregado:', !!fs);
 console.log('ExcelJS carregado:', !!ExcelJS); 
 console.log('PDF Parse carregado:', !!pdf);
 console.log('PG carregado:', !!pg);
 console.log('processar.js carregado:', !!processarPlanilhas);
-console.log('importarPdfsBanco.js carregado:', !!importarPdfsBanco);
+
 
 app.get('/', (req, res) => {
-  res.send('Servidor mínimo funcionando com processar');
+  res.send('Servidor mínimo funcionando com fs');
 });
 
 app.get('/health', (req, res) => {
