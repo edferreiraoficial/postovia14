@@ -5,10 +5,9 @@ import multer from 'multer';
 import dotenv from 'dotenv';
 import ExcelJS from 'exceljs';
 import pdf from 'pdf-parse';
-import pg from 'pg';
 import path from 'path';
 import { fileURLToPath } from 'url';
-//import { db } from './db.js';
+import { db } from './backend/db.js';
 
 import { processarPlanilhas } from './backend/processar.js';
 //import { importarPdfsBanco } from './backend/importarPdfsBanco.js';
@@ -40,11 +39,21 @@ console.log('processar.js carregado:', !!processarPlanilhas);
 
 
 app.get('/', (req, res) => {
-  res.send('Servidor mínimo funcionando com ultimo');
+  res.send('Servidor rodando');
 });
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+app.get('/health', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT 1 AS teste');
+    res.json({ status: 'ok', banco: rows[0] });
+  } catch (error) {
+    console.error('ERRO MYSQL:', error);
+    res.status(500).json({
+      status: 'erro',
+      mensagem: error.message,
+      code: error.code,
+    });
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
