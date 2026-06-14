@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import ExcelJS from 'exceljs';
 import pdf from 'pdf-parse';
 import pg from 'pg';
-//import path from 'path';
+import path from 'path';
 //import { fileURLToPath } from 'url';
 //import { db } from './db.js';
 
@@ -29,7 +29,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const upload = multer({ storage: multer.memoryStorage() });
 //const __filename = fileURLToPath(import.meta.url);
-//const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(__filename);
 dotenv.config();
 
 console.log('FS carregado:', !!fs);
