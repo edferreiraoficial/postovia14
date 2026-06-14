@@ -1,4 +1,4 @@
-import express from 'express';
+//import express from 'express';//
 import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
@@ -6,6 +6,19 @@ import ExcelJS from 'exceljs';
 import pdf from 'pdf-parse';
 import pg from 'pg';
 import { processarPlanilhas } from './backend/processar.js';
+import { importarPdfsBanco } from './backend/importarPdfsBanco.js';
+
+/*import fs from 'fs';
+//import { db } from './db.js';
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { processarPlanilhas } from './processar.js';
+import { importarPdfsBanco } from './importarPdfsBanco.js';
+import { gerarPlanilhaAuxiliarDoBanco } from './gerarAuxiliarBanco.js';*/
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -16,6 +29,7 @@ console.log('ExcelJS carregado:', !!ExcelJS);
 console.log('PDF Parse carregado:', !!pdf);
 console.log('PG carregado:', !!pg);
 console.log('processar.js carregado:', !!processarPlanilhas);
+console.log('importarPdfsBanco.js carregado:', !!importarPdfsBanco);
 
 app.get('/', (req, res) => {
   res.send('Servidor mínimo funcionando com processar');
