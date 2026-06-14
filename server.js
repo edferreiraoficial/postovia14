@@ -7,8 +7,8 @@ import ExcelJS from 'exceljs';
 import pdf from 'pdf-parse';
 import pg from 'pg';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { db } from './db.js';
+//import { fileURLToPath } from 'url';
+//import { db } from './db.js';
 
 import { processarPlanilhas } from './backend/processar.js';
 //import { importarPdfsBanco } from './backend/importarPdfsBanco.js';
