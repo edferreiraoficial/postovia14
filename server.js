@@ -1,24 +1,17 @@
 import express from 'express';
-import { obterEmpresaPadrao } from './backend/services/BancoService.js';
+import { importarPdfsBanco } from './backend/importarPdfsBanco.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+console.log('importarPdfsBanco carregado:', !!importarPdfsBanco);
+
 app.get('/', (req, res) => {
-  res.send('Servidor rodando com BancoService MySQL');
+  res.send('Importar PDFs carregado');
 });
 
-app.get('/health', async (req, res) => {
-  try {
-    const empresa = await obterEmpresaPadrao();
-    res.json({ status: 'ok', empresa });
-  } catch (error) {
-    res.status(500).json({
-      status: 'erro',
-      message: error.message,
-      code: error.code,
-    });
-  }
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {

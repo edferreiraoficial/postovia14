@@ -6,7 +6,7 @@ import {
   salvarComprasNoBanco,
   salvarLmcNoBanco,
   salvarExtratosBanco,  
-} from './services/bancoService.js'
+} from './services/BancoService.js'
 
 const require = createRequire(import.meta.url)
 const pdfParse = require('pdf-parse')
