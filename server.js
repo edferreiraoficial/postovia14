@@ -6,6 +6,10 @@ import dotenv from 'dotenv';
 import ExcelJS from 'exceljs';
 import pdf from 'pdf-parse';
 import pg from 'pg';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { db } from './db.js';
+
 import { processarPlanilhas } from './backend/processar.js';
 //import { importarPdfsBanco } from './backend/importarPdfsBanco.js';
 
@@ -24,6 +28,8 @@ import { gerarPlanilhaAuxiliarDoBanco } from './gerarAuxiliarBanco.js';*/
 const app = express();
 const PORT = process.env.PORT || 3001;
 const upload = multer({ storage: multer.memoryStorage() });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 dotenv.config();
 
 console.log('FS carregado:', !!fs);
@@ -34,7 +40,7 @@ console.log('processar.js carregado:', !!processarPlanilhas);
 
 
 app.get('/', (req, res) => {
-  res.send('Servidor mínimo funcionando com fs');
+  res.send('Servidor mínimo funcionando com ultimo');
 });
 
 app.get('/health', (req, res) => {
