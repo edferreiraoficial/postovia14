@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import ExcelJS from 'exceljs';
 import pdf from 'pdf-parse';
 import pg from 'pg';
+import { processarPlanilhas } from './backend/processar.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,9 +15,10 @@ dotenv.config();
 console.log('ExcelJS carregado:', !!ExcelJS); 
 console.log('PDF Parse carregado:', !!pdf);
 console.log('PG carregado:', !!pg);
+console.log('processar.js carregado:', !!processarPlanilhas);
 
 app.get('/', (req, res) => {
-  res.send('Servidor mínimo funcionando com pdf parse');
+  res.send('Servidor mínimo funcionando com processar');
 });
 
 app.get('/health', (req, res) => {
