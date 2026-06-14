@@ -3,6 +3,7 @@ import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
 import ExcelJS from 'exceljs';
+import pdf from 'pdf-parse';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -10,9 +11,10 @@ const upload = multer({ storage: multer.memoryStorage() });
 dotenv.config();
 
 console.log('ExcelJS carregado:', !!ExcelJS); 
+console.log('PDF Parse carregado:', !!pdf);
 
 app.get('/', (req, res) => {
-  res.send('Servidor mínimo funcionando com excel');
+  res.send('Servidor mínimo funcionando com pdf parse');
 });
 
 app.get('/health', (req, res) => {
