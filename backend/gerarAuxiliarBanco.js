@@ -5,8 +5,7 @@ import { db } from './db.js'
 
 function formatarData(data) {
   if (!data) return null
-  const d = new Date(data)
-  return d
+  return new Date(data)
 }
 
 function criarAbaCombustivel(workbook, nome) {
@@ -46,6 +45,7 @@ export async function gerarPlanilhaAuxiliarDoBanco({
   mes = 3,
 } = {}) {
   const workbook = new ExcelJS.Workbook()
+
   const abasCombustivel = {
     GASOLINA: criarAbaCombustivel(workbook, 'GASOLINA'),
     ETANOL: criarAbaCombustivel(workbook, 'ETANOL'),
@@ -55,7 +55,8 @@ export async function gerarPlanilhaAuxiliarDoBanco({
   const abaSpot = criarAbaBanco(workbook, 'SPOT')
   const abaItau = criarAbaBanco(workbook, 'ITAU')
 
-  const lmc = await db.query(`
+  const [lmc] = await db.query(
+    `
     SELECT 
       l.data_movimento,
       p.nome AS produto,
@@ -66,12 +67,14 @@ export async function gerarPlanilhaAuxiliarDoBanco({
       l.estoque_fechamento
     FROM lmc_movimentos l
     LEFT JOIN produtos p ON p.id = l.produto_id
-    WHERE EXTRACT(YEAR FROM l.data_movimento) = $1
-      AND EXTRACT(MONTH FROM l.data_movimento) = $2
+    WHERE YEAR(l.data_movimento) = ?
+      AND MONTH(l.data_movimento) = ?
     ORDER BY l.data_movimento, p.nome
-   `, [ano, mes])
+    `,
+    [ano, mes]
+  )
 
-  for (const item of lmc.rows) {
+  for (const item of lmc) {
     const produto = String(item.produto || '').toUpperCase()
 
     const aba =
@@ -99,7 +102,8 @@ export async function gerarPlanilhaAuxiliarDoBanco({
     })
   }
 
-  const bancos = await db.query(`
+  const [bancos] = await db.query(
+    `
     SELECT
       data_lancamento,
       origem,
@@ -107,12 +111,14 @@ export async function gerarPlanilhaAuxiliarDoBanco({
       valor,
       saldo
     FROM extratos_bancarios
-    WHERE EXTRACT(YEAR FROM data_lancamento) = $1
-      AND EXTRACT(MONTH FROM data_lancamento) = $2
+    WHERE YEAR(data_lancamento) = ?
+      AND MONTH(data_lancamento) = ?
     ORDER BY data_lancamento, origem, id
-  `, [ano, mes])
+    `,
+    [ano, mes]
+  )
 
-  for (const item of bancos.rows) {
+  for (const item of bancos) {
     const origem = String(item.origem || '').toUpperCase()
     const aba = origem === 'SPOT' ? abaSpot : origem === 'ITAU' ? abaItau : null
 
@@ -127,9 +133,15 @@ export async function gerarPlanilhaAuxiliarDoBanco({
   }
 
   const pastaSaida = path.resolve('output')
-  if (!fs.existsSync(pastaSaida)) fs.mkdirSync(pastaSaida, { recursive: true })
 
-  const nomeFinal = nomeArquivo.endsWith('.xlsx') ? nomeArquivo : `${nomeArquivo}.xlsx`
+  if (!fs.existsSync(pastaSaida)) {
+    fs.mkdirSync(pastaSaida, { recursive: true })
+  }
+
+  const nomeFinal = nomeArquivo.endsWith('.xlsx')
+    ? nomeArquivo
+    : `${nomeArquivo}.xlsx`
+
   const caminhoArquivo = path.join(pastaSaida, nomeFinal)
 
   await workbook.xlsx.writeFile(caminhoArquivo)
