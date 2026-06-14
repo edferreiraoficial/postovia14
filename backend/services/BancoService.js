@@ -1,66 +1,67 @@
 import { db } from '../db.js'
 
 export async function obterEmpresaPadrao() {
-  const resultado = await db.query(
-    'SELECT id FROM empresas WHERE nome = $1 LIMIT 1',
+  const [rows] = await db.query(
+    'SELECT id FROM empresas WHERE nome = ? LIMIT 1',
     ['Posto Via 14']
   )
 
-  if (resultado.rows.length === 0) {
+  if (rows.length === 0) {
     throw new Error('Empresa Posto Via 14 não encontrada no banco.')
   }
 
-  return resultado.rows[0]
+  return rows[0]
 }
 
 export async function obterOuCriarPeriodo({ empresaId, ano, mes }) {
-  const resultado = await db.query(
+  await db.query(
     `INSERT INTO periodos (empresa_id, ano, mes)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (empresa_id, ano, mes)
-     DO UPDATE SET atualizado_em = NOW()
-     RETURNING *`,
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE atualizado_em = NOW()`,
     [empresaId, ano, mes]
   )
 
-  return resultado.rows[0]
+  const [rows] = await db.query(
+    `SELECT * FROM periodos
+     WHERE empresa_id = ? AND ano = ? AND mes = ?
+     LIMIT 1`,
+    [empresaId, ano, mes]
+  )
+
+  return rows[0]
 }
 
 export async function obterOuCriarPeriodoPorData({ empresaId, data }) {
-  if (!data) throw new Error('Data inválida para criação de período.');
+  if (!data) throw new Error('Data inválida para criação de período.')
 
-  const d = new Date(`${data}T00:00:00`);
-  const ano = d.getFullYear();
-  const mes = d.getMonth() + 1;
+  const d = new Date(`${data}T00:00:00`)
+  const ano = d.getFullYear()
+  const mes = d.getMonth() + 1
 
-  return obterOuCriarPeriodo({ empresaId, ano, mes });
+  return obterOuCriarPeriodo({ empresaId, ano, mes })
 }
 
 export async function obterOuCriarFornecedor(nome) {
   const nomeLimpo = String(nome || '').trim()
-
   if (!nomeLimpo) return null
 
-  const existe = await db.query(
-    'SELECT id FROM fornecedores WHERE nome = $1 LIMIT 1',
-    [nomeLimpo]
-  )
-
-  if (existe.rows.length) return existe.rows[0].id
-
-  const novo = await db.query(
+  await db.query(
     `INSERT INTO fornecedores (nome)
-     VALUES ($1)
-     RETURNING id`,
+     VALUES (?)
+     ON DUPLICATE KEY UPDATE nome = VALUES(nome)`,
     [nomeLimpo]
   )
 
-  return novo.rows[0].id
+  const [rows] = await db.query(
+    'SELECT id FROM fornecedores WHERE nome = ? LIMIT 1',
+    [nomeLimpo]
+  )
+
+  return rows[0]?.id || null
 }
 
 export async function obterOuCriarProduto(nome) {
   const nomeLimpo = String(nome || '').trim().toUpperCase()
-
   if (!nomeLimpo) return null
 
   let produtoBase = nomeLimpo
@@ -69,28 +70,27 @@ export async function obterOuCriarProduto(nome) {
   if (nomeLimpo.includes('ETANOL')) produtoBase = 'ETANOL'
   if (nomeLimpo.includes('DIESEL')) produtoBase = 'DIESEL'
 
-  const existe = await db.query(
-    'SELECT id FROM produtos WHERE nome = $1 LIMIT 1',
-    [produtoBase]
-  )
-
-  if (existe.rows.length) return existe.rows[0].id
-
-  const novo = await db.query(
+  await db.query(
     `INSERT INTO produtos (nome, tipo, unidade)
-     VALUES ($1, 'COMBUSTIVEL', 'L')
-     RETURNING id`,
+     VALUES (?, 'COMBUSTIVEL', 'L')
+     ON DUPLICATE KEY UPDATE
+       tipo = VALUES(tipo),
+       unidade = VALUES(unidade)`,
     [produtoBase]
   )
 
-  return novo.rows[0].id
+  const [rows] = await db.query(
+    'SELECT id FROM produtos WHERE nome = ? LIMIT 1',
+    [produtoBase]
+  )
+
+  return rows[0]?.id || null
 }
 
 export function dataBrParaSql(dataBr) {
   if (!dataBr) return null
 
   const [dia, mes, ano] = String(dataBr).split('/')
-
   if (!dia || !mes || !ano) return null
 
   return `${ano}-${mes}-${dia}`
@@ -103,14 +103,13 @@ export async function salvarComprasNoBanco({ empresaId, periodoId, compras }) {
     const produtoId = await obterOuCriarProduto(compra.produto)
     const fornecedorId = await obterOuCriarFornecedor(compra.fornecedor)
     const dataSql = dataBrParaSql(compra.dataEmissao || compra.data)
+
     const periodo = periodoId
       ? { id: periodoId }
-      : await obterOuCriarPeriodoPorData({
-          empresaId,
-          data: dataSql,
-        })
+      : await obterOuCriarPeriodoPorData({ empresaId, data: dataSql })
+
     await db.query(
-      `INSERT INTO compras (
+      `INSERT IGNORE INTO compras (
         empresa_id,
         periodo_id,
         data_emissao,
@@ -121,18 +120,7 @@ export async function salvarComprasNoBanco({ empresaId, periodoId, compras }) {
         quantidade,
         valor_total
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      ON CONFLICT (
-        empresa_id,
-        periodo_id,
-        data_emissao,
-        produto_id,
-        fornecedor_id,
-        numero_nf,
-        quantidade,
-        valor_total
-      )
-      DO NOTHING`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empresaId,
         periodo.id,
@@ -145,8 +133,10 @@ export async function salvarComprasNoBanco({ empresaId, periodoId, compras }) {
         compra.valorTotal,
       ]
     )
+
     total++
   }
+
   return total
 }
 
@@ -158,12 +148,11 @@ export async function salvarLmcNoBanco({ empresaId, periodoId, dadosLmc }) {
 
     for (const linha of linhas) {
       const dataSql = dataBrParaSql(linha.data)
+
       const periodo = periodoId
         ? { id: periodoId }
-        : await obterOuCriarPeriodoPorData({
-            empresaId,
-            data: dataSql,
-          })
+        : await obterOuCriarPeriodoPorData({ empresaId, data: dataSql })
+
       await db.query(
         `INSERT INTO lmc_movimentos (
           empresa_id,
@@ -176,14 +165,13 @@ export async function salvarLmcNoBanco({ empresaId, periodoId, dadosLmc }) {
           ajuste_quantidade,
           estoque_fechamento
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        ON CONFLICT (empresa_id, periodo_id, data_movimento, produto_id)
-        DO UPDATE SET
-          estoque_abertura = EXCLUDED.estoque_abertura,
-          quantidade_vendas = EXCLUDED.quantidade_vendas,
-          valor_vendas = EXCLUDED.valor_vendas,
-          ajuste_quantidade = EXCLUDED.ajuste_quantidade,
-          estoque_fechamento = EXCLUDED.estoque_fechamento,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          estoque_abertura = VALUES(estoque_abertura),
+          quantidade_vendas = VALUES(quantidade_vendas),
+          valor_vendas = VALUES(valor_vendas),
+          ajuste_quantidade = VALUES(ajuste_quantidade),
+          estoque_fechamento = VALUES(estoque_fechamento),
           atualizado_em = NOW()`,
         [
           empresaId,
@@ -197,59 +185,57 @@ export async function salvarLmcNoBanco({ empresaId, periodoId, dadosLmc }) {
           linha.fechamento,
         ]
       )
+
       total++
     }
   }
+
   return total
 }
 
 export async function obterOuCriarBanco(nomeBanco) {
-  const nome = String(nomeBanco || '').trim().toUpperCase();
+  const nome = String(nomeBanco || '').trim().toUpperCase()
 
-  const existe = await db.query(
-    'SELECT id FROM bancos WHERE nome = $1 LIMIT 1',
-    [nome]
-  );
-
-  if (existe.rows.length) return existe.rows[0].id;
-
-  const novo = await db.query(
+  await db.query(
     `INSERT INTO bancos (nome, codigo)
-     VALUES ($1, $1)
-     RETURNING id`,
-    [nome]
-  );
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE codigo = VALUES(codigo)`,
+    [nome, nome]
+  )
 
-  return novo.rows[0].id;
+  const [rows] = await db.query(
+    'SELECT id FROM bancos WHERE nome = ? LIMIT 1',
+    [nome]
+  )
+
+  return rows[0]?.id || null
 }
 
 export async function obterOuCriarContaBancaria({ empresaId, nomeBanco }) {
-  const bancoId = await obterOuCriarBanco(nomeBanco);
+  const bancoId = await obterOuCriarBanco(nomeBanco)
 
-  const existe = await db.query(
-    `SELECT id 
-     FROM contas_bancarias 
-     WHERE empresa_id = $1 
-       AND banco_id = $2 
-       AND nome_conta = $3
-     LIMIT 1`,
-    [empresaId, bancoId, nomeBanco]
-  );
-
-  if (existe.rows.length) return existe.rows[0].id;
-
-  const nova = await db.query(
+  await db.query(
     `INSERT INTO contas_bancarias (
       empresa_id,
       banco_id,
       nome_conta
     )
-    VALUES ($1, $2, $3)
-    RETURNING id`,
+    VALUES (?, ?, ?)
+    ON DUPLICATE KEY UPDATE atualizado_em = NOW()`,
     [empresaId, bancoId, nomeBanco]
-  );
+  )
 
-  return nova.rows[0].id;
+  const [rows] = await db.query(
+    `SELECT id
+     FROM contas_bancarias
+     WHERE empresa_id = ?
+       AND banco_id = ?
+       AND nome_conta = ?
+     LIMIT 1`,
+    [empresaId, bancoId, nomeBanco]
+  )
+
+  return rows[0]?.id || null
 }
 
 export async function salvarExtratosBanco({
@@ -272,18 +258,14 @@ export async function salvarExtratosBanco({
 
     const periodo = periodoId
       ? { id: periodoId }
-      : await obterOuCriarPeriodoPorData({
-          empresaId,
-          data: dataSql,
-        })
+      : await obterOuCriarPeriodoPorData({ empresaId, data: dataSql })
 
     let natureza = 'SALDO'
-
     if (Number(valor) > 0) natureza = 'ENTRADA'
     if (Number(valor) < 0) natureza = 'SAIDA'
 
     await db.query(
-      `INSERT INTO extratos_bancarios (
+      `INSERT IGNORE INTO extratos_bancarios (
         empresa_id,
         periodo_id,
         conta_bancaria_id,
@@ -296,17 +278,7 @@ export async function salvarExtratosBanco({
         natureza,
         origem
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-      ON CONFLICT (
-        empresa_id,
-        periodo_id,
-        origem,
-        data_lancamento,
-        descricao_original,
-        valor,
-        saldo
-      )
-      DO NOTHING`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empresaId,
         periodo.id,
