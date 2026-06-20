@@ -15,6 +15,8 @@ import { processarPlanilhas } from './backend/processar.js'
 const app = express()
 const PORT = process.env.PORT || 3001
 const upload = multer({ storage: multer.memoryStorage() })
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -23,6 +25,8 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
 })
+
+app.use(express.static(path.join(__dirname, 'docs')))
 
 app.get('/', (req, res) => {
   res.send('Backend Posto Via 14 online')
@@ -367,6 +371,10 @@ app.get('/api/dashboard/resumo', async (req, res) => {
       erro: error.message
     })
   }
+})
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'docs', 'index.html'))
 })
 
 app.listen(PORT, '0.0.0.0', () => {
