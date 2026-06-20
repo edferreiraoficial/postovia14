@@ -1,6 +1,7 @@
 import express from 'express'
 import mysql from 'mysql2/promise'
 import { db } from './backend/db.js'
+import ExcelJS from 'exceljs'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -33,6 +34,12 @@ app.get('/health', async (req, res) => {
       erro: error.message
     })
   }
+})
+
+app.get('/teste-excel', async (req, res) => {
+  const wb = new ExcelJS.Workbook()
+  wb.addWorksheet('TESTE')
+  res.json({ ok: true })
 })
 
 app.listen(PORT, '0.0.0.0', () => {
