@@ -1,5 +1,5 @@
 import fs from 'fs';
-//import { db } from './db.js';
+import { db } from './db.js';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -838,6 +838,40 @@ app.delete('/api/competencia/limpar', async (req, res) => {
   }
 }); 
 
+///////////////////teste
+app.get('/api/teste-rota', (req, res) => {
+  res.json({ ok: true, msg: 'rota funcionando' })
+})
+
+app.get('/api/teste-banco', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT 1 AS teste')
+    res.json({ ok: true, banco: rows })
+  } catch (error) {
+    res.status(500).json({ ok: false, erro: error.message })
+  }
+})
+
+app.get('/api/teste-excel', async (req, res) => {
+  try {
+    const workbook = new ExcelJS.Workbook()
+    const ws = workbook.addWorksheet('TESTE')
+    ws.addRow(['OK'])
+
+    const caminho = path.resolve('output/teste.xlsx')
+
+    if (!fs.existsSync('output')) {
+      fs.mkdirSync('output', { recursive: true })
+    }
+
+    await workbook.xlsx.writeFile(caminho)
+
+    res.json({ ok: true, arquivo: caminho })
+  } catch (error) {
+    res.status(500).json({ ok: false, erro: error.message })
+  }
+})
+///////////////////////////////////
 app.listen(PORT, () => {
   console.log(`Backend rodando em http://localhost:${PORT}`);
 });
