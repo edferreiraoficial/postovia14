@@ -1,8 +1,14 @@
 import express from 'express'
 import mysql from 'mysql2/promise'
-import { db } from './backend/db.js'
 import ExcelJS from 'exceljs'
 import pdf from 'pdf-parse'
+import cors from 'cors';
+import multer from 'multer';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { db } from './backend/db.js';
+import { gerarPlanilhaAuxiliarDoBanco } from './backend/gerarAuxiliarBanco.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -47,6 +53,13 @@ app.get('/teste-pdf', (req, res) => {
   res.json({
     ok: true,
     pdfCarregado: !!pdf
+  })
+})
+
+app.get('/teste-gerador', (req, res) => {
+  res.json({
+    ok: true,
+    tipo: typeof gerarPlanilhaAuxiliarDoBanco
   })
 })
 
