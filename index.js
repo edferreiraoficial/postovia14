@@ -24,23 +24,59 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
 })
 
+function log(...args) {
+  console.log(
+    `[${new Date().toISOString()}]`,
+    ...args
+  )
+}
+
 app.get('/', (req, res) => {
   res.send('Backend Posto Via 14 online')
 })
 
 app.get('/health', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT 1 AS teste')
+    const [rows] = await db.query('SELECT 1 AS teste')
 
     res.json({
       status: 'ok',
       mysql: true,
+      timestamp: new Date(),
       resultado: rows[0]
     })
   } catch (error) {
     res.status(500).json({
       status: 'erro',
       mysql: false,
+      erro: error.message
+    })
+  }
+})
+
+app.get('/api/status', async (req, res) => {
+  try {
+    const [[compras]] = await db.query(
+      'SELECT COUNT(*) total FROM compras'
+    )
+
+    const [[lmc]] = await db.query(
+      'SELECT COUNT(*) total FROM lmc_movimentos'
+    )
+
+    const [[extratos]] = await db.query(
+      'SELECT COUNT(*) total FROM extratos_bancarios'
+    )
+
+    res.json({
+      ok: true,
+      compras: compras.total,
+      lmc: lmc.total,
+      extratos: extratos.total
+    })
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
       erro: error.message
     })
   }
@@ -172,4 +208,12 @@ app.post('/api/processar', upload.fields([
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
+})
+
+process.on('uncaughtException', (err) => {
+  console.error('ERRO NÃO TRATADO:', err)
+})
+
+process.on('unhandledRejection', (err) => {
+  console.error('PROMISE NÃO TRATADA:', err)
 })
