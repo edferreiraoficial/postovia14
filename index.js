@@ -63,6 +63,29 @@ app.get('/teste-gerador', (req, res) => {
   })
 })
 
+app.get('/api/teste-gerar-auxiliar', async (req, res) => {
+  try {
+    const arquivo = await gerarPlanilhaAuxiliarDoBanco({
+      nomeArquivo: 'teste_auxiliar.xlsx',
+      ano: 2026,
+      mes: 3,
+    })
+
+    res.json({
+      ok: true,
+      arquivo
+    })
+  } catch (error) {
+    console.error('ERRO TESTE GERAR AUXILIAR:', error)
+
+    res.status(500).json({
+      ok: false,
+      erro: error.message,
+      stack: error.stack
+    })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
 })
