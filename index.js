@@ -172,26 +172,33 @@ app.post('/api/processar', upload.fields([
 
 app.get('/api/dashboard', async (req, res) => {
   try {
-    const [[compras]] = await db.query(`
-      SELECT COUNT(*) total
-      FROM compras
+    const [vendas] = await db.query(`
+      SELECT
+        p.nome AS produto,
+        SUM(l.quantidade_vendas) AS quantidade,
+        SUM(l.valor_vendas) AS receita,
+        CASE 
+          WHEN SUM(l.quantidade_vendas) > 0 
+          THEN SUM(l.valor_vendas) / SUM(l.quantidade_vendas)
+          ELSE 0
+        END AS preco_medio
+      FROM lmc_movimentos l
+      LEFT JOIN produtos p ON p.id = l.produto_id
+      GROUP BY p.nome
+      ORDER BY p.nome
     `)
 
-    const [[lmc]] = await db.query(`
-      SELECT COUNT(*) total
+    const [[total]] = await db.query(`
+      SELECT
+        SUM(quantidade_vendas) AS quantidade_total,
+        SUM(valor_vendas) AS receita_total
       FROM lmc_movimentos
-    `)
-
-    const [[extratos]] = await db.query(`
-      SELECT COUNT(*) total
-      FROM extratos_bancarios
     `)
 
     res.json({
       ok: true,
-      compras: compras.total,
-      lmc: lmc.total,
-      extratos: extratos.total
+      vendas,
+      total
     })
   } catch (error) {
     res.status(500).json({
