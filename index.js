@@ -137,11 +137,37 @@ app.post('/api/importar-pdfs', upload.fields([
   { name: 'itau', maxCount: 10 },
 ]), async (req, res) => {
   try {
-    const resultado = await importarPdfsBanco(req.files)
+    const files = req.files || {}
+
+    const arquivoLmc = files.lmc?.[0] || null
+    const arquivoCompras = files.compras?.[0] || null
+    const arquivoSpot = files.spot?.[0] || null
+    const arquivoItau = files.itau?.[0] || null
+
+    if (!arquivoLmc && !arquivoCompras && !arquivoSpot && !arquivoItau) {
+      return res.status(400).json({
+        ok: false,
+        erro: 'Nenhum arquivo PDF foi recebido.',
+      })
+    }
+
+    const resultado = await importarPdfsBanco({
+      arquivoLmc,
+      arquivoCompras,
+      arquivoSpot,
+      arquivoItau,
+    })
 
     res.json({
       ok: true,
+      mensagem: 'PDFs importados para o banco de dados com sucesso.',
       resultado,
+      recebidos: {
+        lmc: arquivoLmc ? 1 : 0,
+        compras: arquivoCompras ? 1 : 0,
+        spot: arquivoSpot ? 1 : 0,
+        itau: arquivoItau ? 1 : 0,
+      },
     })
   } catch (error) {
     console.error('ERRO /api/importar-pdfs:', error)

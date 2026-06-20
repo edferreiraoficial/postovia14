@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react';
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
 const MESES = [
+  { aba: 'Set25', nome: 'Setembro/2025' },
+  { aba: 'Out25', nome: 'Outubroro/2025' },
+  { aba: 'Nov25', nome: 'Novembro/2025' },
+  { aba: 'Dez25', nome: 'Sezembro/2025' },
   { aba: 'Jan26', nome: 'Janeiro/2026' },
   { aba: 'Fev26', nome: 'Fevereiro/2026' },
   { aba: 'Mar26', nome: 'Março/2026' },
@@ -53,8 +57,23 @@ export default function EstoqueBancoAdminPage() {
         throw new Error(erro?.message || 'Erro ao importar dados.');
       }
 
-      const json = await response.json();
-      setMensagem(json.mensagem || 'PDFs importados para o banco de dados com sucesso.');
+const json = await response.json();
+
+if (!json.ok) {
+  throw new Error(json.erro || json.message || 'Erro ao importar dados.');
+}
+
+      setMensagem(
+        `${json.mensagem} ` +
+        `Recebidos: LMC ${json.recebidos?.lmc || 0}, ` +
+        `Compras ${json.recebidos?.compras || 0}, ` +
+        `SPOT ${json.recebidos?.spot || 0}, ` +
+        `ITAÚ ${json.recebidos?.itau || 0}. ` +
+        `Importados: LMC ${json.resultado?.lmc || 0}, ` +
+        `Compras ${json.resultado?.compras || 0}, ` +
+        `SPOT ${json.resultado?.spot || 0}, ` +
+        `ITAÚ ${json.resultado?.itau || 0}.`
+      );
       carregarCompras();
       carregarLmc();
       carregarSpot();
