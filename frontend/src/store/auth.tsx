@@ -24,7 +24,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const login = (username: string, password: string) => {
     const validUser = username === 'admin' || username === 'admin@via14.com.br';
-    if (validUser && password === '123456') {
+    if (validUser && password === 'p@via14') {
       setUser({ username: 'admin' });
       return true;
     }
