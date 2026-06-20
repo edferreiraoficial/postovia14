@@ -2,6 +2,7 @@ import express from 'express'
 import mysql from 'mysql2/promise'
 import { db } from './backend/db.js'
 import ExcelJS from 'exceljs'
+import pdf from 'pdf-parse'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -40,6 +41,13 @@ app.get('/teste-excel', async (req, res) => {
   const wb = new ExcelJS.Workbook()
   wb.addWorksheet('TESTE')
   res.json({ ok: true })
+})
+
+app.get('/teste-pdf', (req, res) => {
+  res.json({
+    ok: true,
+    pdfCarregado: !!pdf
+  })
 })
 
 app.listen(PORT, '0.0.0.0', () => {
