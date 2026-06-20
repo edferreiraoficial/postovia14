@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { db } from './backend/db.js';
 import { gerarPlanilhaAuxiliarDoBanco } from './backend/gerarAuxiliarBanco.js'
 import { importarPdfsBanco } from './backend/importarPdfsBanco.js'
+import { processarPlanilhas } from './backend/processar.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -93,6 +94,13 @@ app.get('/teste-importador', (req, res) => {
     tipo: typeof importarPdfsBanco
   })
 })
+
+app.get('/teste-processar', (req, res) => {
+  res.json({
+    ok: true,
+    tipo: typeof processarPlanilhas
+  })
+}) 
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
