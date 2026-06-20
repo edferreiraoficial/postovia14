@@ -68,8 +68,11 @@ function limparDescricaoLancamento(descricao = '') {
     .trim()
 }
 
-async function lerPdf(caminhoArquivo) {
-  const buffer = fs.readFileSync(caminhoArquivo)
+async function lerPdf(arquivo) {
+  const buffer = arquivo?.buffer
+    ? arquivo.buffer
+    : fs.readFileSync(arquivo)
+
   const dados = await pdfParse(buffer)
 
   return dados.text
@@ -207,7 +210,7 @@ function extrairLinhaLmc(pagina) {
 }
 
 async function extrairDadosLmc(arquivoLmc) {
-  const texto = await lerPdf(arquivoLmc.path)
+  const texto = await lerPdf(arquivoLmc)
   const dados = { GASOLINA: [], ETANOL: [], DIESEL: [] }
 
   for (const pagina of extrairPaginasLmc(texto)) {
@@ -424,7 +427,7 @@ function montarRegistrosCompras(linhas) {
 async function extrairDadosCompras(arquivoCompras) {
   if (!arquivoCompras) return []
 
-  const texto = await lerPdf(arquivoCompras.path)
+  const texto = await lerPdf(arquivoCompras)
   const linhas = extrairLinhasCompras(texto)
   const registros = montarRegistrosCompras(linhas)
   const compras = []
@@ -889,7 +892,7 @@ function montarLinhasBancoItau(lancamentos) {
 async function extrairDadosBanco(arquivoBanco, banco) {
   if (!arquivoBanco) return []
 
-  let texto = await lerPdf(arquivoBanco.path)
+  let texto = await lerPdf(arquivoBanco)
 
   if (banco === 'ITAU') {
     texto = texto.split(/posição consolidada/i)[0]
