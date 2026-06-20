@@ -285,6 +285,37 @@ app.get('/api/dashboard/financeiro', async (req, res) => {
   }
 })
 
+app.get('/api/competencias', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT DISTINCT
+        DATE_FORMAT(data_movimento, '%b%y') AS competencia,
+        YEAR(data_movimento) AS ano,
+        MONTH(data_movimento) AS mes
+      FROM lmc_movimentos
+      ORDER BY ano, mes
+    `)
+
+    const competencias = rows.map(item => ({
+      codigo: item.competencia,
+      ano: item.ano,
+      mes: item.mes
+    }))
+
+    res.json({
+      ok: true,
+      competencias
+    })
+  } catch (error) {
+    console.error('ERRO /api/competencias:', error)
+
+    res.status(500).json({
+      ok: false,
+      erro: error.message
+    })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
 })
