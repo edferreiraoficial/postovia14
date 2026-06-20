@@ -208,6 +208,39 @@ app.get('/api/dashboard', async (req, res) => {
   }
 })
 
+app.get('/api/dashboard/mensal', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        DATE_FORMAT(l.data_movimento, '%Y-%m') AS mes,
+        p.nome AS produto,
+        SUM(l.quantidade_vendas) AS quantidade,
+        SUM(l.valor_vendas) AS receita,
+        CASE
+          WHEN SUM(l.quantidade_vendas) > 0
+          THEN SUM(l.valor_vendas) / SUM(l.quantidade_vendas)
+          ELSE 0
+        END AS preco_medio
+      FROM lmc_movimentos l
+      LEFT JOIN produtos p ON p.id = l.produto_id
+      GROUP BY mes, p.nome
+      ORDER BY mes ASC, p.nome ASC
+    `)
+
+    res.json({
+      ok: true,
+      dados: rows
+    })
+  } catch (error) {
+    console.error('ERRO /api/dashboard/mensal:', error)
+
+    res.status(500).json({
+      ok: false,
+      erro: error.message
+    })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
 })
