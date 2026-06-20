@@ -102,6 +102,29 @@ app.get('/teste-processar', (req, res) => {
   })
 }) 
 
+/// rotas reais 
+app.post('/api/gerar-auxiliar-banco', async (req, res) => {
+  try {
+    const arquivo = await gerarPlanilhaAuxiliarDoBanco({
+      nomeArquivo: 'Planilha_Estoque_Banco_BD.xlsx',
+      ano: 2026,
+      mes: 3,
+    })
+
+    res.json({
+      ok: true,
+      arquivo,
+    })
+  } catch (error) {
+    console.error('ERRO /api/gerar-auxiliar-banco:', error)
+
+    res.status(500).json({
+      ok: false,
+      erro: error.message,
+    })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
 })
