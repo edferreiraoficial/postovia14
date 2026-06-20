@@ -14,6 +14,7 @@ import { processarPlanilhas } from './backend/processar.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
+const upload = multer({ storage: multer.memoryStorage() })
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -117,6 +118,29 @@ app.post('/api/gerar-auxiliar-banco', async (req, res) => {
     })
   } catch (error) {
     console.error('ERRO /api/gerar-auxiliar-banco:', error)
+
+    res.status(500).json({
+      ok: false,
+      erro: error.message,
+    })
+  }
+})
+
+app.post('/api/importar-pdfs', upload.fields([
+  { name: 'lmc', maxCount: 10 },
+  { name: 'compras', maxCount: 10 },
+  { name: 'spot', maxCount: 10 },
+  { name: 'itau', maxCount: 10 },
+]), async (req, res) => {
+  try {
+    const resultado = await importarPdfsBanco(req.files)
+
+    res.json({
+      ok: true,
+      resultado,
+    })
+  } catch (error) {
+    console.error('ERRO /api/importar-pdfs:', error)
 
     res.status(500).json({
       ok: false,
