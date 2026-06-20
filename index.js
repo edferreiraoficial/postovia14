@@ -241,6 +241,50 @@ app.get('/api/dashboard/mensal', async (req, res) => {
   }
 })
 
+app.get('/api/dashboard/financeiro', async (req, res) => {
+  try {
+    const [entradas] = await db.query(`
+      SELECT
+        origem,
+        SUM(valor) total
+      FROM extratos_bancarios
+      WHERE valor > 0
+      GROUP BY origem
+      ORDER BY origem
+    `)
+
+    const [saidas] = await db.query(`
+      SELECT
+        origem,
+        SUM(ABS(valor)) total
+      FROM extratos_bancarios
+      WHERE valor < 0
+      GROUP BY origem
+      ORDER BY origem
+    `)
+
+    const [[saldo]] = await db.query(`
+      SELECT
+        SUM(valor) saldo_total
+      FROM extratos_bancarios
+    `)
+
+    res.json({
+      ok: true,
+      entradas,
+      saidas,
+      saldo: saldo.saldo_total || 0
+    })
+  } catch (error) {
+    console.error('ERRO /api/dashboard/financeiro:', error)
+
+    res.status(500).json({
+      ok: false,
+      erro: error.message
+    })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
 })
