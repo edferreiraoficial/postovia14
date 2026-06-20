@@ -170,6 +170,37 @@ app.post('/api/processar', upload.fields([
   }
 })
 
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const [[compras]] = await db.query(`
+      SELECT COUNT(*) total
+      FROM compras
+    `)
+
+    const [[lmc]] = await db.query(`
+      SELECT COUNT(*) total
+      FROM lmc_movimentos
+    `)
+
+    const [[extratos]] = await db.query(`
+      SELECT COUNT(*) total
+      FROM extratos_bancarios
+    `)
+
+    res.json({
+      ok: true,
+      compras: compras.total,
+      lmc: lmc.total,
+      extratos: extratos.total
+    })
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      erro: error.message
+    })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
 })
