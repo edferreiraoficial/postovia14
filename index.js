@@ -316,6 +316,59 @@ app.get('/api/competencias', async (req, res) => {
   }
 })
 
+app.get('/api/dashboard/resumo', async (req, res) => {
+  try {
+    const [produtos] = await db.query(`
+      SELECT
+        p.nome AS produto,
+        SUM(l.quantidade_vendas) AS quantidade,
+        SUM(l.valor_vendas) AS receita
+      FROM lmc_movimentos l
+      LEFT JOIN produtos p ON p.id = l.produto_id
+      GROUP BY p.nome
+    `)
+
+    const [[vendas]] = await db.query(`
+      SELECT
+        SUM(quantidade_vendas) AS quantidade_total,
+        SUM(valor_vendas) AS receita_total
+      FROM lmc_movimentos
+    `)
+
+    const [[compras]] = await db.query(`
+      SELECT
+        SUM(valor_total) AS total_compras
+      FROM compras
+    `)
+
+    const [[financeiro]] = await db.query(`
+      SELECT
+        SUM(valor) AS saldo_total
+      FROM extratos_bancarios
+    `)
+
+    const resumo = {
+      receitaTotal: Number(vendas.receita_total || 0),
+      quantidadeTotal: Number(vendas.quantidade_total || 0),
+      comprasTotal: Number(compras.total_compras || 0),
+      saldoFinanceiro: Number(financeiro.saldo_total || 0),
+      produtos
+    }
+
+    res.json({
+      ok: true,
+      resumo
+    })
+  } catch (error) {
+    console.error('ERRO /api/dashboard/resumo:', error)
+
+    res.status(500).json({
+      ok: false,
+      erro: error.message
+    })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
 })
