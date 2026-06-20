@@ -1,5 +1,6 @@
 import express from 'express'
 import mysql from 'mysql2/promise'
+import { db } from './backend/db.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
