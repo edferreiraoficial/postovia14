@@ -1,19 +1,18 @@
 {
-  "name": "posto-via14-backend",
+  "name": "postovia14",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^4.18.3",
-    "multer": "^1.4.5-lts.1",
-    "pdf-parse": "^1.1.1",
-    "pg": "^8.21.0"
+    "multer": "^1.4.5-lts.2",
+    "mysql2": "^3.22.5",
+    "pdf-parse": "^1.1.1"
   }
 }
