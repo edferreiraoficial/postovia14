@@ -149,6 +149,27 @@ app.post('/api/importar-pdfs', upload.fields([
   }
 })
 
+app.post('/api/processar', upload.fields([
+  { name: 'principal', maxCount: 1 },
+  { name: 'secundaria', maxCount: 1 },
+]), async (req, res) => {
+  try {
+    const resultado = await processarPlanilhas(req.files, req.body)
+
+    res.json({
+      ok: true,
+      resultado,
+    })
+  } catch (error) {
+    console.error('ERRO /api/processar:', error)
+
+    res.status(500).json({
+      ok: false,
+      erro: error.message,
+    })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`)
 })
