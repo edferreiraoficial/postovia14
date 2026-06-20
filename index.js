@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { db } from './backend/db.js';
 import { gerarPlanilhaAuxiliarDoBanco } from './backend/gerarAuxiliarBanco.js'
+import { importarPdfsBanco } from './backend/importarPdfsBanco.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -84,6 +85,13 @@ app.get('/api/teste-gerar-auxiliar', async (req, res) => {
       stack: error.stack
     })
   }
+})
+
+app.get('/teste-importador', (req, res) => {
+  res.json({
+    ok: true,
+    tipo: typeof importarPdfsBanco
+  })
 })
 
 app.listen(PORT, '0.0.0.0', () => {
