@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
 const MESES = [
   { aba: 'Jan26', nome: 'Janeiro/2026' },
@@ -47,7 +47,7 @@ export default function EstoqueBancoAdminPage() {
       if (arquivoCompras) formData.append('compras', arquivoCompras);
       if (arquivoSpot) formData.append('spot', arquivoSpot);
       if (arquivoItau) formData.append('itau', arquivoItau);
-      const response = await fetch(`${API_BASE}/gerar-estoque-banco`, { method: 'POST', body: formData });
+      const response = await fetch(`${API_BASE}/importar-pdfs`, { method: 'POST', body: formData });
       if (!response.ok) {
         const erro = await response.json().catch(() => null);
         throw new Error(erro?.message || 'Erro ao importar dados.');
