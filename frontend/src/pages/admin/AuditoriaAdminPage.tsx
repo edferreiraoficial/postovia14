@@ -53,6 +53,12 @@ export default function AuditoriaAdminPage() {
       currency: 'BRL'
     });
 
+  const valorMonetario = (v: number) =>
+    Number(v || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+
   return (
     <div className="admin-tool-page">
 
@@ -158,9 +164,9 @@ export default function AuditoriaAdminPage() {
              {vendasBancos.map((item) => (
                <tr key={item.data_movimento}>
                  <td>{item.data_movimento}</td>
-                 <td>{moeda(item.vendas_lmc)}</td>
-                 <td>{moeda(item.entradas_banco)}</td>
-                 <td>{moeda(item.diferenca)}</td>
+                 <td>{valorMonetario(item.vendas_lmc)}</td>
+                 <td>{valorMonetario(item.entradas_banco)}</td>
+                 <td>{valorMonetario(item.diferenca)}</td>
                </tr>
              ))}
            </tbody>

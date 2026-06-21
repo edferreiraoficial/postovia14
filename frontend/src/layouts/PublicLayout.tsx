@@ -13,7 +13,6 @@ export default function PublicLayout() {
           <Link to="/sobre">Sobre</Link>
           <Link to="/produtos">Produtos</Link>
           <Link to="/contato">Contato</Link>
-          <Link to="/admin/login">Admin</Link>
         </nav>
       </header>
       <main><Outlet /></main>

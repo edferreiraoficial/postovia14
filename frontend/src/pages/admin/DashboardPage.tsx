@@ -352,14 +352,14 @@ export default function DashboardPage() {
 
           <article className="db-product-card" style={{ '--product-color': '#84CC16' } as CSSProperties}>
             <div className="db-product-head">
-              <strong>Quantidade Vendida</strong>
+              <strong>Litros Vendidos</strong>
               <span />
             </div>
             <div className="db-kpi-list">
               <div className="db-kpi db-kpi-full">
-                <label>Volume</label>
+                <label>Litros</label>
                 <strong>{fmtNum(resumo?.quantidadeTotal || 0)}</strong>
-                <small>Litros/unidades</small>
+                <small>Total de litros vendidos</small>
               </div>
             </div>
           </article>
@@ -433,15 +433,15 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="db-kpi">
-                    <label>Quantidade</label>
+                    <label>Litros</label>
                     <strong>{fmtNum(item.quantidade)}</strong>
-                    <small>Volume</small>
+                    <small>Litros vendidos</small>
                   </div>
 
                   <div className="db-kpi">
                     <label>Preço Médio</label>
                     <strong>{fmtBRL(ticket)}</strong>
-                    <small>Receita ÷ quantidade</small>
+                    <small>Receita ÷ litros</small>
                   </div>
                 </div>
               </article>

@@ -22,6 +22,7 @@ const MESES = [
 ];
 
 const moeda = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const valorMonetario = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const numero = (valor: any) => Number(valor || 0).toLocaleString('pt-BR');
 const ordemCompetencia = (codigo: string) => MESES.find((mes) => mes.aba === codigo)?.ordem || 0;
 
@@ -297,7 +298,7 @@ export default function EstoqueBancoAdminPage() {
           <div className="admin-upload-card">
             <strong>Vendas</strong>
             <span>{numero(dadosGravados?.lmc?.registros)} registros</span>
-            <small>{moeda(dadosGravados?.lmc?.valorVendas)} | {numero(dadosGravados?.lmc?.quantidadeVendas)} vendas</small>
+            <small>{moeda(dadosGravados?.lmc?.valorVendas)} | {numero(dadosGravados?.lmc?.quantidadeVendas)} litros</small>
           </div>
           <div className="admin-upload-card">
             <strong>Extratos</strong>
@@ -339,8 +340,8 @@ export default function EstoqueBancoAdminPage() {
                     <td style={estilosColunas.esquerda}>{textoFixo(item.fornecedor, 54)}</td>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.numero_nf, 11)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(numero(item.quantidade), 13)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(moeda(item.custo), 7)}</td>
-                    <td style={estilosColunas.direita}>{moeda(item.valor_total)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.custo), 7)}</td>
+                    <td style={estilosColunas.direita}>{valorMonetario(item.valor_total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -370,7 +371,7 @@ export default function EstoqueBancoAdminPage() {
                     <td style={estilosColunas.esquerda}>{textoFixo(item.produto, 13)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(numero(item.estoque_abertura), 16)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(numero(item.quantidade_vendas), 13)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(moeda(item.valor_vendas), 13)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor_vendas), 13)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(numero(item.ajuste_quantidade), 13)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(numero(item.estoque_fechamento), 13)}</td>
                   </tr>
@@ -387,7 +388,7 @@ export default function EstoqueBancoAdminPage() {
               <thead><tr><th>Data</th><th>Descrição</th><th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th><th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th><th>Natureza</th></tr></thead>
               <tbody>
                 {spot.map((item) => (
-                  <tr key={item.id}><td>{item.data_lancamento}</td><td>{item.descricao_original}</td><td style={estilosColunas.direita}>{textoNumero(moeda(item.valor), 21)}</td><td style={estilosColunas.direita}>{textoNumero(moeda(item.saldo), 21)}</td><td>{item.natureza}</td></tr>
+                  <tr key={item.id}><td>{item.data_lancamento}</td><td>{item.descricao_original}</td><td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td><td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td><td>{item.natureza}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -401,7 +402,7 @@ export default function EstoqueBancoAdminPage() {
               <thead><tr><th>Data</th><th>Descrição</th><th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th><th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th><th>Natureza</th></tr></thead>
               <tbody>
                 {itau.map((item) => (
-                  <tr key={item.id}><td>{item.data_lancamento}</td><td>{item.descricao_original}</td><td style={estilosColunas.direita}>{textoNumero(moeda(item.valor), 21)}</td><td style={estilosColunas.direita}>{textoNumero(moeda(item.saldo), 21)}</td><td>{item.natureza}</td></tr>
+                  <tr key={item.id}><td>{item.data_lancamento}</td><td>{item.descricao_original}</td><td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td><td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td><td>{item.natureza}</td></tr>
                 ))}
               </tbody>
             </table>
