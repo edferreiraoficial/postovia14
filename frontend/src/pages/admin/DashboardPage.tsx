@@ -345,8 +345,15 @@ export default function DashboardPage() {
               <div className="db-kpi db-kpi-full">
                 <label>Vendas</label>
                 <strong>{fmtBRL(resumo?.receitaTotal || 0)}</strong>
-                <small>Total vindo do LMC</small>
+                <small>Valor total das vendas</small>
               </div>
+              {produtos.map((item) => (
+                <div className="db-kpi" key={`receita-${item.produto}`}>
+                  <label>{item.produto}</label>
+                  <strong>{fmtBRL(item.receita)}</strong>
+                  <small>Valor vendido</small>
+                </div>
+              ))}
             </div>
           </article>
 
@@ -361,6 +368,13 @@ export default function DashboardPage() {
                 <strong>{fmtNum(resumo?.quantidadeTotal || 0)}</strong>
                 <small>Total de litros vendidos</small>
               </div>
+              {produtos.map((item) => (
+                <div className="db-kpi" key={`litros-${item.produto}`}>
+                  <label>{item.produto}</label>
+                  <strong>{fmtNum(item.quantidade)}</strong>
+                  <small>Litros vendidos</small>
+                </div>
+              ))}
             </div>
           </article>
 
@@ -373,24 +387,11 @@ export default function DashboardPage() {
               <div className="db-kpi db-kpi-full">
                 <label>Total comprado</label>
                 <strong>{fmtBRL(resumo?.comprasTotal || 0)}</strong>
-                <small>Notas de compras importadas</small>
+                <small>Valor total das compras</small>
               </div>
             </div>
           </article>
 
-          <article className="db-product-card" style={{ '--product-color': '#111827' } as CSSProperties}>
-            <div className="db-product-head">
-              <strong>Saldo Financeiro</strong>
-              <span />
-            </div>
-            <div className="db-kpi-list">
-              <div className="db-kpi db-kpi-full">
-                <label>Extratos</label>
-                <strong>{fmtBRL(resumo?.saldoFinanceiro || 0)}</strong>
-                <small>SPOT + ITAÚ</small>
-              </div>
-            </div>
-          </article>
         </div>
       </section>
 
@@ -517,7 +518,7 @@ export default function DashboardPage() {
 
         <div className="db-grid-3">
           <article className="db-panel">
-            <h3>Entradas</h3>
+            <h3>Entradas por banco</h3>
             <strong>{fmtBRL(totalEntradas)}</strong>
 
             <table className="db-table db-simple-table">
@@ -533,7 +534,7 @@ export default function DashboardPage() {
           </article>
 
           <article className="db-panel">
-            <h3>Saídas</h3>
+            <h3>Saídas por banco</h3>
             <strong>{fmtBRL(totalSaidas)}</strong>
 
             <table className="db-table db-simple-table">

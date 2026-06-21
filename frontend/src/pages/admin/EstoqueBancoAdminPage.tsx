@@ -23,6 +23,7 @@ const MESES = [
 
 const moeda = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const valorMonetario = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const custoDecimal = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6, maximumFractionDigits: 6 });
 const numero = (valor: any) => Number(valor || 0).toLocaleString('pt-BR');
 const ordemCompetencia = (codigo: string) => MESES.find((mes) => mes.aba === codigo)?.ordem || 0;
 
@@ -328,7 +329,7 @@ export default function EstoqueBancoAdminPage() {
                   <th style={{ ...estilosColunas.esquerda, width: '54ch' }}>Fornecedor</th>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>NF</th>
                   <th style={{ ...estilosColunas.direita, width: '13ch' }}>Quantidade</th>
-                  <th style={{ ...estilosColunas.direita, width: '7ch' }}>Custo</th>
+                  <th style={{ ...estilosColunas.direita, width: '11ch' }}>Custo</th>
                   <th style={{ ...estilosColunas.direita }}>Valor Total</th>
                 </tr>
               </thead>
@@ -340,7 +341,7 @@ export default function EstoqueBancoAdminPage() {
                     <td style={estilosColunas.esquerda}>{textoFixo(item.fornecedor, 54)}</td>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.numero_nf, 11)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(numero(item.quantidade), 13)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.custo), 7)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(custoDecimal(item.custo), 11)}</td>
                     <td style={estilosColunas.direita}>{valorMonetario(item.valor_total)}</td>
                   </tr>
                 ))}
@@ -385,10 +386,24 @@ export default function EstoqueBancoAdminPage() {
           <div style={{ overflowX: 'auto' }}>
             <h3>SPOT</h3>
             <table className="admin-table admin-fixed-table">
-              <thead><tr><th>Data</th><th>Descrição</th><th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th><th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th><th>Natureza</th></tr></thead>
+              <thead>
+                <tr>
+                  <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
+                  <th style={{ ...estilosColunas.esquerda, width: '61ch' }}>Descrição</th>
+                  <th style={{ ...estilosColunas.direita, width: '14ch' }}>Natureza</th>
+                  <th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th>
+                  <th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th>
+                </tr>
+              </thead>
               <tbody>
                 {spot.map((item) => (
-                  <tr key={item.id}><td>{item.data_lancamento}</td><td>{item.descricao_original}</td><td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td><td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td><td>{item.natureza}</td></tr>
+                  <tr key={item.id}>
+                    <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
+                    <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(item.natureza, 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -399,10 +414,24 @@ export default function EstoqueBancoAdminPage() {
           <div style={{ overflowX: 'auto' }}>
             <h3>Itaú</h3>
             <table className="admin-table admin-fixed-table">
-              <thead><tr><th>Data</th><th>Descrição</th><th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th><th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th><th>Natureza</th></tr></thead>
+              <thead>
+                <tr>
+                  <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
+                  <th style={{ ...estilosColunas.esquerda, width: '61ch' }}>Descrição</th>
+                  <th style={{ ...estilosColunas.direita, width: '14ch' }}>Natureza</th>
+                  <th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th>
+                  <th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th>
+                </tr>
+              </thead>
               <tbody>
                 {itau.map((item) => (
-                  <tr key={item.id}><td>{item.data_lancamento}</td><td>{item.descricao_original}</td><td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td><td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td><td>{item.natureza}</td></tr>
+                  <tr key={item.id}>
+                    <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
+                    <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(item.natureza, 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
