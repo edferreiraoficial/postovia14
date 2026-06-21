@@ -399,6 +399,240 @@ app.get('/api/dashboard/resumo', async (req, res) => {
   }
 })
 
+function codigoCompetenciaParaAnoMes(codigo) {
+  const meses = {
+    Jan: 1, Fev: 2, Mar: 3, Abr: 4, Mai: 5, Jun: 6,
+    Jul: 7, Ago: 8, Set: 9, Out: 10, Nov: 11, Dez: 12,
+  }
+
+  const texto = String(codigo || '').trim()
+  const mesTexto = texto.slice(0, 3)
+  const anoTexto = texto.slice(3)
+  const mes = meses[mesTexto]
+  const ano = 2000 + Number(anoTexto)
+
+  if (!mes || !anoTexto || Number.isNaN(ano)) {
+    throw new Error(`Competência inválida: ${codigo}`)
+  }
+
+  return { ano, mes, chave: ano * 100 + mes }
+}
+
+function obterIntervaloCompetencias(req) {
+  const inicial = req.query.competenciaInicial || req.query.competencia || 'Mar26'
+  const final = req.query.competenciaFinal || req.query.competencia || inicial
+  const ini = codigoCompetenciaParaAnoMes(inicial)
+  const fim = codigoCompetenciaParaAnoMes(final)
+
+  if (ini.chave > fim.chave) {
+    throw new Error('A competência inicial não pode ser maior que a competência final.')
+  }
+
+  return { inicial, final, chaveInicial: ini.chave, chaveFinal: fim.chave }
+}
+
+async function consultarResumoDadosGravados(req, res) {
+  try {
+    const { chaveInicial, chaveFinal } = obterIntervaloCompetencias(req)
+
+    const [[compras]] = await db.query(`
+      SELECT
+        COUNT(*) AS registros,
+        COALESCE(SUM(c.quantidade), 0) AS quantidade,
+        COALESCE(SUM(c.valor_total), 0) AS valor_total
+      FROM compras c
+      INNER JOIN periodos p ON p.id = c.periodo_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+    `, [chaveInicial, chaveFinal])
+
+    const [[lmc]] = await db.query(`
+      SELECT
+        COUNT(*) AS registros,
+        COALESCE(SUM(l.quantidade_vendas), 0) AS quantidade_vendas,
+        COALESCE(SUM(l.valor_vendas), 0) AS valor_vendas
+      FROM lmc_movimentos l
+      INNER JOIN periodos p ON p.id = l.periodo_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+    `, [chaveInicial, chaveFinal])
+
+    const [[extratos]] = await db.query(`
+      SELECT
+        COUNT(*) AS registros,
+        COALESCE(SUM(CASE WHEN e.valor > 0 THEN e.valor ELSE 0 END), 0) AS entradas,
+        COALESCE(SUM(CASE WHEN e.valor < 0 THEN ABS(e.valor) ELSE 0 END), 0) AS saidas,
+        COALESCE(SUM(e.valor), 0) AS saldo
+      FROM extratos_bancarios e
+      INNER JOIN periodos p ON p.id = e.periodo_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+    `, [chaveInicial, chaveFinal])
+
+    res.json({
+      ok: true,
+      resumo: {
+        compras: {
+          registros: Number(compras.registros || 0),
+          quantidade: Number(compras.quantidade || 0),
+          valorTotal: Number(compras.valor_total || 0),
+        },
+        lmc: {
+          registros: Number(lmc.registros || 0),
+          quantidadeVendas: Number(lmc.quantidade_vendas || 0),
+          valorVendas: Number(lmc.valor_vendas || 0),
+        },
+        extratos: {
+          registros: Number(extratos.registros || 0),
+          entradas: Number(extratos.entradas || 0),
+          saidas: Number(extratos.saidas || 0),
+          saldo: Number(extratos.saldo || 0),
+        },
+      },
+    })
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message })
+  }
+}
+
+app.get('/api/dados-gravados', consultarResumoDadosGravados)
+
+app.get('/api/compras', async (req, res) => {
+  try {
+    const { chaveInicial, chaveFinal } = obterIntervaloCompetencias(req)
+    const [dados] = await db.query(`
+      SELECT
+        c.id,
+        DATE_FORMAT(c.data_emissao, '%d/%m/%Y') AS data_emissao,
+        pr.nome AS produto,
+        f.nome AS fornecedor,
+        c.numero_nf,
+        c.custo,
+        c.quantidade,
+        c.valor_total
+      FROM compras c
+      INNER JOIN periodos p ON p.id = c.periodo_id
+      LEFT JOIN produtos pr ON pr.id = c.produto_id
+      LEFT JOIN fornecedores f ON f.id = c.fornecedor_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+      ORDER BY c.data_emissao ASC, pr.nome ASC, c.numero_nf ASC
+    `, [chaveInicial, chaveFinal])
+
+    res.json({ ok: true, dados })
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message })
+  }
+})
+
+app.get('/api/lmc', async (req, res) => {
+  try {
+    const { chaveInicial, chaveFinal } = obterIntervaloCompetencias(req)
+    const [dados] = await db.query(`
+      SELECT
+        l.id,
+        DATE_FORMAT(l.data_movimento, '%d/%m/%Y') AS data_movimento,
+        pr.nome AS produto,
+        l.estoque_abertura,
+        l.quantidade_vendas,
+        l.valor_vendas,
+        l.ajuste_quantidade,
+        l.estoque_fechamento
+      FROM lmc_movimentos l
+      INNER JOIN periodos p ON p.id = l.periodo_id
+      LEFT JOIN produtos pr ON pr.id = l.produto_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+      ORDER BY l.data_movimento ASC, pr.nome ASC
+    `, [chaveInicial, chaveFinal])
+
+    res.json({ ok: true, dados })
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message })
+  }
+})
+
+async function consultarExtratosPorOrigem(req, res, origem) {
+  try {
+    const { chaveInicial, chaveFinal } = obterIntervaloCompetencias(req)
+    const [dados] = await db.query(`
+      SELECT
+        e.id,
+        DATE_FORMAT(e.data_lancamento, '%d/%m/%Y') AS data_lancamento,
+        e.descricao_original,
+        e.valor,
+        e.saldo,
+        e.natureza,
+        e.origem
+      FROM extratos_bancarios e
+      INNER JOIN periodos p ON p.id = e.periodo_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+        AND UPPER(e.origem) = ?
+      ORDER BY e.data_lancamento ASC, e.id ASC
+    `, [chaveInicial, chaveFinal, origem])
+
+    res.json({ ok: true, dados })
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message })
+  }
+}
+
+app.get('/api/spot', (req, res) => consultarExtratosPorOrigem(req, res, 'SPOT'))
+app.get('/api/itau', (req, res) => consultarExtratosPorOrigem(req, res, 'ITAU'))
+
+app.delete('/api/competencia/limpar', async (req, res) => {
+  const conn = await db.getConnection()
+
+  try {
+    const senhaInformada = String(req.body?.senha || '')
+    const senhaCorreta = process.env.SENHA_LIMPAR_COMPETENCIA || process.env.ADMIN_DELETE_PASSWORD || 'posto14'
+
+    if (senhaInformada !== senhaCorreta) {
+      return res.status(401).json({ ok: false, erro: 'Senha inválida. Exclusão cancelada.' })
+    }
+
+    const reqFake = {
+      query: {
+        competenciaInicial: req.body?.competenciaInicial || req.body?.competencia,
+        competenciaFinal: req.body?.competenciaFinal || req.body?.competencia,
+      },
+    }
+    const { inicial, final, chaveInicial, chaveFinal } = obterIntervaloCompetencias(reqFake)
+
+    await conn.beginTransaction()
+
+    const [extratos] = await conn.query(`
+      DELETE e FROM extratos_bancarios e
+      INNER JOIN periodos p ON p.id = e.periodo_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+    `, [chaveInicial, chaveFinal])
+
+    const [lmc] = await conn.query(`
+      DELETE l FROM lmc_movimentos l
+      INNER JOIN periodos p ON p.id = l.periodo_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+    `, [chaveInicial, chaveFinal])
+
+    const [compras] = await conn.query(`
+      DELETE c FROM compras c
+      INNER JOIN periodos p ON p.id = c.periodo_id
+      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+    `, [chaveInicial, chaveFinal])
+
+    await conn.commit()
+
+    res.json({
+      ok: true,
+      mensagem: `Período ${inicial} até ${final} limpo com sucesso.`,
+      removidos: {
+        compras: compras.affectedRows || 0,
+        lmc: lmc.affectedRows || 0,
+        extratos: extratos.affectedRows || 0,
+      },
+    })
+  } catch (error) {
+    await conn.rollback().catch(() => {})
+    res.status(400).json({ ok: false, erro: error.message })
+  } finally {
+    conn.release()
+  }
+})
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'docs', 'index.html'))
 })

@@ -10,7 +10,7 @@ import ProductsPage from './pages/public/ProductsPage';
 import { ContactPage } from './pages/public/ContactPage';
 import NotFoundPage from './pages/public/NotFoundPage';
 import LoginPage from './pages/admin/LoginPage';
-import DashboardPage from './pages/admin/DashboardPage';
+import DashboardPage from './pages/admin/DashBoardPage';
 import SettingsAdminPage from './pages/admin/SettingsAdminPage';
 import FinanceiroAdminPage from './pages/admin/FinanceiroAdminPage';
 import EstoqueBancoAdminPage from './pages/admin/EstoqueBancoAdminPage';
