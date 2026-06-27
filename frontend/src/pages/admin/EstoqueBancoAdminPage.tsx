@@ -2,36 +2,25 @@ import { useEffect, useMemo, useState } from 'react';
 
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
-const MESES = [
-  { aba: 'Set25', nome: 'Setembro/2025', ordem: 202509 },
-  { aba: 'Out25', nome: 'Outubro/2025', ordem: 202510 },
-  { aba: 'Nov25', nome: 'Novembro/2025', ordem: 202511 },
-  { aba: 'Dez25', nome: 'Dezembro/2025', ordem: 202512 },
-  { aba: 'Jan26', nome: 'Janeiro/2026', ordem: 202601 },
-  { aba: 'Fev26', nome: 'Fevereiro/2026', ordem: 202602 },
-  { aba: 'Mar26', nome: 'Março/2026', ordem: 202603 },
-  { aba: 'Abr26', nome: 'Abril/2026', ordem: 202604 },
-  { aba: 'Mai26', nome: 'Maio/2026', ordem: 202605 },
-  { aba: 'Jun26', nome: 'Junho/2026', ordem: 202606 },
-  { aba: 'Jul26', nome: 'Julho/2026', ordem: 202607 },
-  { aba: 'Ago26', nome: 'Agosto/2026', ordem: 202608 },
-  { aba: 'Set26', nome: 'Setembro/2026', ordem: 202609 },
-  { aba: 'Out26', nome: 'Outubro/2026', ordem: 202610 },
-  { aba: 'Nov26', nome: 'Novembro/2026', ordem: 202611 },
-  { aba: 'Dez26', nome: 'Dezembro/2026', ordem: 202612 },
-];
+const dataIso = (data: Date) => data.toISOString().slice(0, 10);
+const primeiroDiaMesAtual = () => {
+  const agora = new Date();
+  return dataIso(new Date(agora.getFullYear(), agora.getMonth(), 1));
+};
+const ultimoDiaMesAtual = () => {
+  const agora = new Date();
+  return dataIso(new Date(agora.getFullYear(), agora.getMonth() + 1, 0));
+};
+const dataBR = (dataIsoTexto: string) => {
+  if (!dataIsoTexto) return '';
+  const [ano, mes, dia] = dataIsoTexto.split('-');
+  return `${dia}/${mes}/${ano}`;
+};
 
 const moeda = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const valorMonetario = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const custoDecimal = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6, maximumFractionDigits: 6 });
 const numero = (valor: any) => Number(valor || 0).toLocaleString('pt-BR');
-const ordemCompetencia = (codigo: string) => MESES.find((mes) => mes.aba === codigo)?.ordem || 0;
-
-const obterCompetenciaAtual = () => {
-  const agora = new Date();
-  const ordemAtual = agora.getFullYear() * 100 + (agora.getMonth() + 1);
-  return MESES.find((mes) => mes.ordem === ordemAtual)?.aba || 'Jun26';
-};
 
 const textoFixo = (valor: any, largura: number) => String(valor ?? '').slice(0, largura).padEnd(largura, ' ');
 const textoNumero = (valor: any, largura: number) => String(valor ?? '').slice(0, largura).padStart(largura, ' ');
@@ -56,26 +45,25 @@ export default function EstoqueBancoAdminPage() {
   const [importandoDados, setImportandoDados] = useState(false);
   const [spot, setSpot] = useState<any[]>([]);
   const [itau, setItau] = useState<any[]>([]);
-  const competenciaAtual = obterCompetenciaAtual();
-  const [competenciaInicial, setCompetenciaInicial] = useState(competenciaAtual);
-  const [competenciaFinal, setCompetenciaFinal] = useState(competenciaAtual);
+  const [dataInicial, setDataInicial] = useState(primeiroDiaMesAtual());
+  const [dataFinal, setDataFinal] = useState(ultimoDiaMesAtual());
   const [dadosGravados, setDadosGravados] = useState<any>(null);
 
   const periodoSelecionado = useMemo(() => {
-    return `competenciaInicial=${encodeURIComponent(competenciaInicial)}&competenciaFinal=${encodeURIComponent(competenciaFinal)}`;
-  }, [competenciaInicial, competenciaFinal]);
+    return `dataInicial=${encodeURIComponent(dataInicial)}&dataFinal=${encodeURIComponent(dataFinal)}`;
+  }, [dataInicial, dataFinal]);
 
-  function ajustarCompetenciaInicial(valor: string) {
-    setCompetenciaInicial(valor);
-    if (ordemCompetencia(valor) > ordemCompetencia(competenciaFinal)) {
-      setCompetenciaFinal(valor);
+  function ajustarDataInicial(valor: string) {
+    setDataInicial(valor);
+    if (valor > dataFinal) {
+      setDataFinal(valor);
     }
   }
 
-  function ajustarCompetenciaFinal(valor: string) {
-    setCompetenciaFinal(valor);
-    if (ordemCompetencia(valor) < ordemCompetencia(competenciaInicial)) {
-      setCompetenciaInicial(valor);
+  function ajustarDataFinal(valor: string) {
+    setDataFinal(valor);
+    if (valor < dataInicial) {
+      setDataInicial(valor);
     }
   }
 
@@ -170,9 +158,10 @@ export default function EstoqueBancoAdminPage() {
     }
   }
 
-  async function limparCompetencia() {
+  async function limparPeriodo(tipo: 'vendas' | 'compras' | 'spot' | 'itau', descricao: string) {
+    const periodoTexto = `${dataBR(dataInicial)} até ${dataBR(dataFinal)}`;
     const confirmar = window.confirm(
-      `Tem certeza que deseja limpar todos os dados do período ${competenciaInicial} até ${competenciaFinal}? Essa ação não pode ser desfeita.`
+      `Tem certeza que deseja limpar ${descricao} do período ${periodoTexto}? Essa ação não pode ser desfeita.`
     );
 
     if (!confirmar) return;
@@ -185,12 +174,12 @@ export default function EstoqueBancoAdminPage() {
 
     try {
       setImportandoDados(true);
-      setMensagem(`Limpando período ${competenciaInicial} até ${competenciaFinal}...`);
+      setMensagem(`Limpando ${descricao} do período ${periodoTexto}...`);
 
-      const response = await fetch(`${API_BASE}/competencia/limpar`, {
+      const response = await fetch(`${API_BASE}/periodo/limpar`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ competenciaInicial, competenciaFinal, senha }),
+        body: JSON.stringify({ tipo, dataInicial, dataFinal, senha }),
       });
 
       const json = await response.json();
@@ -199,10 +188,7 @@ export default function EstoqueBancoAdminPage() {
         throw new Error(json.erro || 'Erro ao limpar período.');
       }
 
-      setMensagem(
-        `${json.mensagem} Removidos: compras ${json.removidos.compras}, vendas ${json.removidos.lmc}, extratos ${json.removidos.extratos}.`
-      );
-
+      setMensagem(`${json.mensagem} Removidos: ${json.removidos || 0} registros.`);
       carregarTodosDados();
     } catch (error) {
       setMensagem(error instanceof Error ? error.message : 'Erro ao limpar período.');
@@ -224,61 +210,61 @@ export default function EstoqueBancoAdminPage() {
 
       <section className="admin-tool-card">
         <div className="admin-tool-section-title">
-          <h2>Período de competências</h2>
-          <span>Filtrar dados gravados no banco por intervalo de meses.</span>
+          <h2>Período por data</h2>
+          <span>Filtrar dados gravados no banco por data inicial e data final.</span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
           <label>
-            <strong>Competência inicial</strong>
-            <select className="admin-tool-select" value={competenciaInicial} onChange={(e) => ajustarCompetenciaInicial(e.target.value)}>
-              {MESES.map((mes) => (
-                <option key={mes.aba} value={mes.aba}>{mes.nome} — {mes.aba}</option>
-              ))}
-            </select>
+            <strong>Data inicial</strong>
+            <input className="admin-tool-select" type="date" value={dataInicial} onChange={(e) => ajustarDataInicial(e.target.value)} />
           </label>
 
           <label>
-            <strong>Competência final</strong>
-            <select className="admin-tool-select" value={competenciaFinal} onChange={(e) => ajustarCompetenciaFinal(e.target.value)}>
-              {MESES.map((mes) => (
-                <option key={mes.aba} value={mes.aba}>{mes.nome} — {mes.aba}</option>
-              ))}
-            </select>
+            <strong>Data final</strong>
+            <input className="admin-tool-select" type="date" value={dataFinal} onChange={(e) => ajustarDataFinal(e.target.value)} />
           </label>
-
-          <button type="button" className="admin-primary-button" onClick={limparCompetencia} style={{ whiteSpace: 'nowrap' }}>
-            Limpar período
-          </button>
         </div>
       </section>
 
       <form onSubmit={importarPdfs} className="admin-tool-card admin-tool-form">
         <div className="admin-tool-grid">
-          <label className="admin-upload-card">
+          <div className="admin-upload-card">
             <strong>PDF Vendas</strong>
-            <span>Livro de Movimentação de Combustíveis</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <span>Livro de Movimentação de Combustíveis</span>
+              <button type="button" className="admin-link-button" onClick={() => limparPeriodo('vendas', 'vendas')}>limpar vendas do período</button>
+            </div>
             <input type="file" accept="application/pdf" onChange={(e) => setArquivoLmc(e.target.files?.[0] || null)} />
             {arquivoLmc && <small>{arquivoLmc.name}</small>}
-          </label>
-          <label className="admin-upload-card">
+          </div>
+          <div className="admin-upload-card">
             <strong>PDF Compras</strong>
-            <span>Notas e compras de combustível</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <span>Notas e compras de combustível</span>
+              <button type="button" className="admin-link-button" onClick={() => limparPeriodo('compras', 'compras')}>limpar compras do período</button>
+            </div>
             <input type="file" accept="application/pdf" onChange={(e) => setArquivoCompras(e.target.files?.[0] || null)} />
             {arquivoCompras && <small>{arquivoCompras.name}</small>}
-          </label>
-          <label className="admin-upload-card">
+          </div>
+          <div className="admin-upload-card">
             <strong>PDF Extrato SPOT</strong>
-            <span>Movimentação bancária SPOT</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <span>Movimentação bancária SPOT</span>
+              <button type="button" className="admin-link-button" onClick={() => limparPeriodo('spot', 'extrato SPOT')}>limpar extrato do período</button>
+            </div>
             <input type="file" accept="application/pdf" onChange={(e) => setArquivoSpot(e.target.files?.[0] || null)} />
             {arquivoSpot && <small>{arquivoSpot.name}</small>}
-          </label>
-          <label className="admin-upload-card">
+          </div>
+          <div className="admin-upload-card">
             <strong>PDF Extrato Itaú</strong>
-            <span>Movimentação bancária Itaú</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <span>Movimentação bancária Itaú</span>
+              <button type="button" className="admin-link-button" onClick={() => limparPeriodo('itau', 'extrato Itaú')}>limpar extrato do período</button>
+            </div>
             <input type="file" accept="application/pdf" onChange={(e) => setArquivoItau(e.target.files?.[0] || null)} />
             {arquivoItau && <small>{arquivoItau.name}</small>}
-          </label>
+          </div>
         </div>
 
         <button className="admin-primary-button" type="submit" disabled={importando}>
@@ -290,7 +276,7 @@ export default function EstoqueBancoAdminPage() {
 
       <section className="admin-tool-card" style={{ marginTop: 24, maxWidth: '100%', overflow: 'hidden' }}>
         <h2>Dados gravados no banco</h2>
-        <p style={{ marginTop: -6 }}>Período selecionado: <strong>{competenciaInicial}</strong> até <strong>{competenciaFinal}</strong></p>
+        <p style={{ marginTop: -6 }}>Período selecionado: <strong>{dataBR(dataInicial)}</strong> até <strong>{dataBR(dataFinal)}</strong></p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, margin: '16px 0' }}>
           <div className="admin-upload-card">

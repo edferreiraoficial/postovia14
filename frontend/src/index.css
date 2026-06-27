@@ -989,3 +989,29 @@ body { font-family: 'Segoe UI', sans-serif; color: var(--text); line-height: 1.6
     font-size: 0.9rem;
   }
 }
+.admin-link-button {
+  border: 0;
+  background: transparent;
+  color: #1F4F73;
+  cursor: pointer;
+  font-weight: 800;
+  text-align: right;
+  padding: 0;
+  white-space: nowrap;
+  text-decoration: underline;
+}
+
+.admin-link-button:hover {
+  color: #0F3554;
+}
+
+.admin-tool-select,
+.admin-tool-form input[type='date'] {
+  width: 100%;
+  border: 1px solid #CBD5E1;
+  border-radius: 16px;
+  padding: 14px 16px;
+  color: #0F172A;
+  background: #fff;
+  font-size: 1rem;
+}

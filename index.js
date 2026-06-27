@@ -399,55 +399,39 @@ app.get('/api/dashboard/resumo', async (req, res) => {
   }
 })
 
-function codigoCompetenciaParaAnoMes(codigo) {
-  const meses = {
-    Jan: 1, Fev: 2, Mar: 3, Abr: 4, Mai: 5, Jun: 6,
-    Jul: 7, Ago: 8, Set: 9, Out: 10, Nov: 11, Dez: 12,
+
+function dataIsoValida(valor, nomeCampo) {
+  const texto = String(valor || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
+    throw new Error(`${nomeCampo} inválida.`)
   }
 
-  const texto = String(codigo || '').trim()
-  const mesTexto = texto.slice(0, 3)
-  const anoTexto = texto.slice(3)
-  const mes = meses[mesTexto]
-  const ano = 2000 + Number(anoTexto)
-
-  if (!mes || !anoTexto || Number.isNaN(ano)) {
-    throw new Error(`Competência inválida: ${codigo}`)
+  const data = new Date(`${texto}T00:00:00`)
+  if (Number.isNaN(data.getTime()) || data.toISOString().slice(0, 10) !== texto) {
+    throw new Error(`${nomeCampo} inválida.`)
   }
 
-  return { ano, mes, chave: ano * 100 + mes }
+  return texto
 }
 
-function obterIntervaloCompetencias(req) {
-  const inicial = req.query.competenciaInicial || req.query.competencia || 'Mar26'
-  const final = req.query.competenciaFinal || req.query.competencia || inicial
-  const ini = codigoCompetenciaParaAnoMes(inicial)
-  const fim = codigoCompetenciaParaAnoMes(final)
+function obterIntervaloDatas(req) {
+  const hoje = new Date()
+  const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10)
+  const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10)
 
-  if (ini.chave > fim.chave) {
-    throw new Error('A competência inicial não pode ser maior que a competência final.')
+  const dataInicial = dataIsoValida(req.query.dataInicial || req.body?.dataInicial || primeiroDiaMes, 'Data inicial')
+  const dataFinal = dataIsoValida(req.query.dataFinal || req.body?.dataFinal || ultimoDiaMes, 'Data final')
+
+  if (dataInicial > dataFinal) {
+    throw new Error('A data inicial não pode ser maior que a data final.')
   }
 
-  const dataInicial = `${ini.ano}-${String(ini.mes).padStart(2, '0')}-01`
-  const dataFinal = new Date(fim.ano, fim.mes, 0).toISOString().slice(0, 10)
-
-  return {
-    inicial,
-    final,
-    chaveInicial: ini.chave,
-    chaveFinal: fim.chave,
-    anoInicial: ini.ano,
-    mesInicial: ini.mes,
-    anoFinal: fim.ano,
-    mesFinal: fim.mes,
-    dataInicial,
-    dataFinal,
-  }
+  return { dataInicial, dataFinal }
 }
 
 async function consultarResumoDadosGravados(req, res) {
   try {
-    const { chaveInicial, chaveFinal } = obterIntervaloCompetencias(req)
+    const { dataInicial, dataFinal } = obterIntervaloDatas(req)
 
     const [[compras]] = await db.query(`
       SELECT
@@ -455,9 +439,8 @@ async function consultarResumoDadosGravados(req, res) {
         COALESCE(SUM(c.quantidade), 0) AS quantidade,
         COALESCE(SUM(c.valor_total), 0) AS valor_total
       FROM compras c
-      INNER JOIN periodos p ON p.id = c.periodo_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
-    `, [chaveInicial, chaveFinal])
+      WHERE c.data_emissao BETWEEN ? AND ?
+    `, [dataInicial, dataFinal])
 
     const [[lmc]] = await db.query(`
       SELECT
@@ -465,9 +448,8 @@ async function consultarResumoDadosGravados(req, res) {
         COALESCE(SUM(l.quantidade_vendas), 0) AS quantidade_vendas,
         COALESCE(SUM(l.valor_vendas), 0) AS valor_vendas
       FROM lmc_movimentos l
-      INNER JOIN periodos p ON p.id = l.periodo_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
-    `, [chaveInicial, chaveFinal])
+      WHERE l.data_movimento BETWEEN ? AND ?
+    `, [dataInicial, dataFinal])
 
     const [[extratos]] = await db.query(`
       SELECT
@@ -476,9 +458,8 @@ async function consultarResumoDadosGravados(req, res) {
         COALESCE(SUM(CASE WHEN e.valor < 0 THEN ABS(e.valor) ELSE 0 END), 0) AS saidas,
         COALESCE(SUM(e.valor), 0) AS saldo
       FROM extratos_bancarios e
-      INNER JOIN periodos p ON p.id = e.periodo_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
-    `, [chaveInicial, chaveFinal])
+      WHERE e.data_lancamento BETWEEN ? AND ?
+    `, [dataInicial, dataFinal])
 
     res.json({
       ok: true,
@@ -510,7 +491,7 @@ app.get('/api/dados-gravados', consultarResumoDadosGravados)
 
 app.get('/api/compras', async (req, res) => {
   try {
-    const { chaveInicial, chaveFinal } = obterIntervaloCompetencias(req)
+    const { dataInicial, dataFinal } = obterIntervaloDatas(req)
     const [dados] = await db.query(`
       SELECT
         c.id,
@@ -522,12 +503,11 @@ app.get('/api/compras', async (req, res) => {
         c.quantidade,
         c.valor_total
       FROM compras c
-      INNER JOIN periodos p ON p.id = c.periodo_id
       LEFT JOIN produtos pr ON pr.id = c.produto_id
       LEFT JOIN fornecedores f ON f.id = c.fornecedor_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+      WHERE c.data_emissao BETWEEN ? AND ?
       ORDER BY c.data_emissao ASC, pr.nome ASC, c.numero_nf ASC
-    `, [chaveInicial, chaveFinal])
+    `, [dataInicial, dataFinal])
 
     res.json({ ok: true, dados })
   } catch (error) {
@@ -537,7 +517,7 @@ app.get('/api/compras', async (req, res) => {
 
 app.get('/api/lmc', async (req, res) => {
   try {
-    const { chaveInicial, chaveFinal } = obterIntervaloCompetencias(req)
+    const { dataInicial, dataFinal } = obterIntervaloDatas(req)
     const [dados] = await db.query(`
       SELECT
         l.id,
@@ -549,11 +529,10 @@ app.get('/api/lmc', async (req, res) => {
         l.ajuste_quantidade,
         l.estoque_fechamento
       FROM lmc_movimentos l
-      INNER JOIN periodos p ON p.id = l.periodo_id
       LEFT JOIN produtos pr ON pr.id = l.produto_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+      WHERE l.data_movimento BETWEEN ? AND ?
       ORDER BY l.data_movimento ASC, pr.nome ASC
-    `, [chaveInicial, chaveFinal])
+    `, [dataInicial, dataFinal])
 
     res.json({ ok: true, dados })
   } catch (error) {
@@ -563,7 +542,7 @@ app.get('/api/lmc', async (req, res) => {
 
 async function consultarExtratosPorOrigem(req, res, origem) {
   try {
-    const { chaveInicial, chaveFinal, dataInicial } = obterIntervaloCompetencias(req)
+    const { dataInicial, dataFinal } = obterIntervaloDatas(req)
 
     const [saldoAnterior] = await db.query(`
       SELECT
@@ -595,11 +574,12 @@ async function consultarExtratosPorOrigem(req, res, origem) {
         e.origem,
         1 AS ordem_extra
       FROM extratos_bancarios e
-      INNER JOIN periodos p ON p.id = e.periodo_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
+      WHERE e.data_lancamento BETWEEN ? AND ?
         AND UPPER(e.origem) = ?
-      ORDER BY e.data_lancamento ASC, e.id ASC
-    `, [chaveInicial, chaveFinal, origem])
+      ORDER BY e.data_lancamento ASC,
+        CASE WHEN UPPER(e.natureza) = 'SALDO' OR UPPER(e.descricao_original) LIKE 'SALDO DO DIA%' THEN 2 ELSE 1 END,
+        e.id ASC
+    `, [dataInicial, dataFinal, origem])
 
     const dados = [...saldoAnterior, ...dadosPeriodo].map((item) => ({
       ...item,
@@ -615,7 +595,7 @@ async function consultarExtratosPorOrigem(req, res, origem) {
 app.get('/api/spot', (req, res) => consultarExtratosPorOrigem(req, res, 'SPOT'))
 app.get('/api/itau', (req, res) => consultarExtratosPorOrigem(req, res, 'ITAU'))
 
-app.delete('/api/competencia/limpar', async (req, res) => {
+app.delete('/api/periodo/limpar', async (req, res) => {
   const conn = await db.getConnection()
 
   try {
@@ -626,44 +606,53 @@ app.delete('/api/competencia/limpar', async (req, res) => {
       return res.status(401).json({ ok: false, erro: 'Senha inválida. Exclusão cancelada.' })
     }
 
-    const reqFake = {
-      query: {
-        competenciaInicial: req.body?.competenciaInicial || req.body?.competencia,
-        competenciaFinal: req.body?.competenciaFinal || req.body?.competencia,
-      },
+    const { dataInicial, dataFinal } = obterIntervaloDatas(req)
+    const tipo = String(req.body?.tipo || '').toLowerCase()
+
+    if (!['vendas', 'compras', 'spot', 'itau'].includes(tipo)) {
+      throw new Error('Tipo de limpeza inválido.')
     }
-    const { inicial, final, chaveInicial, chaveFinal } = obterIntervaloCompetencias(reqFake)
 
     await conn.beginTransaction()
 
-    const [extratos] = await conn.query(`
-      DELETE e FROM extratos_bancarios e
-      INNER JOIN periodos p ON p.id = e.periodo_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
-    `, [chaveInicial, chaveFinal])
+    let removidos = 0
+    let descricao = ''
 
-    const [lmc] = await conn.query(`
-      DELETE l FROM lmc_movimentos l
-      INNER JOIN periodos p ON p.id = l.periodo_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
-    `, [chaveInicial, chaveFinal])
+    if (tipo === 'vendas') {
+      const [resultado] = await conn.query(`
+        DELETE FROM lmc_movimentos
+        WHERE data_movimento BETWEEN ? AND ?
+      `, [dataInicial, dataFinal])
+      removidos = resultado.affectedRows || 0
+      descricao = 'vendas'
+    }
 
-    const [compras] = await conn.query(`
-      DELETE c FROM compras c
-      INNER JOIN periodos p ON p.id = c.periodo_id
-      WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
-    `, [chaveInicial, chaveFinal])
+    if (tipo === 'compras') {
+      const [resultado] = await conn.query(`
+        DELETE FROM compras
+        WHERE data_emissao BETWEEN ? AND ?
+      `, [dataInicial, dataFinal])
+      removidos = resultado.affectedRows || 0
+      descricao = 'compras'
+    }
+
+    if (tipo === 'spot' || tipo === 'itau') {
+      const origem = tipo === 'spot' ? 'SPOT' : 'ITAU'
+      const [resultado] = await conn.query(`
+        DELETE FROM extratos_bancarios
+        WHERE data_lancamento BETWEEN ? AND ?
+          AND UPPER(origem) = ?
+      `, [dataInicial, dataFinal, origem])
+      removidos = resultado.affectedRows || 0
+      descricao = tipo === 'spot' ? 'extrato SPOT' : 'extrato Itaú'
+    }
 
     await conn.commit()
 
     res.json({
       ok: true,
-      mensagem: `Período ${inicial} até ${final} limpo com sucesso.`,
-      removidos: {
-        compras: compras.affectedRows || 0,
-        lmc: lmc.affectedRows || 0,
-        extratos: extratos.affectedRows || 0,
-      },
+      mensagem: `Limpeza de ${descricao} realizada de ${dataInicial} até ${dataFinal}.`,
+      removidos,
     })
   } catch (error) {
     await conn.rollback().catch(() => {})
@@ -672,7 +661,6 @@ app.delete('/api/competencia/limpar', async (req, res) => {
     conn.release()
   }
 })
-
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'docs', 'index.html'))
 })
