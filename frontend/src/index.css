@@ -994,7 +994,7 @@ body { font-family: 'Segoe UI', sans-serif; color: var(--text); line-height: 1.6
   background: transparent;
   color: #1F4F73;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 400;
   text-align: right;
   padding: 0;
   white-space: nowrap;

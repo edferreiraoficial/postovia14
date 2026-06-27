@@ -600,7 +600,7 @@ app.delete('/api/periodo/limpar', async (req, res) => {
 
   try {
     const senhaInformada = String(req.body?.senha || '')
-    const senhaCorreta = process.env.SENHA_LIMPAR_COMPETENCIA || process.env.ADMIN_DELETE_PASSWORD || 'posto14'
+    const senhaCorreta = process.env.SENHA_ADMIN || 'posto14'
 
     if (senhaInformada !== senhaCorreta) {
       return res.status(401).json({ ok: false, erro: 'Senha inválida. Exclusão cancelada.' })
