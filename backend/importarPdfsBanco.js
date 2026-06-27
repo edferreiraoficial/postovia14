@@ -832,31 +832,53 @@ function montarLinhasBancoAgrupado(lancamentos, banco) {
       })
     }
 
-    if (depDinAtm.length) {
-      saida.push({
-        data,
-        descricao: 'Dep Din ATM',
-        valor: somar(depDinAtm),
-        saldo: null,
-      })
-    }
+    if (banco === 'ITAU') {
+      const totalPixDia = [...pixQrs, ...pixTransf]
 
-    if (pixQrs.length) {
-      saida.push({
-        data,
-        descricao: 'Pix QRS',
-        valor: somar(pixQrs),
-        saldo: null,
-      })
-    }
+      if (totalPixDia.length) {
+        saida.push({
+          data,
+          descricao: 'Total Pix no dia',
+          valor: somar(totalPixDia),
+          saldo: null,
+        })
+      }
 
-    if (pixTransf.length) {
-      saida.push({
-        data,
-        descricao: 'Pix Transf',
-        valor: somar(pixTransf),
-        saldo: null,
-      })
+      if (depDinAtm.length) {
+        saida.push({
+          data,
+          descricao: 'Total Dep Dinheiro ATM',
+          valor: somar(depDinAtm),
+          saldo: null,
+        })
+      }
+    } else {
+      if (depDinAtm.length) {
+        saida.push({
+          data,
+          descricao: 'Dep Din ATM',
+          valor: somar(depDinAtm),
+          saldo: null,
+        })
+      }
+
+      if (pixQrs.length) {
+        saida.push({
+          data,
+          descricao: 'Pix QRS',
+          valor: somar(pixQrs),
+          saldo: null,
+        })
+      }
+
+      if (pixTransf.length) {
+        saida.push({
+          data,
+          descricao: 'Pix Transf',
+          valor: somar(pixTransf),
+          saldo: null,
+        })
+      }
     }
 
     demais.forEach(linha => {

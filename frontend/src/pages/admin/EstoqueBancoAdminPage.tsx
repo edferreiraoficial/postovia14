@@ -391,8 +391,8 @@ export default function EstoqueBancoAdminPage() {
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
                   <th style={{ ...estilosColunas.esquerda, width: '61ch' }}>Descrição</th>
                   <th style={{ ...estilosColunas.direita, width: '15ch' }}>Natureza</th>
-                  <th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th>
-                  <th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th>
+                  <th style={{ ...estilosColunas.direita, width: '14ch' }}>Valor</th>
+                  <th style={{ ...estilosColunas.direita, width: '14ch' }}>Saldo</th>
                 </tr>
               </thead>
               <tbody>
@@ -401,8 +401,8 @@ export default function EstoqueBancoAdminPage() {
                     <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(item.natureza, 13) + '  '}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 14)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -419,8 +419,8 @@ export default function EstoqueBancoAdminPage() {
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
                   <th style={{ ...estilosColunas.esquerda, width: '61ch' }}>Descrição</th>
                   <th style={{ ...estilosColunas.direita, width: '15ch' }}>Natureza</th>
-                  <th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th>
-                  <th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th>
+                  <th style={{ ...estilosColunas.direita, width: '14ch' }}>Valor</th>
+                  <th style={{ ...estilosColunas.direita, width: '14ch' }}>Saldo</th>
                 </tr>
               </thead>
               <tbody>
@@ -429,8 +429,8 @@ export default function EstoqueBancoAdminPage() {
                     <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(item.natureza, 13) + '  '}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 14)}</td>
                   </tr>
                 ))}
               </tbody>
