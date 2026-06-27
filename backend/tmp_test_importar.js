@@ -1065,7 +1065,7 @@ function extrairLancamentosItauPorPagina(texto) {
   return lancamentos
 }
 
-async function extrairDadosBanco(arquivoBanco, banco) {
+export async function extrairDadosBanco(arquivoBanco, banco) {
   if (!arquivoBanco) return []
 
   let texto = await lerPdf(arquivoBanco)
