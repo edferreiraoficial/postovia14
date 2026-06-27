@@ -12,11 +12,17 @@ import { gerarPlanilhaAuxiliarDoBanco } from './backend/gerarAuxiliarBanco.js'
 import { importarPdfsBanco } from './backend/importarPdfsBanco.js'
 import { processarPlanilhas } from './backend/processar.js'
 
+dotenv.config()
+
 const app = express()
 const PORT = process.env.PORT || 3001
 const upload = multer({ storage: multer.memoryStorage() })
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+app.use(cors())
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true }))
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -599,8 +605,8 @@ app.delete('/api/periodo/limpar', async (req, res) => {
   const conn = await db.getConnection()
 
   try {
-    const senhaInformada = String(req.body?.senha || '')
-    const senhaCorreta = process.env.SENHA_ADMIN || 'posto14'
+    const senhaInformada = String(req.body?.senha || '').trim()
+    const senhaCorreta = String(process.env.SENHA_ADMIN || process.env.SENHA_LIMPAR_COMPETENCIA || 'posto14').trim()
 
     if (senhaInformada !== senhaCorreta) {
       return res.status(401).json({ ok: false, erro: 'Senha inválida. Exclusão cancelada.' })
