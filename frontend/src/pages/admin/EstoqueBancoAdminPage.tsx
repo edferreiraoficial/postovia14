@@ -33,8 +33,8 @@ const obterCompetenciaAtual = () => {
   return MESES.find((mes) => mes.ordem === ordemAtual)?.aba || 'Jun26';
 };
 
-const textoFixo = (valor: any, largura: number) => String(valor ?? '').padEnd(largura, ' ');
-const textoNumero = (valor: any, largura: number) => String(valor ?? '').padStart(largura, ' ');
+const textoFixo = (valor: any, largura: number) => String(valor ?? '').slice(0, largura).padEnd(largura, ' ');
+const textoNumero = (valor: any, largura: number) => String(valor ?? '').slice(0, largura).padStart(largura, ' ');
 
 const estilosColunas = {
   esquerda: { textAlign: 'left' as const, fontFamily: 'Consolas, "Courier New", monospace', whiteSpace: 'pre' as const },
@@ -286,7 +286,7 @@ export default function EstoqueBancoAdminPage() {
 
       {mensagem && <p className="admin-tool-message">{mensagem}</p>}
 
-      <section className="admin-tool-card" style={{ marginTop: 24 }}>
+      <section className="admin-tool-card" style={{ marginTop: 24, maxWidth: '100%', overflow: 'hidden' }}>
         <h2>Dados gravados no banco</h2>
         <p style={{ marginTop: -6 }}>Período selecionado: <strong>{competenciaInicial}</strong> até <strong>{competenciaFinal}</strong></p>
 
@@ -319,7 +319,7 @@ export default function EstoqueBancoAdminPage() {
         {importandoDados && <p>Carregando dados...</p>}
 
         {abaAtiva === 'compras' && (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
             <h3>Compras</h3>
             <table className="admin-table admin-fixed-table">
               <thead>
@@ -351,7 +351,7 @@ export default function EstoqueBancoAdminPage() {
         )}
 
         {abaAtiva === 'lmc' && (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
             <h3>Vendas</h3>
             <table className="admin-table admin-fixed-table">
               <thead>
@@ -383,14 +383,14 @@ export default function EstoqueBancoAdminPage() {
         )}
 
         {abaAtiva === 'spot' && (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
             <h3>SPOT</h3>
             <table className="admin-table admin-fixed-table">
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
                   <th style={{ ...estilosColunas.esquerda, width: '61ch' }}>Descrição</th>
-                  <th style={{ ...estilosColunas.direita, width: '14ch' }}>Natureza</th>
+                  <th style={{ ...estilosColunas.direita, width: '15ch' }}>Natureza</th>
                   <th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th>
                   <th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th>
                 </tr>
@@ -400,7 +400,7 @@ export default function EstoqueBancoAdminPage() {
                   <tr key={item.id}>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(item.natureza, 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(item.natureza, 13) + '  '}</td>
                     <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td>
                   </tr>
@@ -411,14 +411,14 @@ export default function EstoqueBancoAdminPage() {
         )}
 
         {abaAtiva === 'itau' && (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
             <h3>Itaú</h3>
             <table className="admin-table admin-fixed-table">
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
                   <th style={{ ...estilosColunas.esquerda, width: '61ch' }}>Descrição</th>
-                  <th style={{ ...estilosColunas.direita, width: '14ch' }}>Natureza</th>
+                  <th style={{ ...estilosColunas.direita, width: '15ch' }}>Natureza</th>
                   <th style={{ ...estilosColunas.direita, width: '21ch' }}>Valor</th>
                   <th style={{ ...estilosColunas.direita, width: '21ch' }}>Saldo</th>
                 </tr>
@@ -428,7 +428,7 @@ export default function EstoqueBancoAdminPage() {
                   <tr key={item.id}>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(item.natureza, 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(item.natureza, 13) + '  '}</td>
                     <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 21)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 21)}</td>
                   </tr>
