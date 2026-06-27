@@ -249,22 +249,52 @@ export async function salvarExtratosBanco({
     nomeBanco: origem,
   })
 
-  let total = 0
+  const lancamentosPreparados = []
+  const periodosAfetados = new Map()
 
   for (const item of lancamentos) {
     const dataSql = dataBrParaSql(item.data)
-    const valor = item.valor ?? 0
-    const saldo = item.saldo ?? null
+    if (!dataSql) continue
 
     const periodo = periodoId
       ? { id: periodoId }
       : await obterOuCriarPeriodoPorData({ empresaId, data: dataSql })
 
+    lancamentosPreparados.push({
+      ...item,
+      dataSql,
+      periodoId: periodo.id,
+    })
+
+    periodosAfetados.set(periodo.id, true)
+  }
+
+  // Quando a regra de consolidação do Itaú muda, registros antigos individuais
+  // podem continuar no banco por causa do INSERT IGNORE.
+  // Por isso, antes de gravar o Itaú novamente, limpamos somente os períodos
+  // afetados daquele banco e inserimos a versão consolidada correta.
+  if (String(origem).toUpperCase() === 'ITAU' && periodosAfetados.size) {
+    await db.query(
+      `DELETE FROM extratos_bancarios
+       WHERE empresa_id = ?
+         AND origem = ?
+         AND conta_bancaria_id = ?
+         AND periodo_id IN (${Array.from(periodosAfetados).map(() => '?').join(',')})`,
+      [empresaId, origem, contaBancariaId, ...Array.from(periodosAfetados.keys())]
+    )
+  }
+
+  let total = 0
+
+  for (const item of lancamentosPreparados) {
+    const valor = item.valor ?? 0
+    const saldo = item.saldo ?? null
+
     let natureza = 'SALDO'
     if (Number(valor) > 0) natureza = 'ENTRADA'
     if (Number(valor) < 0) natureza = 'SAIDA'
 
-    await db.query(
+    const [resultado] = await db.query(
       `INSERT IGNORE INTO extratos_bancarios (
         empresa_id,
         periodo_id,
@@ -281,9 +311,9 @@ export async function salvarExtratosBanco({
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empresaId,
-        periodo.id,
+        item.periodoId,
         contaBancariaId,
-        dataSql,
+        item.dataSql,
         item.descricao,
         item.descricao,
         item.descricao,
@@ -294,7 +324,7 @@ export async function salvarExtratosBanco({
       ]
     )
 
-    total++
+    total += Number(resultado?.affectedRows || 0)
   }
 
   return total
