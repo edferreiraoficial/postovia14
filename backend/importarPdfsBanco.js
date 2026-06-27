@@ -891,12 +891,12 @@ function montarLinhasBancoAgrupado(lancamentos, banco) {
     })
 
     if (saldoFinalDia) {
-      for (let i = saida.length - 1; i >= inicioDia; i--) {
-        if (saida[i] && saida[i].data === data && saida[i].descricao !== 'Saldo anterior') {
-          saida[i].saldo = saldoFinalDia.saldo
-          break
-        }
-      }
+      saida.push({
+        data,
+        descricao: 'Saldo do dia',
+        valor: null,
+        saldo: saldoFinalDia.saldo,
+      })
     }
   }
 

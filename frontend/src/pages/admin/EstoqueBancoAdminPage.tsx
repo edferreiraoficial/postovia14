@@ -35,6 +35,8 @@ const obterCompetenciaAtual = () => {
 
 const textoFixo = (valor: any, largura: number) => String(valor ?? '').slice(0, largura).padEnd(largura, ' ');
 const textoNumero = (valor: any, largura: number) => String(valor ?? '').slice(0, largura).padStart(largura, ' ');
+const valorExtrato = (item: any) => String(item?.natureza || '').toUpperCase() === 'SALDO' ? '' : valorMonetario(item?.valor);
+const saldoExtrato = (valor: any) => Number(valor || 0) === 0 ? '' : valorMonetario(valor);
 
 const estilosColunas = {
   esquerda: { textAlign: 'left' as const, fontFamily: 'Consolas, "Courier New", monospace', whiteSpace: 'pre' as const },
@@ -401,8 +403,8 @@ export default function EstoqueBancoAdminPage() {
                     <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(item.natureza, 13) + '  '}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 14)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorExtrato(item), 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(saldoExtrato(item.saldo), 14)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -429,8 +431,8 @@ export default function EstoqueBancoAdminPage() {
                     <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(item.natureza, 13) + '  '}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor), 14)}</td>
-                    <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.saldo), 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(valorExtrato(item), 14)}</td>
+                    <td style={estilosColunas.direita}>{textoNumero(saldoExtrato(item.saldo), 14)}</td>
                   </tr>
                 ))}
               </tbody>

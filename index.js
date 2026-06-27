@@ -428,7 +428,21 @@ function obterIntervaloCompetencias(req) {
     throw new Error('A competência inicial não pode ser maior que a competência final.')
   }
 
-  return { inicial, final, chaveInicial: ini.chave, chaveFinal: fim.chave }
+  const dataInicial = `${ini.ano}-${String(ini.mes).padStart(2, '0')}-01`
+  const dataFinal = new Date(fim.ano, fim.mes, 0).toISOString().slice(0, 10)
+
+  return {
+    inicial,
+    final,
+    chaveInicial: ini.chave,
+    chaveFinal: fim.chave,
+    anoInicial: ini.ano,
+    mesInicial: ini.mes,
+    anoFinal: fim.ano,
+    mesFinal: fim.mes,
+    dataInicial,
+    dataFinal,
+  }
 }
 
 async function consultarResumoDadosGravados(req, res) {
@@ -549,8 +563,28 @@ app.get('/api/lmc', async (req, res) => {
 
 async function consultarExtratosPorOrigem(req, res, origem) {
   try {
-    const { chaveInicial, chaveFinal } = obterIntervaloCompetencias(req)
-    const [dados] = await db.query(`
+    const { chaveInicial, chaveFinal, dataInicial } = obterIntervaloCompetencias(req)
+
+    const [saldoAnterior] = await db.query(`
+      SELECT
+        CONCAT('saldo-anterior-', e.id) AS id,
+        DATE_FORMAT(e.data_lancamento, '%d/%m/%Y') AS data_lancamento,
+        'Saldo anterior ao período' AS descricao_original,
+        0 AS valor,
+        e.saldo,
+        'SALDO' AS natureza,
+        e.origem,
+        0 AS ordem_extra
+      FROM extratos_bancarios e
+      WHERE UPPER(e.origem) = ?
+        AND e.data_lancamento < ?
+        AND e.saldo IS NOT NULL
+        AND e.saldo <> 0
+      ORDER BY e.data_lancamento DESC, e.id DESC
+      LIMIT 1
+    `, [origem, dataInicial])
+
+    const [dadosPeriodo] = await db.query(`
       SELECT
         e.id,
         DATE_FORMAT(e.data_lancamento, '%d/%m/%Y') AS data_lancamento,
@@ -558,13 +592,19 @@ async function consultarExtratosPorOrigem(req, res, origem) {
         e.valor,
         e.saldo,
         e.natureza,
-        e.origem
+        e.origem,
+        1 AS ordem_extra
       FROM extratos_bancarios e
       INNER JOIN periodos p ON p.id = e.periodo_id
       WHERE (p.ano * 100 + p.mes) BETWEEN ? AND ?
         AND UPPER(e.origem) = ?
       ORDER BY e.data_lancamento ASC, e.id ASC
     `, [chaveInicial, chaveFinal, origem])
+
+    const dados = [...saldoAnterior, ...dadosPeriodo].map((item) => ({
+      ...item,
+      saldo: Number(item.saldo || 0) === 0 ? null : item.saldo,
+    }))
 
     res.json({ ok: true, dados })
   } catch (error) {
