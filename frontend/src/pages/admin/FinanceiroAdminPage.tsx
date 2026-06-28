@@ -2,24 +2,21 @@ import { useState } from 'react';
 
 const API_BASE = 'http://localhost:3001/api';
 
-const MESES = [
-  { aba: 'Set25', nome: 'Setembro/2025', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Out25', nome: 'Outubro/2025', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Nov25', nome: 'Novembro/2025', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Dez25', nome: 'Dezembro/2025', arquivo: 'Financeiro_Geral.xlsx' },  
-  { aba: 'Jan26', nome: 'Janeiro/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Fev26', nome: 'Fevereiro/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Mar26', nome: 'Março/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Abr26', nome: 'Abril/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Mai26', nome: 'Maio/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Jun26', nome: 'Junho/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Jul26', nome: 'Julho/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Ago26', nome: 'Agosto/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Set26', nome: 'Setembro/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Out26', nome: 'Outubro/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Nov26', nome: 'Novembro/2026', arquivo: 'Financeiro_Geral.xlsx' },
-  { aba: 'Dez26', nome: 'Dezembro/2026', arquivo: 'Financeiro_Geral.xlsx' },
-];
+function primeiroDiaMesAtual() {
+  const hoje = new Date();
+  return new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+}
+
+function ultimoDiaMesAtual() {
+  const hoje = new Date();
+  return new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
+}
+
+function formatarDataBr(dataIso: string) {
+  if (!dataIso) return '';
+  const [ano, mes, dia] = dataIso.split('-');
+  return `${dia}/${mes}/${ano}`;
+}
 
 function baixarBlob(blob: Blob, nome: string) {
   const url = window.URL.createObjectURL(blob);
@@ -34,7 +31,8 @@ function baixarBlob(blob: Blob, nome: string) {
 
 export default function FinanceiroAdminPage() {
   const [principal, setPrincipal] = useState<File | null>(null);
-  const [abaMes, setAbaMes] = useState('Mar26');
+  const [dataInicial, setDataInicial] = useState(primeiroDiaMesAtual());
+  const [dataFinal, setDataFinal] = useState(ultimoDiaMesAtual());
   const [loading, setLoading] = useState(false);
   const [mensagem, setMensagem] = useState('');
 
@@ -45,13 +43,24 @@ export default function FinanceiroAdminPage() {
       return;
     }
 
+    if (!dataInicial || !dataFinal) {
+      setMensagem('Informe a data inicial e a data final.');
+      return;
+    }
+
+    if (dataInicial > dataFinal) {
+      setMensagem('A data inicial não pode ser maior que a data final.');
+      return;
+    }
+
     try {
       setLoading(true);
       setMensagem('Enviando arquivos para processamento...');
 
       const formData = new FormData();
       formData.append('principal', principal);
-      formData.append('abaMes', abaMes);
+      formData.append('dataInicial', dataInicial);
+      formData.append('dataFinal', dataFinal);
 
       const response = await fetch(`${API_BASE}/processar-financeiro-banco`, { method: 'POST', body: formData });
       if (!response.ok) {
@@ -59,9 +68,8 @@ export default function FinanceiroAdminPage() {
         throw new Error(erro?.erro || `Erro HTTP ${response.status}`);
       }
 
-      const mes = MESES.find((item) => item.aba === abaMes);
-      baixarBlob(await response.blob(), mes?.arquivo || 'Financeiro_Geral.xlsx');
-      setMensagem('Arquivo financeiro processado com sucesso. Verifique local do download.');
+      baixarBlob(await response.blob(), 'Financeiro_Geral.xlsx');
+      setMensagem(`Arquivo financeiro processado com sucesso para o período de ${formatarDataBr(dataInicial)} a ${formatarDataBr(dataFinal)}.`);
     } catch (err) {
       setMensagem(err instanceof Error ? err.message : 'Erro ao processar planilhas.');
     } finally {
@@ -73,17 +81,34 @@ export default function FinanceiroAdminPage() {
     <div className="admin-tool-page">
       <section className="admin-tool-hero">
         <h1>Lançamentos de Controle Financeiro</h1>
-        <p>  Selecione a competência e envie apenas a planilha principal.</p>
+        <p>Selecione o período e envie a planilha principal Financeiro Geral.</p>
       </section>
 
       <section className="admin-tool-card">
         <div className="admin-tool-section-title">
-          <h2>Mês a trabalhar na Planilha Principal</h2>
-          <span>Somente a aba escolhida será lida e alterada.</span>
+          <h2>Período a trabalhar na Planilha Principal</h2>
+          <span>Somente os dias dentro do período escolhido serão processados.</span>
         </div>
-        <select className="admin-tool-select" value={abaMes} onChange={(e) => setAbaMes(e.target.value)}>
-          {MESES.map((mes) => <option key={mes.aba} value={mes.aba}>{mes.nome} — aba {mes.aba}</option>)}
-        </select>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+          <label>
+            Data inicial
+            <input
+              className="admin-tool-select"
+              type="date"
+              value={dataInicial}
+              onChange={(e) => setDataInicial(e.target.value)}
+            />
+          </label>
+          <label>
+            Data final
+            <input
+              className="admin-tool-select"
+              type="date"
+              value={dataFinal}
+              onChange={(e) => setDataFinal(e.target.value)}
+            />
+          </label>
+        </div>
       </section>
 
       <section className="admin-tool-card">
@@ -103,13 +128,13 @@ export default function FinanceiroAdminPage() {
         <h3>Fluxo automático</h3>
         <div className="admin-flow-steps">
           <div><span>📂</span><strong>Planilha Principal</strong></div>
-          <div><span>📅</span><strong>Competência</strong></div>
-          <div><span>🗄️</span><strong>PostgreSQL</strong></div>
+          <div><span>📅</span><strong>Período</strong></div>
+          <div><span>🗄️</span><strong>MySQL</strong></div>
           <div><span>📊</span><strong>Gerar Financeiro</strong></div>
         </div>
       </section>
 
-      <button className="admin-primary-button" onClick={processar} disabled={loading}>{loading ? 'Processando...' : 'Processar Planilhas'}</button>
+      <button className="admin-primary-button" onClick={processar} disabled={loading}>{loading ? 'Processando...' : 'Processar Planilha Financeiro Geral'}</button>
       {mensagem && <p className="admin-tool-message">{mensagem}</p>}
     </div>
   );

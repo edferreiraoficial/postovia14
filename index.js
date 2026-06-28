@@ -6,6 +6,7 @@ import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { db } from './backend/db.js';
 import { gerarPlanilhaAuxiliarDoBanco } from './backend/gerarAuxiliarBanco.js'
@@ -203,6 +204,49 @@ app.post('/api/processar', upload.fields([
       ok: false,
       erro: error.message,
     })
+  }
+})
+
+
+app.post('/api/processar-financeiro-banco', upload.single('principal'), async (req, res) => {
+  try {
+    const arquivoPrincipal = req.file
+    const dataInicial = req.body?.dataInicial
+    const dataFinal = req.body?.dataFinal
+
+    if (!arquivoPrincipal) {
+      return res.status(400).json({ ok: false, erro: 'Planilha principal não foi recebida.' })
+    }
+
+    if (!dataInicial || !dataFinal) {
+      return res.status(400).json({ ok: false, erro: 'Informe data inicial e data final.' })
+    }
+
+    if (dataInicial > dataFinal) {
+      return res.status(400).json({ ok: false, erro: 'A data inicial não pode ser maior que a data final.' })
+    }
+
+    const caminhoAuxiliar = await gerarPlanilhaAuxiliarDoBanco({
+      nomeArquivo: `Planilha_Estoque_Banco_${dataInicial}_a_${dataFinal}.xlsx`,
+      dataInicial,
+      dataFinal,
+    })
+
+    const bufferAuxiliar = await fs.readFile(caminhoAuxiliar)
+
+    const bufferResultado = await processarPlanilhas(
+      arquivoPrincipal.buffer,
+      bufferAuxiliar,
+      null,
+      { dataInicial, dataFinal }
+    )
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', 'attachment; filename="Financeiro_Geral.xlsx"')
+    res.send(Buffer.from(bufferResultado))
+  } catch (error) {
+    console.error('ERRO /api/processar-financeiro-banco:', error)
+    res.status(500).json({ ok: false, erro: error.message })
   }
 })
 

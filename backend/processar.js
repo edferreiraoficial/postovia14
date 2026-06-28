@@ -625,18 +625,22 @@ function aplicarFormulaSaldoTerceiros(ws) {
 }
 
 /***********************************************************************************************************/
-export async function processarPlanilhas(principalBuffer, secundariaBuffer, abaPrincipal = 'Mar26') {
+export async function processarPlanilhas(principalBuffer, secundariaBuffer, abaPrincipal = null, periodo = {}) {
   const principal = new ExcelJS.Workbook()
   await principal.xlsx.load(principalBuffer)
 
   const secundaria = new ExcelJS.Workbook()
   await secundaria.xlsx.load(secundariaBuffer)
 
-  const ws = principal.getWorksheet(abaPrincipal)
+  const dataInicial = periodo?.dataInicial || null
+  const dataFinal = periodo?.dataFinal || null
 
-if (!ws) {
-  throw new Error(`A aba ${abaPrincipal} não foi encontrada na planilha principal.`)
-}
+  function dentroDoPeriodo(key) {
+    if (!key) return false
+    if (dataInicial && key < dataInicial) return false
+    if (dataFinal && key > dataFinal) return false
+    return true
+  }
 
   const gas = parseCombustivel(getWorksheetObrigatoria(secundaria, ['GASOLINA']))
   const eta = parseCombustivel(getWorksheetObrigatoria(secundaria, ['ETANOL']))
@@ -644,54 +648,74 @@ if (!ws) {
   const itau = parseBanco(getWorksheetObrigatoria(secundaria, ['ITAU']))
   const spot = parseBanco(getWorksheetObrigatoria(secundaria, ['SPOT']))
 
-  const dias = encontrarDias(ws)
+  const worksheets = abaPrincipal
+    ? [principal.getWorksheet(abaPrincipal)].filter(Boolean)
+    : principal.worksheets
 
-  for (const dia of dias.reverse()) {
-    preencherSpot(ws, dia, spot.get(dia.key) || [])
-    preencherItau(ws, dia, itau.get(dia.key) || [])
-
-    const rows = mapearLinhasDoDia(ws, dia.inicio, dia.fim + 40)
-
-    preencherCombustivel(ws, {
-      venda: rows.vendaGasolina,
-      ajuste: rows.ajuste
-    }, gas.get(dia.key), {
-      colQuant: COL.K,
-      colPreco: COL.L,
-      colTotal: COL.M,
-      letraQuant: 'K',
-      letraPreco: 'L'
-    })
-
-    preencherCombustivel(ws, {
-      venda: rows.vendaEtanol,
-      ajuste: rows.ajuste
-    }, eta.get(dia.key), {
-      colQuant: COL.N,
-      colPreco: COL.O,
-      colTotal: COL.P,
-      letraQuant: 'N',
-      letraPreco: 'O'
-    })
-
-    preencherCombustivel(ws, {
-      venda: rows.vendaDiesel,
-      ajuste: rows.ajuste
-    }, die.get(dia.key), {
-      colQuant: COL.Q,
-      colPreco: COL.R,
-      colTotal: COL.S,
-      letraQuant: 'Q',
-      letraPreco: 'R'
-    })
+  if (abaPrincipal && !worksheets.length) {
+    throw new Error(`A aba ${abaPrincipal} não foi encontrada na planilha principal.`)
   }
 
-  aplicarFormulasPadrao(ws)           // formulas ao preencer corpo  ok
-  aplicarFormulaColunaCSaldoGiro(ws)         // formulas coluna C saldo giro no dia
-  aplicarFormulaColunaSaldoLiquido(ws)      // formulas colunas da linha saldo liquido por dia 
-  aplicarFormulaTotalLinhaSaldoLiquido(ws) // formulas total soma linha saldo liquido do dia
-  aplicarFormulaSaldoTerceiros(ws)       // formulas coluan AR soma saldo terceiros
-    
+  let totalDiasProcessados = 0
+
+  for (const ws of worksheets) {
+    const dias = encontrarDias(ws).filter((dia) => dentroDoPeriodo(dia.key))
+    if (!dias.length) continue
+
+    totalDiasProcessados += dias.length
+
+    for (const dia of dias.reverse()) {
+      preencherSpot(ws, dia, spot.get(dia.key) || [])
+      preencherItau(ws, dia, itau.get(dia.key) || [])
+
+      const rows = mapearLinhasDoDia(ws, dia.inicio, dia.fim + 40)
+
+      preencherCombustivel(ws, {
+        venda: rows.vendaGasolina,
+        ajuste: rows.ajuste
+      }, gas.get(dia.key), {
+        colQuant: COL.K,
+        colPreco: COL.L,
+        colTotal: COL.M,
+        letraQuant: 'K',
+        letraPreco: 'L'
+      })
+
+      preencherCombustivel(ws, {
+        venda: rows.vendaEtanol,
+        ajuste: rows.ajuste
+      }, eta.get(dia.key), {
+        colQuant: COL.N,
+        colPreco: COL.O,
+        colTotal: COL.P,
+        letraQuant: 'N',
+        letraPreco: 'O'
+      })
+
+      preencherCombustivel(ws, {
+        venda: rows.vendaDiesel,
+        ajuste: rows.ajuste
+      }, die.get(dia.key), {
+        colQuant: COL.Q,
+        colPreco: COL.R,
+        colTotal: COL.S,
+        letraQuant: 'Q',
+        letraPreco: 'R'
+      })
+    }
+
+    aplicarFormulasPadrao(ws)
+    aplicarFormulaColunaCSaldoGiro(ws)
+    aplicarFormulaColunaSaldoLiquido(ws)
+    aplicarFormulaTotalLinhaSaldoLiquido(ws)
+    aplicarFormulaSaldoTerceiros(ws)
+  }
+
+  if (!totalDiasProcessados) {
+    const periodoTexto = dataInicial && dataFinal ? ` no período ${dataInicial} a ${dataFinal}` : ''
+    throw new Error(`Nenhum dia foi encontrado na planilha principal${periodoTexto}.`)
+  }
+
   principal.calcProperties.fullCalcOnLoad = true
 
   return await principal.xlsx.writeBuffer()

@@ -43,6 +43,8 @@ export async function gerarPlanilhaAuxiliarDoBanco({
   nomeArquivo = 'Planilha_Estoque_Banco_BD.xlsx',
   ano = 2026,
   mes = 3,
+  dataInicial = null,
+  dataFinal = null,
 } = {}) {
   const workbook = new ExcelJS.Workbook()
 
@@ -54,6 +56,10 @@ export async function gerarPlanilhaAuxiliarDoBanco({
 
   const abaSpot = criarAbaBanco(workbook, 'SPOT')
   const abaItau = criarAbaBanco(workbook, 'ITAU')
+
+  const filtroPeriodoLmc = dataInicial && dataFinal
+    ? { where: 'DATE(l.data_movimento) BETWEEN ? AND ?', params: [dataInicial, dataFinal] }
+    : { where: 'YEAR(l.data_movimento) = ? AND MONTH(l.data_movimento) = ?', params: [ano, mes] }
 
   const [lmc] = await db.query(
     `
@@ -67,11 +73,10 @@ export async function gerarPlanilhaAuxiliarDoBanco({
       l.estoque_fechamento
     FROM lmc_movimentos l
     LEFT JOIN produtos p ON p.id = l.produto_id
-    WHERE YEAR(l.data_movimento) = ?
-      AND MONTH(l.data_movimento) = ?
+    WHERE ${filtroPeriodoLmc.where}
     ORDER BY l.data_movimento, p.nome
     `,
-    [ano, mes]
+    filtroPeriodoLmc.params
   )
 
   for (const item of lmc) {
@@ -102,6 +107,10 @@ export async function gerarPlanilhaAuxiliarDoBanco({
     })
   }
 
+  const filtroPeriodoBanco = dataInicial && dataFinal
+    ? { where: 'DATE(data_lancamento) BETWEEN ? AND ?', params: [dataInicial, dataFinal] }
+    : { where: 'YEAR(data_lancamento) = ? AND MONTH(data_lancamento) = ?', params: [ano, mes] }
+
   const [bancos] = await db.query(
     `
     SELECT
@@ -111,11 +120,10 @@ export async function gerarPlanilhaAuxiliarDoBanco({
       valor,
       saldo
     FROM extratos_bancarios
-    WHERE YEAR(data_lancamento) = ?
-      AND MONTH(data_lancamento) = ?
+    WHERE ${filtroPeriodoBanco.where}
     ORDER BY data_lancamento, origem, id
     `,
-    [ano, mes]
+    filtroPeriodoBanco.params
   )
 
   for (const item of bancos) {
