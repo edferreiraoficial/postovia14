@@ -92,7 +92,7 @@ export async function salvarComprasNoBanco({ empresaId, compras }) {
         preco_pag,
         valor_pag
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empresaId,
         dataSql,
