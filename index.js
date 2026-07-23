@@ -1468,9 +1468,12 @@ app.put('/api/financeiro-geral/lancamentos/:id', async (req, res) => {
     )
     if (!linhasAntes[0]) return res.status(404).json({ ok: false, erro: 'Lançamento não encontrado.' })
     const linhaAntes = linhasAntes[0]
-    await validarDataDesbloqueada(Number(linhaAntes.empresa_id || 1), String(linhaAntes.data_lancamento).slice(0, 10), 'alterar')
+    const dataTravaConsolidacao = await validarDataDesbloqueada(Number(linhaAntes.empresa_id || 1), String(linhaAntes.data_lancamento).slice(0, 10), 'alterar')
     const dataLancamento = String(body.data_lancamento || '').slice(0, 10)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataLancamento)) throw new Error('Data inválida.')
+    if (dataTravaConsolidacao && dataLancamento <= dataTravaConsolidacao) {
+      throw new Error(`Período consolidado e bloqueado até ${dataTravaConsolidacao.split('-').reverse().join('/')}. Não é permitido alterar o lançamento para essa data ou antes dela.`)
+    }
     const ehSaldoEditado = String(linhaAntes.tipo_lancamento || '').toUpperCase() === 'SALDO'
     const descricaoAnterior = String(linhaAntes.descricao_normalizada || '').toUpperCase()
     const ehSaldoInicialEditado = ehSaldoEditado && (descricaoAnterior.startsWith('SALDO INICIAL DO DIA') || descricaoAnterior.startsWith('SALDO ANTERIOR'))
@@ -1520,14 +1523,90 @@ app.put('/api/financeiro-geral/lancamentos/:id', async (req, res) => {
     params.push(total, req.user?.id || null, id)
     const [resultado] = await db.query(`UPDATE financeiro_geral SET ${sets.join(', ')} WHERE id = ? AND status = 'ATIVO'`, params)
     if (!resultado.affectedRows) return res.status(404).json({ ok: false, erro: 'Lançamento não encontrado.' })
-    const dataRecalculo = ehSaldoInicialEditado
+    const dataRecalculo = dataTravaConsolidacao || (ehSaldoInicialEditado
       ? dataEfetiva
-      : (ehSaldoEditado ? proximaDataLocal(dataEfetiva) : dataEfetiva)
+      : (ehSaldoEditado ? proximaDataLocal(dataEfetiva) : dataEfetiva))
     const recalculo = await recalcularFinanceiroGeralAPartirDe({
       empresaId: Number(linhaAntes.empresa_id), dataInicial: dataRecalculo, usuarioId: req.user?.id || null,
     })
     res.json({ ok: true, id, total, recalculo })
   } catch (error) { res.status(400).json({ ok: false, erro: error.message || 'Erro ao atualizar lançamento.' }) }
+})
+
+
+app.post('/api/financeiro-geral/lancamentos', async (req, res) => {
+  try {
+    const body = req.body || {}
+    const empresaId = Number(body.empresa_id || 1)
+    if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
+    const dataLancamento = String(body.data_lancamento || '').slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataLancamento)) throw new Error('Data inválida.')
+    await validarDataDesbloqueada(empresaId, dataLancamento, 'incluir')
+    const descricao = String(body.descricao_original || '').trim().slice(0, 500)
+    if (!descricao) throw new Error('Descrição é obrigatória.')
+    const origem = String(body.origem || 'MANUAL').trim().slice(0, 30) || 'MANUAL'
+    const camposNumericos = FINANCEIRO_GERAL_COLUNAS.map(([campo]) => campo).filter((campo) => campo !== 'total')
+    const valores = {}
+    for (const campo of camposNumericos) {
+      const valor = Number(body[campo] || 0)
+      if (!Number.isFinite(valor)) throw new Error(`Valor inválido em ${campo}.`)
+      valores[campo] = valor
+    }
+    for (const produto of ['prod1', 'prod2', 'prod3', 'prod4']) {
+      const q = `${produto}_quant`, v = `${produto}_valor`, t = `${produto}_total`
+      if (Number(valores[q]) && Number(valores[v])) valores[t] = Math.round((Number(valores[q]) * Number(valores[v]) + Number.EPSILON) * 1000000) / 1000000
+    }
+    const totalizaveis = camposNumericos.filter((campo) => campo.startsWith('conta') || campo.endsWith('_total'))
+    const total = Math.round((totalizaveis.reduce((soma, campo) => soma + Number(valores[campo] || 0), 0) + Number.EPSILON) * 100) / 100
+    const descricaoNormalizada = descricao.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+    const colunas = camposNumericos.join(', ')
+    const placeholders = camposNumericos.map(() => '?').join(', ')
+    const usuarioId = req.user?.id || req.usuario?.id || null
+    const [resultado] = await db.query(
+      `INSERT INTO financeiro_geral
+       (empresa_id, data_lancamento, descricao_original, descricao_normalizada, tipo_lancamento,
+        total, origem, tabela_origem, registro_origem_id, chave_integracao, usuario_id, status, ${colunas})
+       VALUES (?, ?, ?, ?, 'MANUAL', ?, ?, 'MANUAL', NULL, NULL, ?, 'ATIVO', ${placeholders})`,
+      [empresaId, dataLancamento, descricao, descricaoNormalizada, total, origem, usuarioId, ...camposNumericos.map((campo) => valores[campo])]
+    )
+    const recalculo = await recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicial: dataLancamento, usuarioId })
+    res.json({ ok: true, id: resultado.insertId, total, recalculo })
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao incluir lançamento.' })
+  }
+})
+
+app.delete('/api/financeiro-geral/lancamentos/:id', async (req, res) => {
+  try {
+    const senhaInformada = String(req.body?.senha || '').trim()
+    const senhaCorreta = String(process.env.SENHA_ADMIN || process.env.SENHA_LIMPAR_COMPETENCIA || 'posto14').trim()
+    if (senhaInformada !== senhaCorreta) return res.status(401).json({ ok: false, erro: 'Senha inválida. Exclusão cancelada.' })
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) throw new Error('Lançamento inválido.')
+    const [rows] = await db.query(
+      `SELECT empresa_id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
+              tipo_lancamento, descricao_normalizada
+         FROM financeiro_geral WHERE id = ? AND status = 'ATIVO' LIMIT 1`, [id]
+    )
+    const linha = rows[0]
+    if (!linha) return res.status(404).json({ ok: false, erro: 'Lançamento não encontrado ou já excluído.' })
+    const descricaoNormalizada = String(linha.descricao_normalizada || '').toUpperCase()
+    if (String(linha.tipo_lancamento || '').toUpperCase() === 'SALDO' || descricaoNormalizada.startsWith('SALDO')) {
+      throw new Error('Linhas de saldo não podem ser excluídas.')
+    }
+    const dataTravaConsolidacao = await validarDataDesbloqueada(Number(linha.empresa_id || 1), String(linha.data_lancamento).slice(0, 10), 'excluir')
+    const [resultado] = await db.query(
+      `UPDATE financeiro_geral SET status = 'EXCLUIDO', atualizado_em = NOW(), usuario_id = ? WHERE id = ? AND status = 'ATIVO'`,
+      [req.user?.id || req.usuario?.id || null, id]
+    )
+    if (!resultado.affectedRows) throw new Error('Lançamento não encontrado ou já excluído.')
+    const recalculo = await recalcularFinanceiroGeralAPartirDe({
+      empresaId: Number(linha.empresa_id), dataInicial: dataTravaConsolidacao || String(linha.data_lancamento).slice(0, 10), usuarioId: req.user?.id || req.usuario?.id || null,
+    })
+    res.json({ ok: true, id, recalculo })
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao excluir lançamento.' })
+  }
 })
 
 app.get('/api/financeiro-geral/excel', async (req, res) => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -33,6 +33,7 @@ type Linha = Record<string, any>;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const inicioMes = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth(), 1)); };
 const fimMes = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth() + 1, 0)); };
+const diaSeguinte = (valor: string) => { const [a, m, d] = String(valor || '').slice(0, 10).split('-').map(Number); if (!a || !m || !d) return valor; return iso(new Date(a, m - 1, d + 1)); };
 const dataBr = (v: string) => { const [a, m, d] = String(v || '').slice(0, 10).split('-'); return a && m && d ? `${d}/${m}/${a}` : v; };
 const numero2 = (v: any) => { const n = Number(v || 0); return n === 0 ? '' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 const numero6 = (v: any) => { const n = Number(v || 0); return n === 0 ? '' : n.toLocaleString('pt-BR', { minimumFractionDigits: 6, maximumFractionDigits: 6 }); };
@@ -44,9 +45,14 @@ const formatarNumeroCampo = (campo: string, valor: any) => {
 };
 const escapar = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const ehSaldo = (l: Linha) => String(l.descricao_normalizada || l.descricao_original || '').toUpperCase().startsWith('SALDO');
+const classeLarguraCampo = (campo: CampoFinanceiro) => {
+  if (['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24'].includes(campo.key)) return 'fg-col-w90';
+  if (/^prod[1-4]_(quant|valor)$/.test(campo.key)) return 'fg-col-w60';
+  return `fg-col-${campo.largura}`;
+};
 
 export default function FinanceiroGeralAdminPage() {
-  const [dataInicial, setDataInicial] = useState('2025-09-04');
+  const [dataInicial, setDataInicial] = useState('');
   const [dataFinal, setDataFinal] = useState(fimMes());
   const [descricao, setDescricao] = useState('');
   const [origem, setOrigem] = useState('');
@@ -60,11 +66,13 @@ export default function FinanceiroGeralAdminPage() {
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState('');
   const [somenteMovimento, setSomenteMovimento] = useState(true);
-  const [editandoId, setEditandoId] = useState<number | null>(null);
-  const [rascunho, setRascunho] = useState<Linha>({});
-  const [salvando, setSalvando] = useState(false);
   const [dataTravaConsolidacao, setDataTravaConsolidacao] = useState('');
-  const salvandoRef = useRef(false);
+  const [configuracaoFinanceiraCarregada, setConfiguracaoFinanceiraCarregada] = useState(false);
+  const [novoLancamentoAberto, setNovoLancamentoAberto] = useState(false);
+  const [novoLancamento, setNovoLancamento] = useState<Linha>({ data_lancamento: iso(new Date()), descricao_original: '', origem: 'MANUAL' });
+  const [incluindo, setIncluindo] = useState(false);
+  const [lancamentoEditandoId, setLancamentoEditandoId] = useState<number | null>(null);
+  const [excluindoId, setExcluindoId] = useState<number | null>(null);
   const tabelaWrapRef = useRef<HTMLDivElement | null>(null);
   const scrollRodapeRef = useRef<HTMLDivElement | null>(null);
   const scrollRodapeConteudoRef = useRef<HTMLDivElement | null>(null);
@@ -109,17 +117,27 @@ export default function FinanceiroGeralAdminPage() {
         comCartao.splice(posicaoCartao, 0, cartaoPadrao);
         setCampos(comCartao);
       }
-      setTotalRegistros(Number(dados.paginacao?.total || 0)); setEditandoId(null);
+      setTotalRegistros(Number(dados.paginacao?.total || 0));
     } catch (e: any) { setMensagem(e.message || 'Erro ao carregar lançamentos.'); }
     finally { setCarregando(false); }
   };
   useEffect(() => {
     fetch(`${API_BASE}/configuracoes-financeiro?empresaId=1`)
       .then((res) => res.json())
-      .then((dados) => setDataTravaConsolidacao(dados.dataTravaConsolidacao || ''))
-      .catch(() => setDataTravaConsolidacao(''));
+      .then((dados) => {
+        const dataTrava = String(dados.dataTravaConsolidacao || '').slice(0, 10);
+        setDataTravaConsolidacao(dataTrava);
+        setDataInicial(dataTrava ? diaSeguinte(dataTrava) : inicioMes());
+      })
+      .catch(() => {
+        setDataTravaConsolidacao('');
+        setDataInicial(inicioMes());
+      })
+      .finally(() => setConfiguracaoFinanceiraCarregada(true));
   }, []);
-  useEffect(() => { carregar(); }, [pagina, porPagina]);
+  useEffect(() => {
+    if (configuracaoFinanceiraCarregada && dataInicial) carregar();
+  }, [pagina, porPagina, configuracaoFinanceiraCarregada]);
   useEffect(() => {
     const tabela = tabelaWrapRef.current;
     const barra = scrollRodapeRef.current;
@@ -141,7 +159,7 @@ export default function FinanceiroGeralAdminPage() {
       if (!tabelaHtml) return;
       const wrapRect = tabela.getBoundingClientRect();
       const tableRect = tabelaHtml.getBoundingClientRect();
-      const topoArea = areaRolagem ? Math.max(0, areaRolagem.getBoundingClientRect().top) : 0;
+      const topoArea = 0;
       const alturaCabecalho = (tabelaHtml.tHead?.getBoundingClientRect().height || 34);
       const mostrar = tableRect.top < topoArea && tableRect.bottom > topoArea + alturaCabecalho;
       cabecalhoFlutuante.classList.toggle('is-visible', mostrar);
@@ -175,8 +193,38 @@ export default function FinanceiroGeralAdminPage() {
             th.style.maxWidth = `${largura}px`;
             th.style.height = `${alturaCabecalho}px`;
             th.style.boxSizing = 'border-box';
+            th.style.transform = '';
           }
         });
+
+        // O cabeçalho flutuante acompanha a rolagem horizontal da tabela.
+        // As posições das colunas fixas são calculadas pela largura acumulada,
+        // evitando que Data, Descrição, Total e Ações se desloquem.
+        const larguras = origem.map((celula) => celula.getBoundingClientRect().width);
+        const deslocamentos: number[] = [];
+        let acumulado = 0;
+        larguras.forEach((largura) => {
+          deslocamentos.push(acumulado);
+          acumulado += largura;
+        });
+
+        const indiceTotal = 3 + colunasVisiveis.findIndex((campo) => campo.key === 'total');
+        const scrollX = tabela.scrollLeft;
+
+        // O elemento table inteiro é deslocado para acompanhar o scroll. Estas
+        // compensações mantêm Data e Descrição paradas no lado esquerdo.
+        [0, 1].forEach((indice) => {
+          const th = destino[indice] as HTMLTableCellElement | undefined;
+          if (th) th.style.transform = `translate3d(${scrollX}px,0,0)`;
+        });
+
+        // Total é a última coluna fixa à direita. Não existe mais coluna Ações.
+        const total = indiceTotal >= 3 ? destino[indiceTotal] as HTMLTableCellElement | undefined : undefined;
+        if (total) {
+          const larguraTotal = larguras[indiceTotal] || 90;
+          const deltaTotal = wrapRect.width - larguraTotal - deslocamentos[indiceTotal] + scrollX;
+          total.style.transform = `translate3d(${deltaTotal}px,0,0)`;
+        }
       }
     };
     const atualizarLargura = () => {
@@ -251,30 +299,97 @@ export default function FinanceiroGeralAdminPage() {
   }, [linhas, colunasVisiveis]);
   const aplicarFiltros = () => { setPagina(1); if (pagina === 1) carregar(); };
 
-  const iniciarEdicao = (linha: Linha) => { setEditandoId(Number(linha.id)); setRascunho({ ...linha, data_lancamento: String(linha.data_lancamento).slice(0, 10) }); setMensagem(''); };
-  const cancelarEdicao = () => {
-    if (!salvandoRef.current) {
-      setEditandoId(null);
-      setRascunho({});
-    }
-  };
-  const teclaEdicao = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') { e.preventDefault(); void salvarEdicao(); }
-    if (e.key === 'Escape') { e.preventDefault(); cancelarEdicao(); }
-  };
   const formatarCelula = (linha: Linha, campo: string) => formatarNumeroCampo(campo, linha[campo]);
-  const alterar = (campo: string, valor: any) => setRascunho((r) => ({ ...r, [campo]: valor }));
-  const salvarEdicao = async () => {
-    if (!editandoId || salvandoRef.current) return;
-    salvandoRef.current = true;
-    setSalvando(true); setMensagem('');
+
+  const abrirNovoLancamento = () => {
+    setLancamentoEditandoId(null);
+    setNovoLancamento({
+      data_lancamento: dataFinal || iso(new Date()),
+      descricao_original: '',
+      origem: 'MANUAL',
+      ...Object.fromEntries(campos.filter((c) => c.key !== 'total').map((c) => [c.key, ''])),
+    });
+    setMensagem('');
+    setNovoLancamentoAberto(true);
+  };
+
+  const abrirLancamentoParaEdicao = (linha: Linha) => {
+    if (ehSaldo(linha)) {
+      setMensagem('Linhas de saldo não podem ser alteradas ou excluídas.');
+      return;
+    }
+    const dataLinha = String(linha.data_lancamento || '').slice(0, 10);
+    if (dataTravaConsolidacao && dataLinha && dataLinha <= dataTravaConsolidacao) {
+      setMensagem(`Este lançamento não pode ser alterado ou excluído porque a data ${dataBr(dataLinha)} é igual ou anterior à data travada ${dataBr(dataTravaConsolidacao)}.`);
+      return;
+    }
+    setLancamentoEditandoId(Number(linha.id));
+    setNovoLancamento({
+      ...linha,
+      data_lancamento: String(linha.data_lancamento || '').slice(0, 10),
+      descricao_original: linha.descricao_original || linha.descricao_normalizada || '',
+      ...Object.fromEntries(campos.filter((c) => c.key !== 'total').map((c) => [c.key, linha[c.key] ?? ''])),
+    });
+    setMensagem('');
+    setNovoLancamentoAberto(true);
+  };
+
+  const fecharModalLancamento = () => {
+    if (incluindo || excluindoId !== null) return;
+    setNovoLancamentoAberto(false);
+    setLancamentoEditandoId(null);
+  };
+
+  const salvarNovoLancamento = async () => {
+    if (incluindo) return;
+    const dataInformada = String(novoLancamento.data_lancamento || '').slice(0, 10);
+    if (dataTravaConsolidacao && dataInformada && dataInformada <= dataTravaConsolidacao) {
+      setMensagem(`Não é permitido salvar lançamento com data igual ou anterior à data travada ${dataBr(dataTravaConsolidacao)}.`);
+      return;
+    }
+    if (!String(novoLancamento.descricao_original || '').trim()) {
+      setMensagem('Informe a descrição do lançamento.');
+      return;
+    }
+    setIncluindo(true); setMensagem('');
     try {
-      const res = await fetch(`${API_BASE}/financeiro-geral/lancamentos/${editandoId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rascunho) });
+      const editando = lancamentoEditandoId !== null;
+      const res = await fetch(editando
+        ? `${API_BASE}/financeiro-geral/lancamentos/${lancamentoEditandoId}`
+        : `${API_BASE}/financeiro-geral/lancamentos`, {
+        method: editando ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editando ? novoLancamento : { empresa_id: 1, ...novoLancamento }),
+      });
       const dados = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(dados.erro || 'Erro ao salvar lançamento.');
-      setEditandoId(null); setMensagem('Lançamento salvo e cálculos posteriores refeitos.'); await carregar();
+      if (!res.ok || dados.ok === false) throw new Error(dados.erro || (editando ? 'Erro ao alterar lançamento.' : 'Erro ao incluir lançamento.'));
+      setNovoLancamentoAberto(false);
+      setLancamentoEditandoId(null);
+      if (!editando) setPagina(1);
+      setMensagem(editando ? 'Lançamento alterado e saldos posteriores recalculados.' : 'Novo lançamento incluído e saldos posteriores recalculados.');
+      await carregar();
     } catch (e: any) { setMensagem(e.message || 'Erro ao salvar lançamento.'); }
-    finally { salvandoRef.current = false; setSalvando(false); }
+    finally { setIncluindo(false); }
+  };
+
+  const excluirLancamentoEmEdicao = async () => {
+    if (lancamentoEditandoId === null || excluindoId !== null) return;
+    const confirmar = window.confirm(`Excluir o lançamento "${novoLancamento.descricao_original || ''}"?`);
+    if (!confirmar) return;
+    const senha = window.prompt('Digite a senha para confirmar a exclusão:');
+    if (senha === null) return;
+    setExcluindoId(lancamentoEditandoId); setMensagem('');
+    try {
+      const res = await fetch(`${API_BASE}/financeiro-geral/lancamentos/${lancamentoEditandoId}`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ senha }),
+      });
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao excluir lançamento.');
+      setNovoLancamentoAberto(false);
+      setLancamentoEditandoId(null);
+      setMensagem('Lançamento excluído e saldos posteriores recalculados.');
+      await carregar();
+    } catch (e: any) { setMensagem(e.message || 'Erro ao excluir lançamento.'); }
+    finally { setExcluindoId(null); }
   };
 
   const baixarExcel = async () => {
@@ -314,20 +429,40 @@ export default function FinanceiroGeralAdminPage() {
   };
 
   const reconsolidarDoZero = async () => {
-    const confirmar = window.confirm(
-      `ATENÇÃO: todos os lançamentos consolidados serão eliminados e recriados do zero.\n\n` +
-      `Período que será recriado: ${dataBr(dataInicial)} a ${dataBr(dataFinal)}.\n\nSomente os dados desse período serão consolidados.\nDeseja continuar?`
-    );
-    if (!confirmar) return;
-    setCarregando(true); setMensagem('Eliminando a consolidação atual e recriando os lançamentos...');
+    const periodoInicial = dataTravaConsolidacao ? diaSeguinte(dataTravaConsolidacao) : dataInicial;
+
+    // Antes da confirmação, ajusta o filtro para o primeiro dia permitido e
+    // atualiza a planilha exatamente com o período que será recriado.
+    setDataInicial(periodoInicial);
+    setPagina(1);
+    setCarregando(true);
+    setMensagem('Atualizando o período permitido para recriação...');
     try {
+      const p = new URLSearchParams({ empresaId: '1', dataInicial: periodoInicial, dataFinal, pagina: '1', porPagina: String(porPagina) });
+      if (descricao.trim()) p.set('descricao', descricao.trim());
+      if (origem) p.set('origem', origem);
+      const filtroRes = await fetch(`${API_BASE}/financeiro-geral/lancamentos?${p.toString()}`);
+      const filtroDados = await filtroRes.json().catch(() => ({}));
+      if (!filtroRes.ok) throw new Error(filtroDados.erro || 'Erro ao atualizar o período.');
+      setLinhas(filtroDados.lancamentos || []);
+      setTotais(filtroDados.totais || {});
+      setUltimoSaldo(filtroDados.ultimoSaldo || {});
+      setTotalRegistros(Number(filtroDados.paginacao?.total || 0));
+
+      const confirmar = window.confirm(
+        `ATENÇÃO: todos os lançamentos consolidados serão eliminados e recriados do zero.\n\n` +
+        `Período que será recriado: ${dataBr(periodoInicial)} a ${dataBr(dataFinal)}.\n\nSomente os dados desse período serão consolidados.\nDeseja continuar?`
+      );
+      if (!confirmar) { setMensagem('Período atualizado. Recriação cancelada.'); return; }
+
+      setMensagem('Eliminando a consolidação atual e recriando os lançamentos...');
       const res = await fetch(`${API_BASE}/financeiro-geral/reconsolidar-zero`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa_id: 1, dataInicial, dataFinal }),
+        body: JSON.stringify({ empresa_id: 1, dataInicial: periodoInicial, dataFinal }),
       });
       const dados = await res.json().catch(() => ({}));
       if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao reconsolidar os lançamentos.');
-      setPagina(1); setMensagem(dados.mensagem || 'Financeiro Geral recriado com sucesso.');
+      setMensagem(dados.mensagem || 'Financeiro Geral recriado com sucesso.');
       await carregar();
     } catch (e: any) { setMensagem(e.message || 'Erro ao reconsolidar os lançamentos.'); }
     finally { setCarregando(false); }
@@ -363,6 +498,7 @@ export default function FinanceiroGeralAdminPage() {
       <div className="financeiro-geral-processamento">
         <button type="button" className="admin-primary-button" onClick={consolidarFinanceiroGeral} disabled={carregando}>Consolidar</button>
         <button type="button" className="admin-primary-button" onClick={reconsolidarDoZero} disabled={carregando}>Recriar do zero</button>
+        <button type="button" className="admin-primary-button" onClick={abrirNovoLancamento} disabled={carregando}>Novo Lançamento</button>
       </div>
       <div className="financeiro-geral-paginacao-direita" data-layout="linhas-e-paginas">
         <label className="financeiro-geral-linhas-pagina">Linhas por página<select value={porPagina} onChange={e => { setPorPagina(Number(e.target.value)); setPagina(1); }}><option>25</option><option>50</option><option>100</option><option>200</option><option>500</option></select></label>
@@ -375,18 +511,29 @@ export default function FinanceiroGeralAdminPage() {
         </div>
       </div>
     </div>
-    <div ref={cabecalhoFlutuanteRef} className="financeiro-geral-cabecalho-flutuante" aria-hidden="true"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={`fg-col-${c.largura}`} />)}<col className="fg-col-acoes" /></colgroup><thead><tr><th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}<th>Ações</th></tr></thead></table></div>
-    <div ref={tabelaWrapRef} className="admin-card financeiro-geral-tabela-wrap"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={`fg-col-${c.largura}`} />)}<col className="fg-col-acoes" /></colgroup>
-      <thead><tr><th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}<th>Ações</th></tr></thead>
-      <tbody>{carregando ? <tr><td colSpan={4 + colunasVisiveis.length}>Carregando...</td></tr> : linhas.map(l => { const editar = editandoId === Number(l.id); return <tr key={l.id} className={ehSaldo(l) ? 'fg-linha-saldo' : ''}>
-        <td onDoubleClick={() => !editar && iniciarEdicao(l)}>{editar && !ehSaldo(l) ? <input autoFocus type="date" value={rascunho.data_lancamento || ''} onChange={e => alterar('data_lancamento', e.target.value)} onKeyDown={teclaEdicao} /> : dataBr(l.data_lancamento)}</td>
-        <td className="fg-descricao" onDoubleClick={() => !editar && iniciarEdicao(l)}>{editar && !ehSaldo(l) ? <input value={rascunho.descricao_original || ''} onChange={e => alterar('descricao_original', e.target.value)} onKeyDown={teclaEdicao} /> : (l.descricao_original || l.descricao_normalizada)}</td>
-        <td onDoubleClick={() => !editar && !ehSaldo(l) && iniciarEdicao(l)}>{ehSaldo(l) ? '' : (editar ? <input value={rascunho.origem || ''} onChange={e => alterar('origem', e.target.value)} onKeyDown={teclaEdicao} /> : l.origem)}</td>
-        {colunasVisiveis.map(c => <td key={c.key} onDoubleClick={() => !editar && c.key !== 'total' && iniciarEdicao(l)} className={`${Number(l[c.key] || 0) < 0 ? 'fg-negativo' : ''} ${c.key === 'total' ? 'fg-total' : ''}`.trim()}>{editar && c.key !== 'total' ? <input className="fg-input-numero" type="number" step={/^prod[1-4]_quant$/.test(c.key) ? "1" : (/^prod[1-4]_valor$/.test(c.key) ? "0.000001" : "0.01")} value={rascunho[c.key] ?? ''} onChange={e => alterar(c.key, e.target.value)} onKeyDown={teclaEdicao} /> : formatarCelula(l, c.key)}</td>)}
-        <td className="fg-acoes">{editar ? <><button title="Salvar" aria-label="Salvar" onClick={salvarEdicao} disabled={salvando}>✓</button><button title="Cancelar" aria-label="Cancelar" onClick={cancelarEdicao} disabled={salvando}>×</button></> : <button onClick={() => iniciarEdicao(l)}>Editar</button>}</td>
-      </tr>; })}</tbody>
-      <tfoot className="financeiro-geral-titulos-rodape"><tr><th></th><th></th><th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}<th>Ações</th></tr></tfoot>
+    <div ref={cabecalhoFlutuanteRef} className="financeiro-geral-cabecalho-flutuante" aria-hidden="true"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup><thead><tr><th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead></table></div>
+    <div ref={tabelaWrapRef} className="admin-card financeiro-geral-tabela-wrap"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup>
+      <thead><tr><th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead>
+      <tbody>{carregando ? <tr><td colSpan={3 + colunasVisiveis.length}>Carregando...</td></tr> : linhas.map(l => <tr key={l.id} className={`${ehSaldo(l) ? 'fg-linha-saldo' : ''} ${!ehSaldo(l) ? 'fg-linha-editavel' : ''}`.trim()} onDoubleClick={() => abrirLancamentoParaEdicao(l)}>
+        <td>{dataBr(l.data_lancamento)}</td>
+        <td className="fg-descricao">{l.descricao_original || l.descricao_normalizada}</td>
+        <td>{ehSaldo(l) ? '' : l.origem}</td>
+        {colunasVisiveis.map(c => <td key={c.key} className={`${Number(l[c.key] || 0) < 0 ? 'fg-negativo' : ''} ${c.key === 'total' ? 'fg-total' : ''}`.trim()}>{formatarCelula(l, c.key)}</td>)}
+      </tr>)}</tbody>
+      <tfoot className="financeiro-geral-titulos-rodape"><tr><th></th><th></th><th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
     </table></div>
+    {novoLancamentoAberto && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label={lancamentoEditandoId === null ? 'Novo lançamento' : 'Alterar lançamento'}>
+      <div className="fg-modal">
+        <div className="fg-modal-header"><h2>{lancamentoEditandoId === null ? 'Novo Lançamento' : 'Alterar Lançamento'}</h2><button type="button" onClick={fecharModalLancamento} aria-label="Fechar">×</button></div>
+        <div className="fg-modal-grid">
+          <label>Data<input type="date" value={novoLancamento.data_lancamento || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, data_lancamento: e.target.value }))} /></label>
+          <label className="fg-modal-descricao">Descrição<input autoFocus value={novoLancamento.descricao_original || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, descricao_original: e.target.value }))} /></label>
+          <label>Origem<input value={novoLancamento.origem || 'MANUAL'} onChange={(e) => setNovoLancamento((r) => ({ ...r, origem: e.target.value }))} /></label>
+          {campos.filter((c) => c.key !== 'total').map((c) => <label key={c.key}>{c.label}<input type="number" step={/^prod[1-4]_quant$/.test(c.key) ? '1' : (/^prod[1-4]_valor$/.test(c.key) ? '0.000001' : '0.01')} value={novoLancamento[c.key] ?? ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, [c.key]: e.target.value }))} /></label>)}
+        </div>
+        <div className="fg-modal-actions">{lancamentoEditandoId !== null && <button type="button" className="fg-modal-excluir" onClick={excluirLancamentoEmEdicao} disabled={incluindo || excluindoId !== null}>{excluindoId !== null ? 'Excluindo...' : 'Excluir lançamento'}</button>}<button type="button" onClick={fecharModalLancamento} disabled={incluindo || excluindoId !== null}>Cancelar</button><button type="button" className="admin-primary-button" onClick={salvarNovoLancamento} disabled={incluindo || excluindoId !== null}>{incluindo ? 'Salvando...' : (lancamentoEditandoId === null ? 'Salvar lançamento' : 'Salvar alterações')}</button></div>
+      </div>
+    </div>}
     <footer className="financeiro-geral-rodape-pagina">
       <span className="financeiro-geral-contagem">{totalRegistros.toLocaleString('pt-BR')} lançamento(s)</span>
       <div ref={scrollRodapeRef} className="financeiro-geral-scroll-rodape" aria-label="Rolagem horizontal da planilha"><div ref={scrollRodapeConteudoRef} /></div>

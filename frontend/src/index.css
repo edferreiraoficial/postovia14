@@ -3380,3 +3380,322 @@ button {
 .financeiro-geral-rodape-pagina{
   margin:0!important;
 }
+
+/* Financeiro Geral v60 — página com rolagem vertical e colunas fixas sincronizadas */
+html, body, #root{min-height:100%;}
+.admin-content:has(.financeiro-geral-page){
+  height:calc(100vh - 72px)!important;
+  min-height:0!important;
+  overflow-x:hidden!important;
+  overflow-y:scroll!important;
+  scrollbar-gutter:stable!important;
+  padding-bottom:42px!important;
+  box-sizing:border-box!important;
+}
+.financeiro-geral-page{
+  height:auto!important;
+  min-height:calc(100vh - 114px)!important;
+  overflow:visible!important;
+}
+.financeiro-geral-tabela-wrap{
+  height:auto!important;
+  max-height:none!important;
+  min-height:220px!important;
+  overflow-x:auto!important;
+  overflow-y:visible!important;
+  scrollbar-width:none!important;
+}
+.financeiro-geral-tabela-wrap::-webkit-scrollbar{width:0!important;height:0!important;display:none!important}
+
+/* Cabeçalho flutuante usado durante a rolagem vertical da página. */
+.financeiro-geral-cabecalho-flutuante{
+  display:none!important;
+  position:fixed!important;
+  overflow:hidden!important;
+  z-index:120!important;
+  background:#ccd7e3!important;
+  box-shadow:0 2px 5px rgba(15,23,42,.18)!important;
+}
+.financeiro-geral-cabecalho-flutuante.is-visible{display:block!important}
+.financeiro-geral-cabecalho-flutuante table{margin:0!important}
+.financeiro-geral-cabecalho-flutuante th{position:relative!important;top:auto!important;background:#ccd7e3!important;z-index:2!important}
+.financeiro-geral-cabecalho-flutuante th:first-child,
+.financeiro-geral-cabecalho-flutuante th:nth-child(2),
+.financeiro-geral-cabecalho-flutuante th.fg-total,
+.financeiro-geral-cabecalho-flutuante th:last-child{z-index:12!important;background:#ccd7e3!important}
+
+/* Data e Descrição fixas à esquerda, tanto no corpo quanto nos dois cabeçalhos. */
+.financeiro-geral-tabela th:first-child,
+.financeiro-geral-tabela td:first-child{
+  position:sticky!important;
+  left:0!important;
+  z-index:20!important;
+  background:#fff!important;
+}
+.financeiro-geral-tabela th:nth-child(2),
+.financeiro-geral-tabela td:nth-child(2){
+  position:sticky!important;
+  left:96px!important;
+  z-index:19!important;
+  background:#fff!important;
+  box-shadow:1px 0 0 #cbd5e1!important;
+}
+.financeiro-geral-tabela thead th:first-child,
+.financeiro-geral-tabela thead th:nth-child(2),
+.financeiro-geral-tabela tfoot th:first-child,
+.financeiro-geral-tabela tfoot th:nth-child(2){background:#ccd7e3!important;z-index:70!important}
+.financeiro-geral-tabela tbody tr:hover td:first-child,
+.financeiro-geral-tabela tbody tr:hover td:nth-child(2){background:#f8fafc!important}
+.financeiro-geral-tabela .fg-linha-saldo td:first-child,
+.financeiro-geral-tabela .fg-linha-saldo td:nth-child(2){background:#ccd7e3!important}
+
+/* Total e Ações fixas à direita. */
+.financeiro-geral-tabela .fg-total{position:sticky!important;right:58px!important;z-index:21!important;background:#fff!important}
+.financeiro-geral-tabela th:last-child,
+.financeiro-geral-tabela td:last-child{position:sticky!important;right:0!important;z-index:22!important;background:#fff!important}
+.financeiro-geral-tabela thead th.fg-total,
+.financeiro-geral-tabela thead th:last-child,
+.financeiro-geral-tabela tfoot th.fg-total,
+.financeiro-geral-tabela tfoot th:last-child{background:#ccd7e3!important;z-index:72!important}
+.financeiro-geral-tabela tbody tr:hover td.fg-total,
+.financeiro-geral-tabela tbody tr:hover td:last-child{background:#f8fafc!important}
+.financeiro-geral-tabela .fg-linha-saldo td.fg-total,
+.financeiro-geral-tabela .fg-linha-saldo td:last-child{background:#ccd7e3!important}
+
+/* Financeiro Geral v61 — correções finais de alinhamento e rolagem da página */
+html{
+  min-height:100%!important;
+  overflow-x:hidden!important;
+  overflow-y:scroll!important;
+  scrollbar-gutter:stable!important;
+}
+body,
+#root{
+  min-height:100%!important;
+  height:auto!important;
+  overflow:visible!important;
+}
+.admin-layout,
+.admin-main{
+  min-height:100vh!important;
+  height:auto!important;
+  overflow:visible!important;
+}
+.admin-content:has(.financeiro-geral-page){
+  height:auto!important;
+  min-height:0!important;
+  overflow:visible!important;
+  padding-bottom:42px!important;
+}
+.financeiro-geral-page{
+  height:auto!important;
+  min-height:0!important;
+  overflow:visible!important;
+}
+.financeiro-geral-tabela-wrap{
+  height:auto!important;
+  max-height:none!important;
+  overflow-x:auto!important;
+  overflow-y:visible!important;
+}
+
+/* Largura da coluna Data suficiente para exibir dd/mm/aaaa sem corte. */
+.financeiro-geral-tabela col.fg-col-data{
+  width:88px!important;
+  min-width:88px!important;
+  max-width:88px!important;
+}
+.financeiro-geral-tabela th:first-child,
+.financeiro-geral-tabela td:first-child{
+  width:88px!important;
+  min-width:88px!important;
+  max-width:88px!important;
+  left:0!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+}
+.financeiro-geral-tabela th:nth-child(2),
+.financeiro-geral-tabela td:nth-child(2){
+  left:88px!important;
+}
+
+/* Cabeçalho flutuante rente ao topo e com as mesmas divisões da tabela original. */
+.financeiro-geral-cabecalho-flutuante{
+  top:0!important;
+  border-radius:0!important;
+  margin:0!important;
+  padding:0!important;
+  box-shadow:0 2px 5px rgba(15,23,42,.18)!important;
+}
+.financeiro-geral-cabecalho-flutuante .financeiro-geral-tabela{
+  border-spacing:0!important;
+}
+.financeiro-geral-cabecalho-flutuante th{
+  margin:0!important;
+  box-sizing:border-box!important;
+}
+
+/* As quatro colunas permanecem fixas também no cabeçalho que surge ao rolar. */
+.financeiro-geral-cabecalho-flutuante th:first-child{
+  left:0!important;
+}
+.financeiro-geral-cabecalho-flutuante th:nth-child(2){
+  left:88px!important;
+}
+.financeiro-geral-cabecalho-flutuante th.fg-total{
+  right:58px!important;
+}
+.financeiro-geral-cabecalho-flutuante th:last-child{
+  right:0!important;
+}
+
+/* Financeiro Geral v62 — colunas fixas no cabeçalho flutuante durante scroll horizontal */
+.financeiro-geral-cabecalho-flutuante th:first-child,
+.financeiro-geral-cabecalho-flutuante th:nth-child(2),
+.financeiro-geral-cabecalho-flutuante th.fg-total,
+.financeiro-geral-cabecalho-flutuante th:last-child{
+  position:relative!important;
+  will-change:transform!important;
+  background:#ccd7e3!important;
+  z-index:130!important;
+}
+.financeiro-geral-cabecalho-flutuante th:nth-child(2){
+  box-shadow:1px 0 0 #a9b8c8!important;
+}
+.financeiro-geral-cabecalho-flutuante th.fg-total{
+  box-shadow:-1px 0 0 #a9b8c8!important;
+}
+
+
+/* Financeiro Geral v63 — novo lançamento, exclusão e ações centralizadas */
+.financeiro-geral-processamento {
+  flex: 1 1 auto;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center;
+  gap: 10px;
+}
+.financeiro-geral-tabela .fg-acoes {
+  min-width: 112px !important;
+  width: 112px !important;
+  white-space: nowrap;
+}
+.financeiro-geral-tabela .fg-acoes button { margin: 0 2px; }
+.financeiro-geral-tabela .fg-excluir { color: #b91c1c; border-color: #fecaca; background: #fff5f5; }
+.fg-modal-overlay {
+  position: fixed; inset: 0; z-index: 5000; background: rgba(15, 23, 42, .48);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.fg-modal {
+  width: min(980px, 96vw); max-height: 90vh; overflow-y: auto; background: #fff;
+  border-radius: 12px; box-shadow: 0 24px 70px rgba(15, 23, 42, .3); padding: 18px;
+}
+.fg-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.fg-modal-header h2 { margin: 0; font-size: 20px; }
+.fg-modal-header button { border: 0; background: transparent; font-size: 28px; cursor: pointer; }
+.fg-modal-grid { display: grid; grid-template-columns: repeat(4, minmax(145px, 1fr)); gap: 12px; }
+.fg-modal-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; }
+.fg-modal-grid input { min-height: 36px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 8px; }
+.fg-modal-descricao { grid-column: span 2; }
+.fg-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+@media (max-width: 800px) { .fg-modal-grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); } }
+
+/* Financeiro Geral: edição/exclusão por duplo clique, sem coluna de ações */
+.financeiro-geral-tabela-wrap .fg-linha-editavel{cursor:pointer}
+.financeiro-geral-tabela-wrap .fg-linha-editavel:hover td{background:#f8fafc}
+.financeiro-geral-tabela .fg-total{right:0!important}
+.financeiro-geral-cabecalho-flutuante th.fg-total{right:0!important}
+.financeiro-geral-tabela thead th:first-child,
+.financeiro-geral-tabela tbody td:first-child,
+.financeiro-geral-tabela tfoot th:first-child,
+.financeiro-geral-cabecalho-flutuante th:first-child{position:sticky!important;left:0!important;z-index:24!important;background:#fff}
+.financeiro-geral-tabela thead th:nth-child(2),
+.financeiro-geral-tabela tbody td:nth-child(2),
+.financeiro-geral-tabela tfoot th:nth-child(2),
+.financeiro-geral-cabecalho-flutuante th:nth-child(2){position:sticky!important;left:96px!important;z-index:23!important;background:#fff}
+.financeiro-geral-tabela thead th:first-child,
+.financeiro-geral-tabela thead th:nth-child(2),
+.financeiro-geral-tabela tfoot th:first-child,
+.financeiro-geral-tabela tfoot th:nth-child(2),
+.financeiro-geral-cabecalho-flutuante th:first-child,
+.financeiro-geral-cabecalho-flutuante th:nth-child(2){background:#ccd7e3!important}
+.financeiro-geral-tabela .fg-linha-saldo td:first-child,
+.financeiro-geral-tabela .fg-linha-saldo td:nth-child(2){background:#ccd7e3!important}
+.fg-modal-actions .fg-modal-excluir{margin-right:auto;border-color:#dc2626;color:#b91c1c;background:#fff}
+.fg-modal-actions .fg-modal-excluir:hover{background:#fef2f2}
+
+/* Financeiro Geral v64 — alinhamento após retirada de Ações, trava e larguras */
+.financeiro-geral-tabela col.fg-col-w90{
+  width:90px!important;
+  min-width:90px!important;
+  max-width:90px!important;
+}
+.financeiro-geral-tabela col.fg-col-w60{
+  width:60px!important;
+  min-width:60px!important;
+  max-width:60px!important;
+}
+
+/* Data e Descrição ficam contíguas e acima somente das colunas móveis. */
+.financeiro-geral-tabela thead th:first-child,
+.financeiro-geral-tabela tbody td:first-child,
+.financeiro-geral-tabela tfoot th:first-child,
+.financeiro-geral-cabecalho-flutuante th:first-child{
+  position:sticky!important;
+  left:0!important;
+  width:88px!important;
+  min-width:88px!important;
+  max-width:88px!important;
+  z-index:90!important;
+}
+.financeiro-geral-tabela thead th:nth-child(2),
+.financeiro-geral-tabela tbody td:nth-child(2),
+.financeiro-geral-tabela tfoot th:nth-child(2),
+.financeiro-geral-cabecalho-flutuante th:nth-child(2){
+  position:sticky!important;
+  left:88px!important;
+  z-index:89!important;
+  box-shadow:1px 0 0 #a9b8c8!important;
+}
+
+/* Total é a única coluna fixa à direita após a retirada de Ações. */
+.financeiro-geral-tabela th.fg-total,
+.financeiro-geral-tabela td.fg-total,
+.financeiro-geral-cabecalho-flutuante th.fg-total{
+  position:sticky!important;
+  right:0!important;
+  z-index:91!important;
+  background:#fff!important;
+  box-shadow:-1px 0 0 #a9b8c8!important;
+}
+.financeiro-geral-tabela thead th.fg-total,
+.financeiro-geral-tabela tfoot th.fg-total,
+.financeiro-geral-cabecalho-flutuante th.fg-total{
+  background:#ccd7e3!important;
+  z-index:95!important;
+}
+.financeiro-geral-tabela .fg-linha-saldo td.fg-total{background:#ccd7e3!important}
+
+/* Impede que o cabeçalho móvel cubra as colunas fixas. */
+.financeiro-geral-cabecalho-flutuante{isolation:isolate!important}
+.financeiro-geral-cabecalho-flutuante th:not(:first-child):not(:nth-child(2)):not(.fg-total){z-index:2!important}
+
+/* Financeiro Geral v65 — alinhamento definitivo do cabeçalho Total */
+.financeiro-geral-tabela-wrap .financeiro-geral-tabela thead th.fg-total{
+  position:sticky!important;
+  right:0!important;
+  left:auto!important;
+  transform:none!important;
+  text-align:center!important;
+  vertical-align:middle!important;
+  z-index:98!important;
+}
+.financeiro-geral-cabecalho-flutuante .financeiro-geral-tabela thead th.fg-total{
+  position:relative!important;
+  right:auto!important;
+  left:auto!important;
+  text-align:center!important;
+  vertical-align:middle!important;
+  z-index:98!important;
+}
