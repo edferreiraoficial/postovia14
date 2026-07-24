@@ -147,6 +147,13 @@ function ehPixRecebidoMaquininha(row) {
   return descricao.includes('PIX RECEBIDO MAQUININHA')
 }
 
+function ehTarifaPixRecebidoMaquininha(row) {
+  const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
+  return descricao.includes('TARIFA PIX RECEBIDO MAQUININHA')
+    || descricao.includes('TARIFA PIX RECEBIDO MAQUINHA')
+    || descricao.includes('TARIFA PIX RECEBIMENTO')
+}
+
 function ehLancamentoCartaoSinteticoLegado(row) {
   const origem = normalizarTexto(row?.origem)
   const tabela = normalizarTexto(row?.tabela_origem)
@@ -849,7 +856,14 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         if (String(row.tipo_lancamento) === 'TAXA_CARTAO' && (!taxaCartaoDia || Number(row.id) !== Number(taxaCartaoDia.id))) continue
         if (ehSeparacaoVendas(row)) continue
         const creditoCartao = ehCreditoVendasCartao(row) && numero(row.conta01) !== 0
+        const tarifaPixRecebido = ehTarifaPixRecebidoMaquininha(row)
         const saldoCartaoInicial = numero(saldoContas.get('conta12'))
+        // A tarifa de Pix recebido pela maquininha pertence somente à conta SPOT.
+        // Zera explicitamente Cartão para corrigir também lançamentos antigos já gravados.
+        if (tarifaPixRecebido && numero(row.conta12) !== 0) {
+          row.conta12 = 0
+          await atualizarCamposLinha(conn, row.id, { conta12: 0 })
+        }
         if (creditoCartao) {
           const valorSpot = numero(row.conta01)
           row.conta12 = -Math.abs(valorSpot)
