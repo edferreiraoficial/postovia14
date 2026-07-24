@@ -144,7 +144,17 @@ function ehCreditoVendasCartao(row) {
 
 function ehPixRecebidoMaquininha(row) {
   const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
+  // A tarifa contém o texto "PIX RECEBIDO MAQUININHA", mas não é um recebimento.
+  // Excluí-la aqui impede que seja lançado o espelho negativo na coluna Cartão.
+  if (ehTarifaPixRecebidoMaquininha(row)) return false
   return descricao.includes('PIX RECEBIDO MAQUININHA')
+}
+
+function ehTarifaPixRecebidoMaquininha(row) {
+  const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
+  return descricao.includes('TARIFA PIX RECEBIDO MAQUININHA')
+    || descricao.includes('TARIFA PIX RECEBIDO MAQUINHA')
+    || descricao.includes('TARIFA PIX RECEBIMENTO')
 }
 
 function ehLancamentoCartaoSinteticoLegado(row) {
@@ -443,8 +453,15 @@ export async function consolidarFinanceiroGeral({
     for (const row of vendasCartao) {
       const dataVenda = String(row.data_venda).slice(0, 10)
       const acumulado = vendaCartaoPorData.get(dataVenda) || { vendas_bruta: 0, taxa: 0 }
+      const descricaoCartao = normalizarTexto(row.descricao_original)
       acumulado.vendas_bruta = arred2(numero(acumulado.vendas_bruta) + numero(row.vendas_bruta))
-      acumulado.taxa = arred2(numero(acumulado.taxa) + numero(row.taxa))
+
+      // O lançamento "Desconto taxas Cartão" deve considerar somente a taxa
+      // informada na linha específica dessa descrição. A tarifa do Pix recebido
+      // pela maquininha é um lançamento separado e não compõe esta taxa.
+      if (descricaoCartao === 'DESCONTO TAXAS CARTAO') {
+        acumulado.taxa = arred2(numero(acumulado.taxa) + numero(row.taxa))
+      }
       vendaCartaoPorData.set(dataVenda, acumulado)
     }
     const vendaCartaoAbertura = vendaCartaoPorData.get(dataAnterior(inicioLancamentos))
@@ -849,7 +866,14 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         if (String(row.tipo_lancamento) === 'TAXA_CARTAO' && (!taxaCartaoDia || Number(row.id) !== Number(taxaCartaoDia.id))) continue
         if (ehSeparacaoVendas(row)) continue
         const creditoCartao = ehCreditoVendasCartao(row) && numero(row.conta01) !== 0
+        const tarifaPixRecebido = ehTarifaPixRecebidoMaquininha(row)
         const saldoCartaoInicial = numero(saldoContas.get('conta12'))
+        // A tarifa de Pix recebido pela maquininha pertence somente à conta SPOT.
+        // Zera explicitamente Cartão para corrigir também lançamentos antigos já gravados.
+        if (tarifaPixRecebido && numero(row.conta12) !== 0) {
+          row.conta12 = 0
+          await atualizarCamposLinha(conn, row.id, { conta12: 0 })
+        }
         if (creditoCartao) {
           const valorSpot = numero(row.conta01)
           row.conta12 = -Math.abs(valorSpot)
