@@ -142,6 +142,11 @@ function ehCreditoVendasCartao(row) {
   return descricao.includes('CREDITO VENDAS CARTAO')
 }
 
+function ehPixRecebidoMaquininha(row) {
+  const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
+  return descricao.includes('PIX RECEBIDO MAQUININHA')
+}
+
 function ehLancamentoCartaoSinteticoLegado(row) {
   const origem = normalizarTexto(row?.origem)
   const tabela = normalizarTexto(row?.tabela_origem)
@@ -434,7 +439,14 @@ export async function consolidarFinanceiroGeral({
     if (baseSaldoInicial) {
       for (const campo of CAMPOS_CONTAS) saldoContas.set(campo, numero(baseSaldoInicial[campo]))
     }
-    const vendaCartaoPorData = new Map(vendasCartao.map((row) => [String(row.data_venda).slice(0, 10), row]))
+    const vendaCartaoPorData = new Map()
+    for (const row of vendasCartao) {
+      const dataVenda = String(row.data_venda).slice(0, 10)
+      const acumulado = vendaCartaoPorData.get(dataVenda) || { vendas_bruta: 0, taxa: 0 }
+      acumulado.vendas_bruta = arred2(numero(acumulado.vendas_bruta) + numero(row.vendas_bruta))
+      acumulado.taxa = arred2(numero(acumulado.taxa) + numero(row.taxa))
+      vendaCartaoPorData.set(dataVenda, acumulado)
+    }
     const vendaCartaoAbertura = vendaCartaoPorData.get(dataAnterior(inicioLancamentos))
     if (vendaCartaoAbertura) saldoContas.set('conta12', arred2(vendaCartaoAbertura.vendas_bruta))
 
@@ -519,8 +531,9 @@ export async function consolidarFinanceiroGeral({
         const valor = numero(row.valor)
         saldoContas.set(campo, arred2(numero(saldoContas.get(campo)) + valor))
         const creditoCartao = campo === 'conta01' && ehCreditoVendasCartao(row)
+        const pixRecebidoMaquininha = campo === 'conta01' && ehPixRecebidoMaquininha(row)
         const valoresLinha = { [campo]: valor }
-        if (creditoCartao) {
+        if (creditoCartao || pixRecebidoMaquininha) {
           valoresLinha.conta12 = -Math.abs(valor)
           saldoContas.set('conta12', arred2(saldoCartaoInicial + valoresLinha.conta12))
         }
