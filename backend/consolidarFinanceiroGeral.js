@@ -169,6 +169,16 @@ function prioridadeColunaLancamento(row, campoMapeado = null) {
       || ehPixRecebidoMaquininha(row)
       || ehTarifaPixRecebidoMaquininha(row)) return 1
 
+  // Compras e vendas de produtos precisam permanecer no mesmo bloco de estoque.
+  // A venda também movimenta conta13, mas não pode ser classificada antes como
+  // lançamento financeiro, pois isso faria a baixa ocorrer antes da compra e do
+  // recálculo do custo médio do próprio dia.
+  const tipoProduto = String(row?.tipo_lancamento || '').toUpperCase()
+  const possuiProduto = CAMPOS_PRODUTOS.some((p) =>
+    numero(row?.[`${p}_quant`]) !== 0 || numero(row?.[`${p}_valor`]) !== 0 || numero(row?.[`${p}_total`]) !== 0
+  )
+  if (possuiProduto || ['COMPRA', 'VENDA', 'AJUSTE', 'RESULTADO'].includes(tipoProduto)) return 9
+
   const tem = (campo) => campoMapeado === campo || numero(row?.[campo]) !== 0
   if (tem('conta01')) return 1  // SPOT
   if (tem('conta02')) return 2  // ITAÚ
@@ -181,10 +191,6 @@ function prioridadeColunaLancamento(row, campoMapeado = null) {
   const possuiOutraConta = Array.from(CAMPOS_CONTAS).some((campo) => numero(row?.[campo]) !== 0)
   if (possuiOutraConta || (campoMapeado && CAMPOS_CONTAS.has(campoMapeado))) return 8
 
-  const possuiProduto = CAMPOS_PRODUTOS.some((p) =>
-    numero(row?.[`${p}_quant`]) !== 0 || numero(row?.[`${p}_valor`]) !== 0 || numero(row?.[`${p}_total`]) !== 0
-  )
-  if (possuiProduto || ['COMPRA', 'VENDA'].includes(String(row?.tipo_lancamento || '').toUpperCase())) return 9
   return 99
 }
 

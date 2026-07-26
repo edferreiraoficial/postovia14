@@ -1370,6 +1370,13 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
                         WHEN conta03 <> 0 THEN 3
                         WHEN conta11 <> 0 THEN 4
                         WHEN conta12 <> 0 THEN 5
+                        /* Compras e vendas permanecem juntas no bloco de produtos.
+                           A venda também possui conta13, mas deve vir depois da compra. */
+                        WHEN tipo_lancamento IN ('COMPRA', 'VENDA', 'AJUSTE', 'RESULTADO')
+                          OR prod1_quant <> 0 OR prod1_valor <> 0 OR prod1_total <> 0
+                          OR prod2_quant <> 0 OR prod2_valor <> 0 OR prod2_total <> 0
+                          OR prod3_quant <> 0 OR prod3_valor <> 0 OR prod3_total <> 0
+                          OR prod4_quant <> 0 OR prod4_valor <> 0 OR prod4_total <> 0 THEN 9
                         WHEN conta13 <> 0 THEN 6
                         WHEN conta21 <> 0 THEN 7
                         WHEN conta04 <> 0 OR conta05 <> 0 OR conta06 <> 0 OR conta07 <> 0 OR conta08 <> 0
@@ -1377,11 +1384,6 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
                           OR conta17 <> 0 OR conta18 <> 0 OR conta19 <> 0 OR conta20 <> 0 OR conta22 <> 0
                           OR conta23 <> 0 OR conta24 <> 0 OR conta25 <> 0 OR conta26 <> 0 OR conta27 <> 0
                           OR conta28 <> 0 OR conta29 <> 0 OR conta30 <> 0 THEN 8
-                        WHEN tipo_lancamento IN ('COMPRA', 'VENDA')
-                          OR prod1_quant <> 0 OR prod1_valor <> 0 OR prod1_total <> 0
-                          OR prod2_quant <> 0 OR prod2_valor <> 0 OR prod2_total <> 0
-                          OR prod3_quant <> 0 OR prod3_valor <> 0 OR prod3_total <> 0
-                          OR prod4_quant <> 0 OR prod4_valor <> 0 OR prod4_total <> 0 THEN 9
                         ELSE 99
                       END ASC,
                       CASE
