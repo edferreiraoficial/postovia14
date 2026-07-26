@@ -1359,18 +1359,42 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
                         ELSE 1
                       END ASC,
                       CASE
-                        WHEN tipo_lancamento = 'TAXA_CARTAO' THEN 1
-                        WHEN tipo_lancamento = 'COMPRA' THEN 40
-                        WHEN tipo_lancamento = 'VENDA' THEN 50
-                        WHEN tipo_lancamento = 'SEPARACAO_VENDAS' THEN 60
-                        WHEN conta01 <> 0 THEN 1 WHEN conta02 <> 0 THEN 2 WHEN conta03 <> 0 THEN 3 WHEN conta04 <> 0 THEN 4
-                        WHEN conta05 <> 0 THEN 5 WHEN conta06 <> 0 THEN 6 WHEN conta07 <> 0 THEN 7 WHEN conta08 <> 0 THEN 8
-                        WHEN conta09 <> 0 THEN 9 WHEN conta10 <> 0 THEN 10 WHEN conta11 <> 0 THEN 11 WHEN conta12 <> 0 THEN 12
-                        WHEN conta13 <> 0 THEN 13 WHEN conta14 <> 0 THEN 14 WHEN conta15 <> 0 THEN 15 WHEN conta16 <> 0 THEN 16
-                        WHEN conta17 <> 0 THEN 17 WHEN conta18 <> 0 THEN 18 WHEN conta19 <> 0 THEN 19 WHEN conta20 <> 0 THEN 20
-                        WHEN conta21 <> 0 THEN 21 WHEN conta22 <> 0 THEN 22 WHEN conta23 <> 0 THEN 23 WHEN conta24 <> 0 THEN 24
-                        WHEN conta25 <> 0 THEN 25 WHEN conta26 <> 0 THEN 26 WHEN conta27 <> 0 THEN 27 WHEN conta28 <> 0 THEN 28
-                        WHEN conta29 <> 0 THEN 29 WHEN conta30 <> 0 THEN 30 ELSE 99
+                        /* SPOT, inclusive as linhas auxiliares que também movimentam Cartão. */
+                        WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%CREDITO VENDAS CARTAO%' THEN 1
+                        WHEN tipo_lancamento = 'TAXA_CARTAO'
+                             OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%DESCONTO TAXAS CARTAO%' THEN 1
+                        WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%PIX RECEBIDO MAQUININHA%' THEN 1
+                        WHEN conta01 <> 0 THEN 1
+                        /* Demais contas na ordem visual solicitada. */
+                        WHEN conta02 <> 0 THEN 2
+                        WHEN conta03 <> 0 THEN 3
+                        WHEN conta11 <> 0 THEN 4
+                        WHEN conta12 <> 0 THEN 5
+                        WHEN conta13 <> 0 THEN 6
+                        WHEN conta21 <> 0 THEN 7
+                        WHEN conta04 <> 0 OR conta05 <> 0 OR conta06 <> 0 OR conta07 <> 0 OR conta08 <> 0
+                          OR conta09 <> 0 OR conta10 <> 0 OR conta14 <> 0 OR conta15 <> 0 OR conta16 <> 0
+                          OR conta17 <> 0 OR conta18 <> 0 OR conta19 <> 0 OR conta20 <> 0 OR conta22 <> 0
+                          OR conta23 <> 0 OR conta24 <> 0 OR conta25 <> 0 OR conta26 <> 0 OR conta27 <> 0
+                          OR conta28 <> 0 OR conta29 <> 0 OR conta30 <> 0 THEN 8
+                        WHEN tipo_lancamento IN ('COMPRA', 'VENDA')
+                          OR prod1_quant <> 0 OR prod1_valor <> 0 OR prod1_total <> 0
+                          OR prod2_quant <> 0 OR prod2_valor <> 0 OR prod2_total <> 0
+                          OR prod3_quant <> 0 OR prod3_valor <> 0 OR prod3_total <> 0
+                          OR prod4_quant <> 0 OR prod4_valor <> 0 OR prod4_total <> 0 THEN 9
+                        ELSE 99
+                      END ASC,
+                      CASE
+                        /* Ordem interna do SPOT. */
+                        WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%CREDITO VENDAS CARTAO%' THEN 1
+                        WHEN tipo_lancamento = 'TAXA_CARTAO'
+                             OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%DESCONTO TAXAS CARTAO%' THEN 2
+                        WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%PIX RECEBIDO MAQUININHA%'
+                             AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) NOT LIKE '%TARIFA%' THEN 3
+                        WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%TARIFA PIX RECEBIDO MAQUININHA%' THEN 4
+                        /* No ITAÚ, Pix e depósitos Vendas vem antes dos demais. */
+                        WHEN conta02 <> 0 AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%PIX E DEPOSIT%VENDAS%' THEN 1
+                        ELSE 10
                       END ASC,
                       CASE WHEN tipo_lancamento = 'TAXA_CARTAO' THEN COALESCE(registro_origem_id, id) ELSE COALESCE(registro_origem_id, id) END ASC,
                       CASE WHEN tipo_lancamento IN ('TAXA_CARTAO', 'SEPARACAO_VENDAS') THEN 1 ELSE 0 END ASC,

@@ -144,10 +144,55 @@ function ehCreditoVendasCartao(row) {
 
 function ehPixRecebidoMaquininha(row) {
   const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
-  // A tarifa contém o texto "PIX RECEBIDO MAQUININHA", mas não é um recebimento.
-  // Excluí-la aqui impede que seja lançado o espelho negativo na coluna Cartão.
   if (ehTarifaPixRecebidoMaquininha(row)) return false
   return descricao.includes('PIX RECEBIDO MAQUININHA')
+}
+
+function ordemLancamentoSpot(row) {
+  if (ehCreditoVendasCartao(row)) return 1
+  if (String(row?.tipo_lancamento || '').toUpperCase() === 'TAXA_CARTAO') return 2
+  if (ehPixRecebidoMaquininha(row)) return 3
+  if (ehTarifaPixRecebidoMaquininha(row)) return 4
+  return 10
+}
+
+function ehPixDepositosVendas(row) {
+  const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
+  return descricao.includes('PIX E DEPOSITO') && descricao.includes('VENDAS')
+}
+
+function prioridadeColunaLancamento(row, campoMapeado = null) {
+  // As quatro linhas especiais pertencem ao bloco SPOT, mesmo quando também
+  // movimentam a coluna Cartão.
+  if (ehCreditoVendasCartao(row)
+      || String(row?.tipo_lancamento || '').toUpperCase() === 'TAXA_CARTAO'
+      || ehPixRecebidoMaquininha(row)
+      || ehTarifaPixRecebidoMaquininha(row)) return 1
+
+  const tem = (campo) => campoMapeado === campo || numero(row?.[campo]) !== 0
+  if (tem('conta01')) return 1  // SPOT
+  if (tem('conta02')) return 2  // ITAÚ
+  if (tem('conta03')) return 3  // LUCILA
+  if (tem('conta11')) return 4  // CAIXA
+  if (tem('conta12')) return 5  // CARTÃO
+  if (tem('conta13')) return 6  // VENDAS
+  if (tem('conta21')) return 7  // ERALDO
+
+  const possuiOutraConta = Array.from(CAMPOS_CONTAS).some((campo) => numero(row?.[campo]) !== 0)
+  if (possuiOutraConta || (campoMapeado && CAMPOS_CONTAS.has(campoMapeado))) return 8
+
+  const possuiProduto = CAMPOS_PRODUTOS.some((p) =>
+    numero(row?.[`${p}_quant`]) !== 0 || numero(row?.[`${p}_valor`]) !== 0 || numero(row?.[`${p}_total`]) !== 0
+  )
+  if (possuiProduto || ['COMPRA', 'VENDA'].includes(String(row?.tipo_lancamento || '').toUpperCase())) return 9
+  return 99
+}
+
+function prioridadeInternaLancamento(row, campoMapeado = null) {
+  const grupo = prioridadeColunaLancamento(row, campoMapeado)
+  if (grupo === 1) return ordemLancamentoSpot(row)
+  if (grupo === 2 && ehPixDepositosVendas(row)) return 1
+  return 10
 }
 
 function ehTarifaPixRecebidoMaquininha(row) {
@@ -452,14 +497,22 @@ export async function consolidarFinanceiroGeral({
     const vendaCartaoPorData = new Map()
     for (const row of vendasCartao) {
       const dataVenda = String(row.data_venda).slice(0, 10)
-      const acumulado = vendaCartaoPorData.get(dataVenda) || { vendas_bruta: 0, taxa: 0 }
+      const acumulado = vendaCartaoPorData.get(dataVenda) || { vendas_bruta: 0, separacao_cartao: 0, taxa: 0 }
       const descricaoCartao = normalizarTexto(row.descricao_original)
       acumulado.vendas_bruta = arred2(numero(acumulado.vendas_bruta) + numero(row.vendas_bruta))
 
-      // O lançamento "Desconto taxas Cartão" deve considerar somente a taxa
-      // informada na linha específica dessa descrição. A tarifa do Pix recebido
-      // pela maquininha é um lançamento separado e não compõe esta taxa.
-      if (descricaoCartao === 'DESCONTO TAXAS CARTAO') {
+      // A linha de Separação usa somente Vendas Bruta das descrições permitidas
+      // no próprio dia: Vendas no Cartão ou Pix recebido maquinin(h)a.
+      if (descricaoCartao === 'VENDAS NO CARTAO'
+        || descricaoCartao === 'PIX RECEBIDO MAQUININHA'
+        || descricaoCartao === 'PIX RECEBIDO MAQUINHINHA') {
+        acumulado.separacao_cartao = arred2(numero(acumulado.separacao_cartao) + numero(row.vendas_bruta))
+      }
+
+      // A linha "Desconto taxas Cartão" usa somente a taxa registrada na
+      // tabela vendas_cartao do dia anterior ao lançamento, quando a descrição
+      // for "Vendas no Cartão" ou "Crédito Vendas Cartão".
+      if (descricaoCartao === 'VENDAS NO CARTAO' || descricaoCartao === 'CREDITO VENDAS CARTAO') {
         acumulado.taxa = arred2(numero(acumulado.taxa) + numero(row.taxa))
       }
       vendaCartaoPorData.set(dataVenda, acumulado)
@@ -529,15 +582,23 @@ export async function consolidarFinanceiroGeral({
 
     for (let dia = inicioLancamentos; dia <= fim; dia = proximaData(dia)) {
       const saldoContasInicioDia = new Map(Array.from(CAMPOS_CONTAS, (campo) => [campo, numero(saldoContas.get(campo))]))
-      const cartaoDiaAnterior = vendaCartaoPorData.get(dataAnterior(dia)) || null
       // O crédito de vendas no cartão é consolidado exclusivamente a partir do
       // lançamento real existente no extrato SPOT. A tabela vendas_cartao serve
       // apenas como informação auxiliar e não deve criar lançamentos financeiros,
       // evitando duplicidade de Crédito Vendas Cartão e Desconto taxas Cartão.
 
       const linhasBanco = extratosPorDia.get(dia) || []
-      linhasBanco.sort((a, b) => (mapeamentos.get(Number(a.conta_bancaria_id)) || 'conta99').localeCompare(mapeamentos.get(Number(b.conta_bancaria_id)) || 'conta99') || Number(a.id) - Number(b.id))
+      linhasBanco.sort((a, b) => {
+        const campoA = mapeamentos.get(Number(a.conta_bancaria_id)) || null
+        const campoB = mapeamentos.get(Number(b.conta_bancaria_id)) || null
+        return prioridadeColunaLancamento(a, campoA) - prioridadeColunaLancamento(b, campoB)
+          || prioridadeInternaLancamento(a, campoA) - prioridadeInternaLancamento(b, campoB)
+          || Number(a.id) - Number(b.id)
+      })
 
+      // A linha Separação Vendas Cartão é obtida exclusivamente da tabela
+      // vendas_cartao no próprio dia, somando vendas_bruta das descrições
+      // "Vendas no Cartão" e "Pix recebido maquinin(h)a".
       for (const row of linhasBanco) {
         const campo = mapeamentos.get(Number(row.conta_bancaria_id))
         if (!campo) { ignorados += 1; semMapeamento.set(Number(row.conta_bancaria_id), row.nome_conta || row.instituicao); continue }
@@ -548,9 +609,14 @@ export async function consolidarFinanceiroGeral({
         const valor = numero(row.valor)
         saldoContas.set(campo, arred2(numero(saldoContas.get(campo)) + valor))
         const creditoCartao = campo === 'conta01' && ehCreditoVendasCartao(row)
-        const pixRecebidoMaquininha = campo === 'conta01' && ehPixRecebidoMaquininha(row)
+        const pixMaquininha = campo === 'conta01' && ehPixRecebidoMaquininha(row)
         const valoresLinha = { [campo]: valor }
-        if (creditoCartao || pixRecebidoMaquininha) {
+        if (creditoCartao) {
+          // Crédito vendas cartão é um movimento: replica o valor do SPOT
+          // na coluna Cartão com sinal negativo.
+          valoresLinha.conta12 = -Math.abs(valor)
+          saldoContas.set('conta12', arred2(saldoCartaoInicial + valoresLinha.conta12))
+        } else if (pixMaquininha) {
           valoresLinha.conta12 = -Math.abs(valor)
           saldoContas.set('conta12', arred2(saldoCartaoInicial + valoresLinha.conta12))
         }
@@ -560,10 +626,11 @@ export async function consolidarFinanceiroGeral({
           chave: `${empresa}:extratos_bancarios:${row.id}:${campo}`, usuarioId, valores: valoresLinha,
         }))
         if (creditoCartao) {
-          const taxaInformada = Math.abs(numero(cartaoDiaAnterior?.taxa))
-          const descontoTaxas = taxaInformada > 0
-            ? -arred2(taxaInformada)
-            : arred2(-(saldoCartaoInicial - Math.abs(valor)))
+          // A taxa vem exclusivamente da tabela vendas_cartao, referente ao dia
+          // anterior ao lançamento e às descrições "Vendas no Cartão" ou
+          // "Crédito Vendas Cartão". O valor é lançado negativamente em Cartão.
+          const taxaDiaAnterior = numero(vendaCartaoPorData.get(dataAnterior(dia))?.taxa)
+          const descontoTaxas = arred2(-Math.abs(taxaDiaAnterior))
           saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + descontoTaxas))
           contabilizar(await gravarLinhaSegura({
             empresa, data: dia, descricao: 'Desconto taxas Cartão', tipo: 'TAXA_CARTAO', origem: 'SISTEMA',
@@ -654,8 +721,8 @@ export async function consolidarFinanceiroGeral({
         // A partir de 05/09/2025, a separação do próprio dia recebe a venda bruta
         // de cartão como entrada positiva. Esse valor compõe o saldo de Cartão do dia
         // e será liquidado pelas linhas Crédito/Taxa no bloco do dia seguinte.
-        const vendaCartaoDoDia = dia >= '2025-09-05' ? vendaCartaoPorData.get(dia) : null
-        const valorCartao = vendaCartaoDoDia ? Math.abs(arred2(vendaCartaoDoDia.vendas_bruta)) : 0
+        const vendaCartaoDoDia = vendaCartaoPorData.get(dia)
+        const valorCartao = vendaCartaoDoDia ? Math.abs(arred2(vendaCartaoDoDia.separacao_cartao)) : 0
         const valorCaixa = arred2(totalVendasDia - valorCartao)
         contabilizar(await gravarLinhaSegura({
           empresa, data: dia, descricao: 'Separação Vendas Cartão/dinheiro/etc', tipo: 'SEPARACAO_VENDAS', origem: 'SISTEMA',
@@ -794,6 +861,44 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
       medio: numero(base[`${p}_valor`]),
     }]))
 
+    // Carrega a venda bruta diária diretamente da planilha/tabela Vendas_Cartão
+    // para reconstruir corretamente a linha Separação Vendas Cartão no recálculo.
+    const vendaCartaoPorData = new Map()
+    if (await tabelaExiste(conn, 'vendas_cartao')) {
+      const [vendasCartaoRows] = await conn.query(
+        `SELECT DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_venda,
+                COALESCE(SUM(vendas_bruta), 0) AS vendas_bruta,
+                COALESCE(SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(descricao_original, ''))) IN (
+                    'VENDAS NO CARTÃO', 'VENDAS NO CARTAO',
+                    'PIX RECEBIDO MAQUININHA', 'PIX RECEBIDO MAQUINHINHA'
+                  ) THEN vendas_bruta ELSE 0 END), 0) AS separacao_cartao,
+                COALESCE(SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(descricao_original, ''))) IN ('VENDAS NO CARTÃO', 'VENDAS NO CARTAO', 'CRÉDITO VENDAS CARTÃO', 'CREDITO VENDAS CARTAO')
+                  THEN taxa ELSE 0 END), 0) AS taxa
+           FROM vendas_cartao
+          WHERE empresa_id = ? AND status = 'ATIVO'
+            AND data_lancamento BETWEEN ? AND ?
+          GROUP BY DATE(data_lancamento)`,
+        [empresa, dataAnterior(inicio), fim]
+      )
+      for (const row of vendasCartaoRows) {
+        vendaCartaoPorData.set(String(row.data_venda).slice(0, 10), {
+          vendas_bruta: arred2(row.vendas_bruta),
+          separacao_cartao: arred2(row.separacao_cartao),
+          taxa: arred2(row.taxa),
+        })
+      }
+    }
+
+    // No primeiro dia do recálculo, a abertura correta da coluna Cartão é a
+    // Venda Bruta do dia anterior. Não reutiliza um fechamento contaminado por
+    // Pix recebido maquininha ou Tarifa Pix recebido maquininha.
+    const vendaCartaoAbertura = vendaCartaoPorData.get(dataAnterior(inicio))
+    if (vendaCartaoAbertura !== undefined) {
+      saldoContas.set('conta12', arred2(vendaCartaoAbertura.vendas_bruta))
+    }
+
     const [rows] = await conn.query(
       `SELECT *, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_iso
        FROM financeiro_geral
@@ -861,34 +966,62 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         }
       }
 
-      for (const row of linhas) {
-        if (['SALDO', 'AJUSTE', 'RESULTADO'].includes(String(row.tipo_lancamento))) continue
-        if (String(row.tipo_lancamento) === 'TAXA_CARTAO' && (!taxaCartaoDia || Number(row.id) !== Number(taxaCartaoDia.id))) continue
+      const linhasOrdenadas = [...linhas].sort((a, b) =>
+        prioridadeColunaLancamento(a) - prioridadeColunaLancamento(b)
+        || prioridadeInternaLancamento(a) - prioridadeInternaLancamento(b)
+        || Number(a.id) - Number(b.id)
+      )
+
+      for (const row of linhasOrdenadas) {
+        if (['SALDO', 'AJUSTE', 'RESULTADO', 'TAXA_CARTAO'].includes(String(row.tipo_lancamento))) continue
         if (ehSeparacaoVendas(row)) continue
         const creditoCartao = ehCreditoVendasCartao(row) && numero(row.conta01) !== 0
+        const pixMaquininha = ehPixRecebidoMaquininha(row) && numero(row.conta01) !== 0
         const tarifaPixRecebido = ehTarifaPixRecebidoMaquininha(row)
-        const saldoCartaoInicial = numero(saldoContas.get('conta12'))
-        // A tarifa de Pix recebido pela maquininha pertence somente à conta SPOT.
-        // Zera explicitamente Cartão para corrigir também lançamentos antigos já gravados.
+        // A tarifa pertence somente ao SPOT. Crédito de cartão e Pix recebido
+        // pela maquininha são replicados em Cartão com o mesmo valor negativo.
         if (tarifaPixRecebido && numero(row.conta12) !== 0) {
           row.conta12 = 0
           await atualizarCamposLinha(conn, row.id, { conta12: 0 })
         }
         if (creditoCartao) {
           const valorSpot = numero(row.conta01)
+          const saldoCartaoAntesCredito = numero(saldoContas.get('conta12'))
+          // Crédito vendas cartão é um movimento negativo na coluna Cartão,
+          // exatamente igual ao valor positivo lançado no SPOT.
           row.conta12 = -Math.abs(valorSpot)
           await atualizarCamposLinha(conn, row.id, { conta01: valorSpot, conta12: row.conta12 })
+          for (const campo of CAMPOS_CONTAS) {
+            saldoContas.set(campo, arred2(numero(saldoContas.get(campo)) + numero(row[campo])))
+          }
+          // Guarda na própria linha o saldo imediatamente anterior ao crédito,
+          // que será a única base do cálculo da linha Desconto taxas Cartão.
+          row.__saldoCartaoAntesCredito = saldoCartaoAntesCredito
+        } else {
+          if (pixMaquininha) {
+            const valorSpot = numero(row.conta01)
+            row.conta12 = -Math.abs(valorSpot)
+            await atualizarCamposLinha(conn, row.id, { conta01: valorSpot, conta12: row.conta12 })
+          }
+          for (const campo of CAMPOS_CONTAS) saldoContas.set(campo, arred2(numero(saldoContas.get(campo)) + numero(row[campo])))
         }
-        for (const campo of CAMPOS_CONTAS) saldoContas.set(campo, arred2(numero(saldoContas.get(campo)) + numero(row[campo])))
-        if (creditoCartao && !taxaCartaoDia) {
-          const descontoTaxas = arred2(-(saldoCartaoInicial - Math.abs(numero(row.conta01))))
+        if (creditoCartao) {
+          // Também no recálculo, usa exclusivamente a taxa da tabela
+          // vendas_cartao do dia anterior, para as descrições permitidas.
+          const taxaDiaAnterior = numero(vendaCartaoPorData.get(dataAnterior(dia))?.taxa)
+          const descontoTaxas = arred2(-Math.abs(taxaDiaAnterior))
           saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + descontoTaxas))
-          await gravarLinhaSegura({
-            empresa, data: dia, descricao: 'Desconto taxas Cartão', tipo: 'TAXA_CARTAO', origem: 'SISTEMA',
-            tabelaOrigem: 'recalculo', registroOrigemId: row.registro_origem_id || row.id,
-            chave: `${empresa}:extratos_bancarios:${row.registro_origem_id || row.id}:taxa-cartao`, usuarioId,
-            valores: { conta12: descontoTaxas },
-          })
+          if (taxaCartaoDia) {
+            taxaCartaoDia.conta12 = descontoTaxas
+            await atualizarCamposLinha(conn, taxaCartaoDia.id, { conta12: descontoTaxas })
+          } else {
+            await gravarLinhaSegura({
+              empresa, data: dia, descricao: 'Desconto taxas Cartão', tipo: 'TAXA_CARTAO', origem: 'SISTEMA',
+              tabelaOrigem: 'recalculo', registroOrigemId: row.registro_origem_id || row.id,
+              chave: `${empresa}:extratos_bancarios:${row.registro_origem_id || row.id}:taxa-cartao`, usuarioId,
+              valores: { conta12: descontoTaxas },
+            })
+          }
         }
 
         for (const p of CAMPOS_PRODUTOS) {
@@ -923,7 +1056,9 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
       }
 
       if (totalVendasDia !== 0) {
-        const valorCartao = arred2(Math.max(0, numero(separacaoExistenteDia?.conta12)))
+        // Usa exclusivamente a soma de vendas_bruta da tabela vendas_cartao
+        // para as descrições permitidas no próprio dia.
+        const valorCartao = Math.abs(numero(vendaCartaoPorData.get(dia)?.separacao_cartao))
         const valorCaixa = arred2(totalVendasDia - valorCartao)
         await gravarLinhaSegura({
           empresa, data: dia, descricao: 'Separação Vendas Cartão/dinheiro/etc', tipo: 'SEPARACAO_VENDAS', origem: 'SISTEMA',
