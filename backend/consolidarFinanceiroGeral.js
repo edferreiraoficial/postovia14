@@ -891,13 +891,10 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
       }
     }
 
-    // No primeiro dia do recálculo, a abertura correta da coluna Cartão é a
-    // Venda Bruta do dia anterior. Não reutiliza um fechamento contaminado por
-    // Pix recebido maquininha ou Tarifa Pix recebido maquininha.
-    const vendaCartaoAbertura = vendaCartaoPorData.get(dataAnterior(inicio))
-    if (vendaCartaoAbertura !== undefined) {
-      saldoContas.set('conta12', arred2(vendaCartaoAbertura.vendas_bruta))
-    }
+    // O saldo inicial de todas as contas, inclusive Cartão, vem exclusivamente
+    // do último fechamento anterior ou da linha "Saldo anterior" existente na
+    // própria data inicial. A venda bruta da tabela vendas_cartao é movimento do
+    // dia e nunca deve substituir o saldo de abertura.
 
     const [rows] = await conn.query(
       `SELECT *, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_iso
@@ -939,9 +936,11 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
       }
       let totalVendasDia = 0
 
-      // Se houver uma abertura explícita neste dia, ela é a base do próprio dia e nunca
-      // pode ser transformada em "Saldo do dia" durante o recálculo.
-      if (saldoInicialRows.length) {
+      // A linha de abertura só pode definir a base no primeiro dia solicitado.
+      // Nos dias seguintes, a abertura deve ser obrigatoriamente o "Saldo do dia"
+      // recalculado do dia anterior, garantindo a propagação após inclusão,
+      // alteração ou exclusão até o último dia com lançamentos.
+      if (dia === inicio && saldoInicialRows.length) {
         const abertura = saldoInicialRows[0]
         for (const campo of CAMPOS_CONTAS) saldoContas.set(campo, arred6(abertura[campo]))
         for (const p of CAMPOS_PRODUTOS) {
