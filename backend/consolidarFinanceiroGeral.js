@@ -192,6 +192,17 @@ function prioridadeInternaLancamento(row, campoMapeado = null) {
   const grupo = prioridadeColunaLancamento(row, campoMapeado)
   if (grupo === 1) return ordemLancamentoSpot(row)
   if (grupo === 2 && ehPixDepositosVendas(row)) return 1
+
+  // Dentro do bloco de produtos, compras devem sempre ser processadas antes
+  // das vendas do mesmo dia. Assim o estoque e o custo médio ponderado são
+  // atualizados antes de calcular a baixa e o resultado das vendas.
+  if (grupo === 9) {
+    const tipo = String(row?.tipo_lancamento || '').toUpperCase()
+    if (tipo === 'COMPRA') return 1
+    if (tipo === 'VENDA') return 2
+    if (tipo === 'AJUSTE') return 3
+    if (tipo === 'RESULTADO') return 4
+  }
   return 10
 }
 

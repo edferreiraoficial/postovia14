@@ -1394,6 +1394,11 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
                         WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%TARIFA PIX RECEBIDO MAQUININHA%' THEN 4
                         /* No ITAÚ, Pix e depósitos Vendas vem antes dos demais. */
                         WHEN conta02 <> 0 AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%PIX E DEPOSIT%VENDAS%' THEN 1
+                        /* No bloco de produtos, compras sempre aparecem antes das vendas. */
+                        WHEN tipo_lancamento = 'COMPRA' THEN 1
+                        WHEN tipo_lancamento = 'VENDA' THEN 2
+                        WHEN tipo_lancamento = 'AJUSTE' THEN 3
+                        WHEN tipo_lancamento = 'RESULTADO' THEN 4
                         ELSE 10
                       END ASC,
                       CASE WHEN tipo_lancamento = 'TAXA_CARTAO' THEN COALESCE(registro_origem_id, id) ELSE COALESCE(registro_origem_id, id) END ASC,
