@@ -3753,9 +3753,10 @@ body,
   width:120px;
 }
 .financeiro-geral-filtros .fg-filtros-campos > .fg-busca{
-  flex:1 1 0;
-  width:auto;
-  min-width:80px;
+  flex:0 0 500px;
+  width:500px;
+  min-width:500px;
+  max-width:500px;
 }
 .financeiro-geral-filtros .fg-filtros-direita{
   display:flex;
