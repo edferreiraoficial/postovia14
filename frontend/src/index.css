@@ -4039,3 +4039,56 @@ body,
 .financeiro-geral-filtros .fg-filtros-campos .fg-buscar{
   width:100px!important;min-width:100px!important;max-width:100px!important;box-sizing:border-box!important;
 }
+
+/* Financeiro Geral v75 — espaçamento de 6px e descrição auto dimensionável */
+.financeiro-geral-filtros .fg-filtros-campos{
+  display:grid!important;
+  grid-template-columns:120px 120px minmax(80px,1fr) 150px 150px 100px 100px 100px 100px 100px!important;
+  column-gap:6px!important;
+  row-gap:6px!important;
+  align-items:end!important;
+  width:100%!important;
+  min-width:1134px!important;
+}
+.financeiro-geral-filtros .fg-filtros-campos > *{
+  grid-column:auto!important;
+  min-width:0!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+}
+.financeiro-geral-filtros .fg-filtros-campos .fg-busca{
+  width:100%!important;
+  min-width:80px!important;
+  max-width:none!important;
+}
+.financeiro-geral-filtros .fg-filtros-campos .fg-busca input{
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+  box-sizing:border-box!important;
+}
+.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(1),
+.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(2),
+.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(1) input,
+.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(2) input{
+  width:120px!important;
+  min-width:120px!important;
+  max-width:120px!important;
+}
+.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(4),
+.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(5),
+.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(4) select,
+.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(5) select{
+  width:150px!important;
+  min-width:150px!important;
+  max-width:150px!important;
+}
+.financeiro-geral-filtros .fg-filtros-campos .fg-valor,
+.financeiro-geral-filtros .fg-filtros-campos .fg-valor input,
+.financeiro-geral-filtros .fg-filtros-campos .fg-limpar-filtros,
+.financeiro-geral-filtros .fg-filtros-campos .fg-buscar{
+  width:100px!important;
+  min-width:100px!important;
+  max-width:100px!important;
+  box-sizing:border-box!important;
+}
