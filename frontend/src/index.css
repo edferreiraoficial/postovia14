@@ -3700,395 +3700,127 @@ body,
   z-index:98!important;
 }
 
-/* Financeiro Geral v66 — filtros avançados de lançamentos */
-.financeiro-geral-filtros {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(125px, 1fr));
-  align-items: end;
-  gap: 10px;
-}
-.financeiro-geral-filtros .fg-busca { grid-column: span 2; }
-.financeiro-geral-filtros label { min-width: 0; }
-.financeiro-geral-filtros input,
-.financeiro-geral-filtros select { width: 100%; }
-.financeiro-geral-filtros .fg-limpar-filtros {
-  border: 1px solid #9aa8b6;
-  background: #fff;
-  color: #263645;
-  border-radius: 6px;
-  min-height: 38px;
-  padding: 0 14px;
-  cursor: pointer;
-}
-@media (max-width: 1200px) {
-  .financeiro-geral-filtros { grid-template-columns: repeat(4, minmax(135px, 1fr)); }
-}
-@media (max-width: 760px) {
-  .financeiro-geral-filtros { grid-template-columns: 1fr 1fr; }
-  .financeiro-geral-filtros .fg-busca { grid-column: span 2; }
-}
-
-/* Financeiro Geral v67 — filtros compactos e ações alinhadas */
-.financeiro-geral-filtros{
-  display:flex!important;
-  align-items:flex-end!important;
-  justify-content:space-between!important;
-  gap:10px!important;
-  flex-wrap:nowrap!important;
-}
-.fg-filtros-campos{
-  display:grid;
-  grid-template-columns:130px 130px minmax(145px,190px) 105px 125px 92px 92px 92px auto;
-  gap:7px;
-  align-items:end;
-  min-width:0;
-  flex:1 1 auto;
-}
-.fg-filtros-campos label{min-width:0}
-.fg-filtros-campos input,.fg-filtros-campos select{width:100%}
-.fg-filtros-acoes{
-  display:flex;
-  justify-content:flex-end;
-  align-items:flex-end;
-  gap:7px;
-  margin-left:auto;
-  flex:0 0 auto;
-}
-.fg-filtros-acoes .fg-acao{height:34px;white-space:nowrap}
-.financeiro-geral-filtros .fg-limpar-filtros{height:34px;min-height:34px;padding:0 11px}
-.fg-modal-incluir{border:1px solid #2f6fad;background:#fff;color:#1e5f9c;border-radius:6px;padding:0 14px;height:36px;font-weight:600}
-@media(max-width:1450px){
-  .financeiro-geral-filtros{flex-wrap:wrap!important}
-  .fg-filtros-campos{grid-template-columns:repeat(5,minmax(105px,1fr));width:100%;flex-basis:100%}
-  .fg-filtros-acoes{width:100%}
-}
-@media(max-width:760px){
-  .fg-filtros-campos{grid-template-columns:1fr 1fr}
-  .fg-filtros-acoes{flex-wrap:wrap}
-}
-
-/* Financeiro Geral v68 — filtros e ações em uma única linha */
-.financeiro-geral-filtros{
-  display:block!important;
-  overflow-x:auto;
-}
-.fg-filtros-campos{
-  display:grid!important;
-  grid-template-columns:118px 118px minmax(135px,170px) 92px 112px 78px 78px 78px 66px 68px 62px 104px 102px!important;
-  gap:6px!important;
-  align-items:end!important;
-  width:max-content!important;
-  min-width:100%!important;
-}
-.fg-filtros-campos .fg-acao{
-  height:34px;
-  min-height:34px;
-  padding:0 9px;
-  white-space:nowrap;
-}
-.financeiro-geral-filtros .fg-limpar-filtros{
-  margin:0!important;
-  min-width:66px!important;
-}
-@media(max-width:1450px){
-  .financeiro-geral-filtros{flex-wrap:nowrap!important}
-  .fg-filtros-campos{width:max-content!important;min-width:100%!important;grid-template-columns:118px 118px 150px 92px 112px 78px 78px 78px 66px 68px 62px 104px 102px!important}
-}
-
-
-/* Financeiro Geral v69 — ações à direita e botões do modal padronizados */
-.fg-filtros-campos{
-  width:100%!important;
-  min-width:1380px!important;
-  grid-template-columns:118px 118px minmax(135px,170px) 92px 112px 78px 78px 78px minmax(12px,1fr) 66px 68px 62px 104px 102px!important;
-}
-.fg-acoes-spacer{min-width:12px}
-.fg-modal-actions{gap:14px!important}
-.fg-modal-actions button{border-radius:8px!important;min-width:116px;height:38px;padding:0 16px}
-.fg-modal-actions .fg-modal-excluir{border-radius:8px!important}
-.fg-modal-actions .fg-modal-cancelar{border:1px solid #94a3b8;background:#fff;color:#334155;border-radius:8px!important;min-width:116px}
-.fg-modal-actions .fg-modal-cancelar:hover{background:#f8fafc}
-.fg-modal-actions .fg-modal-incluir{min-width:116px;border-radius:8px!important}
-@media(max-width:1450px){
-  .fg-filtros-campos{min-width:1380px!important;grid-template-columns:118px 118px 150px 92px 112px 78px 78px 78px minmax(12px,1fr) 66px 68px 62px 104px 102px!important}
-}
-
-
-/* Financeiro Geral v70 — filtros fixos de 100px e ações na linha das datas */
-.financeiro-geral-filtros{
-  display:block!important;
-  overflow-x:auto;
-}
-.fg-filtros-campos{
-  display:grid!important;
-  grid-template-columns:112px 112px minmax(135px,1fr) 100px 100px 100px 100px 100px 62px 66px 98px 96px!important;
-  align-items:end!important;
-  gap:6px!important;
-  width:100%!important;
-  min-width:1225px!important;
-}
-.fg-filtros-campos .fg-fixo-100{
-  width:100px!important;
-  min-width:100px!important;
-  max-width:100px!important;
-}
-.fg-filtros-campos .fg-fixo-100 input,
-.fg-filtros-campos .fg-fixo-100 select{
-  width:100px!important;
-  min-width:100px!important;
-  max-width:100px!important;
-  box-sizing:border-box;
-}
-.fg-filtros-campos .fg-busca{min-width:135px!important}
-.fg-filtros-campos .fg-acao{
-  width:100%!important;
-  min-width:0!important;
-  height:34px!important;
-  padding:0 7px!important;
-  white-space:nowrap;
-}
-.financeiro-geral-filtros .fg-limpar-filtros{margin:0!important}
-@media(max-width:1450px){
-  .fg-filtros-campos{
-    grid-template-columns:112px 112px minmax(135px,1fr) 100px 100px 100px 100px 100px 62px 66px 98px 96px!important;
-    min-width:1225px!important;
-  }
-}
-
-
-/* Financeiro Geral v71 — exportações na linha Visualize e Conta igual à Origem */
+/* Financeiro Geral — filtros em linha, sem sobreposição */
 .financeiro-geral-heading{
-  display:flex!important;
-  align-items:flex-end!important;
-  justify-content:space-between!important;
-  gap:16px!important;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:16px;
 }
 .financeiro-geral-heading-texto{min-width:0}
 .financeiro-geral-heading-exportacoes{
-  display:flex!important;
-  align-items:center!important;
-  justify-content:flex-end!important;
-  gap:8px!important;
-  margin-left:auto!important;
-  flex-shrink:0!important;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  margin-left:auto;
+  flex-shrink:0;
 }
 .financeiro-geral-heading-exportacoes .admin-primary-button{
-  height:34px!important;
-  min-width:92px!important;
-  white-space:nowrap!important;
+  height:34px;
+  min-width:92px;
+  white-space:nowrap;
 }
-.fg-filtros-campos{
-  grid-template-columns:112px 112px minmax(135px,1fr) 100px 100px 100px 100px 100px 62px 66px!important;
-  min-width:1015px!important;
+
+.financeiro-geral-filtros{
+  display:block;
+  overflow-x:auto;
 }
-.fg-filtros-campos label:nth-of-type(4),
-.fg-filtros-campos label:nth-of-type(5){
-  width:100px!important;
-  min-width:100px!important;
-  max-width:100px!important;
+.financeiro-geral-filtros .fg-filtros-campos{
+  display:flex;
+  flex-flow:row nowrap;
+  align-items:flex-end;
+  gap:6px;
+  width:100%;
+  min-width:1174px;
 }
+.financeiro-geral-filtros .fg-filtros-campos > *{
+  min-width:0;
+  margin:0;
+  box-sizing:border-box;
+}
+.financeiro-geral-filtros .fg-filtros-campos > label,
+.financeiro-geral-filtros .fg-filtros-direita > label{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  margin:0;
+  min-width:0;
+}
+.financeiro-geral-filtros .fg-filtros-campos > label:nth-child(1),
+.financeiro-geral-filtros .fg-filtros-campos > label:nth-child(2){
+  flex:0 0 120px;
+  width:120px;
+}
+.financeiro-geral-filtros .fg-filtros-campos > .fg-busca{
+  flex:1 1 0;
+  width:auto;
+  min-width:80px;
+}
+.financeiro-geral-filtros .fg-filtros-direita{
+  display:flex;
+  flex:0 0 auto;
+  flex-flow:row nowrap;
+  align-items:flex-end;
+  justify-content:flex-end;
+  gap:6px;
+  margin-left:0;
+  min-width:0;
+}
+.financeiro-geral-filtros .fg-filtros-direita > label:nth-child(1),
+.financeiro-geral-filtros .fg-filtros-direita > label:nth-child(2){
+  flex:0 0 150px;
+  width:150px;
+}
+.financeiro-geral-filtros .fg-filtros-direita > .fg-valor,
+.financeiro-geral-filtros .fg-filtros-direita > .fg-limpar-filtros,
+.financeiro-geral-filtros .fg-filtros-direita > .fg-buscar{
+  flex:0 0 100px;
+  width:100px;
+}
+.financeiro-geral-filtros .fg-filtros-campos input,
+.financeiro-geral-filtros .fg-filtros-campos select,
+.financeiro-geral-filtros .fg-filtros-campos .fg-acao{
+  flex:none;
+  width:100%;
+  min-width:0;
+  height:34px;
+  min-height:34px;
+  max-height:34px;
+  box-sizing:border-box;
+}
+.financeiro-geral-filtros .fg-filtros-campos select{
+  padding-top:0;
+  padding-bottom:0;
+}
+.financeiro-geral-filtros .fg-filtros-campos .fg-acao{
+  padding:0 7px;
+  white-space:nowrap;
+}
+.financeiro-geral-filtros .fg-limpar-filtros{
+  border:1px solid #9aa8b6;
+  background:#fff;
+  color:#263645;
+  border-radius:6px;
+  cursor:pointer;
+}
+
+/* Botões do modal */
+.fg-modal-incluir{
+  border:1px solid #2f6fad;
+  background:#fff;
+  color:#1e5f9c;
+  border-radius:8px;
+  padding:0 14px;
+  height:38px;
+  font-weight:600;
+}
+.fg-modal-actions{gap:14px}
+.fg-modal-actions button{border-radius:8px;min-width:116px;height:38px;padding:0 16px}
+.fg-modal-actions .fg-modal-cancelar{border:1px solid #94a3b8;background:#fff;color:#334155}
+.fg-modal-actions .fg-modal-cancelar:hover{background:#f8fafc}
+
 @media(max-width:900px){
-  .financeiro-geral-heading{align-items:flex-start!important;flex-direction:column!important}
-  .financeiro-geral-heading-exportacoes{width:100%!important;justify-content:flex-end!important}
-}
-
-/* Financeiro Geral v72 — larguras finais dos filtros em uma única linha */
-.fg-filtros-campos{
-  grid-template-columns:150px 150px minmax(90px,1fr) 150px 150px 100px 100px 100px 100px 100px!important;
-  min-width:1308px!important;
-  width:100%!important;
-}
-.fg-filtros-campos label:nth-of-type(1),
-.fg-filtros-campos label:nth-of-type(2),
-.fg-filtros-campos label:nth-of-type(4),
-.fg-filtros-campos label:nth-of-type(5){
-  width:150px!important;
-  min-width:150px!important;
-  max-width:150px!important;
-}
-.fg-filtros-campos label:nth-of-type(1) input,
-.fg-filtros-campos label:nth-of-type(2) input,
-.fg-filtros-campos label:nth-of-type(4) select,
-.fg-filtros-campos label:nth-of-type(5) select{
-  width:150px!important;
-  min-width:150px!important;
-  max-width:150px!important;
-  box-sizing:border-box!important;
-}
-.fg-filtros-campos .fg-busca{
-  width:auto!important;
-  min-width:90px!important;
-  max-width:none!important;
-}
-.fg-filtros-campos .fg-busca input{
-  width:100%!important;
-  min-width:0!important;
-  box-sizing:border-box!important;
-}
-.fg-filtros-campos .fg-valor,
-.fg-filtros-campos .fg-valor input{
-  width:100px!important;
-  min-width:100px!important;
-  max-width:100px!important;
-  box-sizing:border-box!important;
-}
-.fg-filtros-campos .fg-limpar-filtros,
-.fg-filtros-campos .fg-buscar{
-  width:100px!important;
-  min-width:100px!important;
-  max-width:100px!important;
-}
-@media(max-width:1450px){
-  .fg-filtros-campos{
-    grid-template-columns:150px 150px minmax(90px,1fr) 150px 150px 100px 100px 100px 100px 100px!important;
-    min-width:1308px!important;
-  }
-}
-
-/* Financeiro Geral v73 — descrição compacta, ações na mesma linha e sem sobreposição */
-.financeiro-geral-filtros .fg-filtros-campos{
-  display:grid!important;
-  grid-template-columns:150px 150px minmax(48px,1fr) 150px 150px 100px 100px 100px 100px 100px!important;
-  column-gap:10px!important;
-  row-gap:6px!important;
-  align-items:end!important;
-  width:100%!important;
-  min-width:1238px!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos > *{
-  min-width:0!important;
-  box-sizing:border-box!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos .fg-busca{
-  width:100%!important;
-  min-width:48px!important;
-  max-width:none!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos .fg-busca input{
-  width:100%!important;
-  min-width:0!important;
-  max-width:100%!important;
-  box-sizing:border-box!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(5){
-  margin-right:4px!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos .fg-limpar-filtros,
-.financeiro-geral-filtros .fg-filtros-campos .fg-buscar{
-  width:100px!important;
-  min-width:100px!important;
-  max-width:100px!important;
-  justify-self:end!important;
-  margin:0!important;
-}
-@media(max-width:1450px){
-  .financeiro-geral-filtros .fg-filtros-campos{
-    grid-template-columns:150px 150px 48px 150px 150px 100px 100px 100px 100px 100px!important;
-    min-width:1238px!important;
-  }
-}
-
-/* Financeiro Geral v74 — grupos esquerdo/direito com espaçamento uniforme */
-.financeiro-geral-filtros .fg-filtros-campos{
-  display:grid!important;
-  grid-template-columns:120px 120px 500px minmax(20px,1fr) 150px 150px 100px 100px 100px 100px 100px!important;
-  column-gap:10px!important;
-  row-gap:6px!important;
-  align-items:end!important;
-  width:100%!important;
-  min-width:1660px!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos > *{
-  box-sizing:border-box!important;
-  min-width:0!important;
-  margin:0!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(1){grid-column:1!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(2){grid-column:2!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(3){grid-column:3!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(4){grid-column:5!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(5){grid-column:6!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(6){grid-column:7!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(7){grid-column:8!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(8){grid-column:9!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(9){grid-column:10!important}
-.financeiro-geral-filtros .fg-filtros-campos > :nth-child(10){grid-column:11!important}
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(1),
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(2){
-  width:120px!important;min-width:120px!important;max-width:120px!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(1) input,
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(2) input{
-  width:120px!important;min-width:120px!important;max-width:120px!important;box-sizing:border-box!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos .fg-busca,
-.financeiro-geral-filtros .fg-filtros-campos .fg-busca input{
-  width:500px!important;min-width:500px!important;max-width:500px!important;box-sizing:border-box!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(4),
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(5){
-  width:150px!important;min-width:150px!important;max-width:150px!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(4) select,
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(5) select{
-  width:150px!important;min-width:150px!important;max-width:150px!important;box-sizing:border-box!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos .fg-valor,
-.financeiro-geral-filtros .fg-filtros-campos .fg-valor input,
-.financeiro-geral-filtros .fg-filtros-campos .fg-limpar-filtros,
-.financeiro-geral-filtros .fg-filtros-campos .fg-buscar{
-  width:100px!important;min-width:100px!important;max-width:100px!important;box-sizing:border-box!important;
-}
-
-/* Financeiro Geral v75 — espaçamento de 6px e descrição auto dimensionável */
-.financeiro-geral-filtros .fg-filtros-campos{
-  display:grid!important;
-  grid-template-columns:120px 120px minmax(80px,1fr) 150px 150px 100px 100px 100px 100px 100px!important;
-  column-gap:6px!important;
-  row-gap:6px!important;
-  align-items:end!important;
-  width:100%!important;
-  min-width:1134px!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos > *{
-  grid-column:auto!important;
-  min-width:0!important;
-  margin:0!important;
-  box-sizing:border-box!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos .fg-busca{
-  width:100%!important;
-  min-width:80px!important;
-  max-width:none!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos .fg-busca input{
-  width:100%!important;
-  min-width:0!important;
-  max-width:100%!important;
-  box-sizing:border-box!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(1),
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(2),
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(1) input,
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(2) input{
-  width:120px!important;
-  min-width:120px!important;
-  max-width:120px!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(4),
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(5),
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(4) select,
-.financeiro-geral-filtros .fg-filtros-campos label:nth-of-type(5) select{
-  width:150px!important;
-  min-width:150px!important;
-  max-width:150px!important;
-}
-.financeiro-geral-filtros .fg-filtros-campos .fg-valor,
-.financeiro-geral-filtros .fg-filtros-campos .fg-valor input,
-.financeiro-geral-filtros .fg-filtros-campos .fg-limpar-filtros,
-.financeiro-geral-filtros .fg-filtros-campos .fg-buscar{
-  width:100px!important;
-  min-width:100px!important;
-  max-width:100px!important;
-  box-sizing:border-box!important;
+  .financeiro-geral-heading{align-items:flex-start;flex-direction:column}
+  .financeiro-geral-heading-exportacoes{width:100%;justify-content:flex-end}
 }

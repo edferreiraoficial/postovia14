@@ -528,13 +528,15 @@ export default function FinanceiroGeralAdminPage() {
         <label>Data inicial<input type="date" value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} /></label>
         <label>Data final<input type="date" value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} /></label>
         <label className="fg-busca">Descrição<input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Parte da descrição" onKeyDown={(e) => { if (e.key === 'Enter') aplicarFiltros(); }} /></label>
-        <label className="fg-fixo-100">Origem<select value={origem} onChange={(e) => setOrigem(e.target.value)}><option value="">Todas</option><option>SPOT</option><option>ITAU</option><option>COMPRAS</option><option>LMC</option><option>MANUAL</option><option>PLANILHA</option><option>SISTEMA</option></select></label>
-        <label className="fg-fixo-100">Conta<select value={contaFiltro} onChange={(e) => setContaFiltro(e.target.value)}><option value="">Todas as contas</option>{campos.filter((c) => c.key !== 'total').map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select></label>
-        <label className="fg-valor fg-fixo-100">Valor exato<input type="number" step="0.01" value={valorExato} onChange={(e) => setValorExato(e.target.value)} placeholder="0,00" /></label>
-        <label className="fg-valor fg-fixo-100">Valor mínimo<input type="number" step="0.01" value={valorMinimo} onChange={(e) => setValorMinimo(e.target.value)} placeholder="0,00" /></label>
-        <label className="fg-valor fg-fixo-100">Valor máximo<input type="number" step="0.01" value={valorMaximo} onChange={(e) => setValorMaximo(e.target.value)} placeholder="0,00" /></label>
-        <button type="button" className="fg-acao fg-limpar-filtros" onClick={limparFiltrosBusca}>Limpar</button>
-        <button className="admin-primary-button fg-acao fg-buscar" onClick={aplicarFiltros}>Buscar</button>
+        <div className="fg-filtros-direita">
+          <label>Origem<select value={origem} onChange={(e) => setOrigem(e.target.value)}><option value="">Todas</option><option>SPOT</option><option>ITAU</option><option>COMPRAS</option><option>LMC</option><option>MANUAL</option><option>PLANILHA</option><option>SISTEMA</option></select></label>
+          <label>Conta<select value={contaFiltro} onChange={(e) => setContaFiltro(e.target.value)}><option value="">Todas as contas</option>{campos.filter((c) => c.key !== 'total').map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select></label>
+          <label className="fg-valor">Valor exato<input type="number" step="0.01" value={valorExato} onChange={(e) => setValorExato(e.target.value)} placeholder="0,00" /></label>
+          <label className="fg-valor">Valor mínimo<input type="number" step="0.01" value={valorMinimo} onChange={(e) => setValorMinimo(e.target.value)} placeholder="0,00" /></label>
+          <label className="fg-valor">Valor máximo<input type="number" step="0.01" value={valorMaximo} onChange={(e) => setValorMaximo(e.target.value)} placeholder="0,00" /></label>
+          <button type="button" className="fg-acao fg-limpar-filtros" onClick={limparFiltrosBusca}>Limpar</button>
+          <button className="admin-primary-button fg-acao fg-buscar" onClick={aplicarFiltros}>Buscar</button>
+        </div>
       </div>
     </div>
     {mensagem && <div className="admin-message error">{mensagem}</div>}
