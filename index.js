@@ -1323,6 +1323,10 @@ function parametrosFinanceiroGeral(req) {
     descricao: String(req.query.descricao || '').trim(),
     tipo: String(req.query.tipo || '').trim(),
     origem: String(req.query.origem || '').trim(),
+    conta: String(req.query.conta || '').trim(),
+    valorExato: String(req.query.valorExato ?? '').trim(),
+    valorMinimo: String(req.query.valorMinimo ?? '').trim(),
+    valorMaximo: String(req.query.valorMaximo ?? '').trim(),
   }
 }
 
@@ -1335,6 +1339,34 @@ function filtroFinanceiroGeral(f) {
   }
   if (f.tipo) { where.push('tipo_lancamento = ?'); params.push(f.tipo) }
   if (f.origem) { where.push('origem = ?'); params.push(f.origem) }
+
+  const colunasPermitidas = FINANCEIRO_GERAL_COLUNAS.map(([campo]) => campo)
+  const colunasValor = f.conta && colunasPermitidas.includes(f.conta) ? [f.conta] : colunasPermitidas
+  const numeroFiltro = (valor, nome) => {
+    if (valor === '') return null
+    const numero = Number(String(valor).replace(',', '.'))
+    if (!Number.isFinite(numero)) throw new Error(`${nome} inválido.`)
+    return numero
+  }
+  const exato = numeroFiltro(f.valorExato, 'Valor exato')
+  const minimo = numeroFiltro(f.valorMinimo, 'Valor mínimo')
+  const maximo = numeroFiltro(f.valorMaximo, 'Valor máximo')
+  if (minimo !== null && maximo !== null && minimo > maximo) throw new Error('O valor mínimo não pode ser maior que o valor máximo.')
+
+  if (exato !== null || minimo !== null || maximo !== null) {
+    const condicoesPorColuna = []
+    for (const campo of colunasValor) {
+      const condicoes = []
+      if (exato !== null) { condicoes.push(`ABS(${campo} - ?) < 0.005`); params.push(exato) }
+      if (minimo !== null) { condicoes.push(`${campo} >= ?`); params.push(minimo) }
+      if (maximo !== null) { condicoes.push(`${campo} <= ?`); params.push(maximo) }
+      condicoesPorColuna.push(`(${condicoes.join(' AND ')})`)
+    }
+    where.push(`(${condicoesPorColuna.join(' OR ')})`)
+  } else if (f.conta && colunasPermitidas.includes(f.conta)) {
+    where.push(`${f.conta} <> 0`)
+  }
+
   return { sql: where.join(' AND '), params }
 }
 
@@ -1414,7 +1446,7 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
 
   // O rodapé da planilha deve refletir o último saldo do período, não a soma dos saldos.
   // A busca considera o período completo, independentemente da página atualmente exibida.
-  const filtroPeriodo = filtroFinanceiroGeral({ ...f, descricao: '', tipo: '', origem: '' })
+  const filtroPeriodo = filtroFinanceiroGeral({ ...f, descricao: '', tipo: '', origem: '', conta: '', valorExato: '', valorMinimo: '', valorMaximo: '' })
   const [saldosPeriodo] = await db.query(
     `SELECT ${numericas.join(', ')}
        FROM financeiro_geral

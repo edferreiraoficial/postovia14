@@ -56,8 +56,12 @@ export default function FinanceiroGeralAdminPage() {
   const [dataFinal, setDataFinal] = useState(fimMes());
   const [descricao, setDescricao] = useState('');
   const [origem, setOrigem] = useState('');
+  const [contaFiltro, setContaFiltro] = useState('');
+  const [valorExato, setValorExato] = useState('');
+  const [valorMinimo, setValorMinimo] = useState('');
+  const [valorMaximo, setValorMaximo] = useState('');
   const [pagina, setPagina] = useState(1);
-  const [porPagina, setPorPagina] = useState(200);
+  const [porPagina, setPorPagina] = useState(500);
   const [campos, setCampos] = useState<CampoFinanceiro[]>(CAMPOS_PADRAO);
   const [linhas, setLinhas] = useState<Linha[]>([]);
   const [totais, setTotais] = useState<Linha>({});
@@ -72,11 +76,13 @@ export default function FinanceiroGeralAdminPage() {
   const [novoLancamento, setNovoLancamento] = useState<Linha>({ data_lancamento: iso(new Date()), descricao_original: '', origem: 'MANUAL' });
   const [incluindo, setIncluindo] = useState(false);
   const [lancamentoEditandoId, setLancamentoEditandoId] = useState<number | null>(null);
+  const [dataLinhaSelecionada, setDataLinhaSelecionada] = useState('');
   const [excluindoId, setExcluindoId] = useState<number | null>(null);
   const tabelaWrapRef = useRef<HTMLDivElement | null>(null);
   const scrollRodapeRef = useRef<HTMLDivElement | null>(null);
   const scrollRodapeConteudoRef = useRef<HTMLDivElement | null>(null);
   const cabecalhoFlutuanteRef = useRef<HTMLDivElement | null>(null);
+  const campoDataLancamentoRef = useRef<HTMLInputElement | null>(null);
 
   const colunasVisiveis = useMemo(() => campos.filter((campo) => {
     // Vendas é uma coluna operacional permanente e não deve desaparecer quando
@@ -91,6 +97,10 @@ export default function FinanceiroGeralAdminPage() {
     const p = new URLSearchParams({ empresaId: '1', dataInicial, dataFinal });
     if (descricao.trim()) p.set('descricao', descricao.trim());
     if (origem) p.set('origem', origem);
+    if (contaFiltro) p.set('conta', contaFiltro);
+    if (valorExato !== '') p.set('valorExato', valorExato);
+    if (valorMinimo !== '') p.set('valorMinimo', valorMinimo);
+    if (valorMaximo !== '') p.set('valorMaximo', valorMaximo);
     if (incluirPaginacao) { p.set('pagina', String(pagina)); p.set('porPagina', String(porPagina)); }
     return p;
   };
@@ -298,19 +308,36 @@ export default function FinanceiroGeralAdminPage() {
     };
   }, [linhas, colunasVisiveis]);
   const aplicarFiltros = () => { setPagina(1); if (pagina === 1) carregar(); };
+  const limparFiltrosBusca = () => {
+    setDescricao(''); setOrigem(''); setContaFiltro(''); setValorExato(''); setValorMinimo(''); setValorMaximo('');
+    setPagina(1);
+    setTimeout(() => carregar(), 0);
+  };
 
   const formatarCelula = (linha: Linha, campo: string) => formatarNumeroCampo(campo, linha[campo]);
 
   const abrirNovoLancamento = () => {
     setLancamentoEditandoId(null);
     setNovoLancamento({
-      data_lancamento: dataFinal || iso(new Date()),
+      data_lancamento: '',
       descricao_original: '',
       origem: 'MANUAL',
       ...Object.fromEntries(campos.filter((c) => c.key !== 'total').map((c) => [c.key, ''])),
     });
     setMensagem('');
     setNovoLancamentoAberto(true);
+  };
+
+  const prepararInclusaoNoModal = () => {
+    setLancamentoEditandoId(null);
+    setNovoLancamento({
+      data_lancamento: dataLinhaSelecionada,
+      descricao_original: '',
+      origem: 'MANUAL',
+      ...Object.fromEntries(campos.filter((c) => c.key !== 'total').map((c) => [c.key, ''])),
+    });
+    setMensagem(dataLinhaSelecionada ? `Novo lançamento preparado para ${dataBr(dataLinhaSelecionada)}.` : 'Informe a data para incluir o novo lançamento.');
+    window.setTimeout(() => campoDataLancamentoRef.current?.focus(), 0);
   };
 
   const abrirLancamentoParaEdicao = (linha: Linha) => {
@@ -323,6 +350,7 @@ export default function FinanceiroGeralAdminPage() {
       setMensagem(`Este lançamento não pode ser alterado ou excluído porque a data ${dataBr(dataLinha)} é igual ou anterior à data travada ${dataBr(dataTravaConsolidacao)}.`);
       return;
     }
+    setDataLinhaSelecionada(dataLinha);
     setLancamentoEditandoId(Number(linha.id));
     setNovoLancamento({
       ...linha,
@@ -343,7 +371,11 @@ export default function FinanceiroGeralAdminPage() {
   const salvarNovoLancamento = async () => {
     if (incluindo) return;
     const dataInformada = String(novoLancamento.data_lancamento || '').slice(0, 10);
-    if (dataTravaConsolidacao && dataInformada && dataInformada <= dataTravaConsolidacao) {
+    if (!dataInformada) {
+      setMensagem('Informe a data do lançamento.');
+      return;
+    }
+    if (dataTravaConsolidacao && dataInformada <= dataTravaConsolidacao) {
       setMensagem(`Não é permitido salvar lançamento com data igual ou anterior à data travada ${dataBr(dataTravaConsolidacao)}.`);
       return;
     }
@@ -441,6 +473,10 @@ export default function FinanceiroGeralAdminPage() {
       const p = new URLSearchParams({ empresaId: '1', dataInicial: periodoInicial, dataFinal, pagina: '1', porPagina: String(porPagina) });
       if (descricao.trim()) p.set('descricao', descricao.trim());
       if (origem) p.set('origem', origem);
+      if (contaFiltro) p.set('conta', contaFiltro);
+      if (valorExato !== '') p.set('valorExato', valorExato);
+      if (valorMinimo !== '') p.set('valorMinimo', valorMinimo);
+      if (valorMaximo !== '') p.set('valorMaximo', valorMaximo);
       const filtroRes = await fetch(`${API_BASE}/financeiro-geral/lancamentos?${p.toString()}`);
       const filtroDados = await filtroRes.json().catch(() => ({}));
       if (!filtroRes.ok) throw new Error(filtroDados.erro || 'Erro ao atualizar o período.');
@@ -480,17 +516,26 @@ export default function FinanceiroGeralAdminPage() {
 
   return <section className="financeiro-geral-page">
     <header className="admin-page-heading financeiro-geral-heading">
-      <div><h1>Financeiro Geral</h1><p>Visualize, edite e exporte os lançamentos consolidados.{dataTravaConsolidacao ? ` Alterações bloqueadas até ${dataBr(dataTravaConsolidacao)}.` : ''}</p></div>
+      <div className="financeiro-geral-heading-texto"><h1>Financeiro Geral</h1><p>Visualize, edite e exporte os lançamentos consolidados.{dataTravaConsolidacao ? ` Alterações bloqueadas até ${dataBr(dataTravaConsolidacao)}.` : ''}</p></div>
+      <div className="financeiro-geral-heading-exportacoes">
+        <button className="admin-primary-button" onClick={baixarExcel}>Excel</button>
+        <button className="admin-primary-button" onClick={() => gerarPdf(false)}>PDF detalhado</button>
+        <button className="admin-primary-button" onClick={() => gerarPdf(true)}>PDF resumido</button>
+      </div>
     </header>
     <div className="admin-card financeiro-geral-filtros">
-      <label>Data inicial<input type="date" value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} /></label>
-      <label>Data final<input type="date" value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} /></label>
-      <label className="fg-busca">Descrição<input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Buscar descrição" /></label>
-      <label>Origem<select value={origem} onChange={(e) => setOrigem(e.target.value)}><option value="">Todas</option><option>SPOT</option><option>ITAU</option><option>COMPRAS</option><option>LMC</option><option>MANUAL</option><option>PLANILHA</option><option>SISTEMA</option></select></label>
-      <button className="admin-primary-button fg-acao" onClick={aplicarFiltros}>Atualizar</button>
-      <button className="admin-primary-button fg-acao" onClick={baixarExcel}>Excel</button>
-      <button className="admin-primary-button fg-acao" onClick={() => gerarPdf(false)}>PDF detalhado</button>
-      <button className="admin-primary-button fg-acao" onClick={() => gerarPdf(true)}>PDF resumido</button>
+      <div className="fg-filtros-campos">
+        <label>Data inicial<input type="date" value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} /></label>
+        <label>Data final<input type="date" value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} /></label>
+        <label className="fg-busca">Descrição<input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Parte da descrição" onKeyDown={(e) => { if (e.key === 'Enter') aplicarFiltros(); }} /></label>
+        <label className="fg-fixo-100">Origem<select value={origem} onChange={(e) => setOrigem(e.target.value)}><option value="">Todas</option><option>SPOT</option><option>ITAU</option><option>COMPRAS</option><option>LMC</option><option>MANUAL</option><option>PLANILHA</option><option>SISTEMA</option></select></label>
+        <label className="fg-fixo-100">Conta<select value={contaFiltro} onChange={(e) => setContaFiltro(e.target.value)}><option value="">Todas as contas</option>{campos.filter((c) => c.key !== 'total').map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select></label>
+        <label className="fg-valor fg-fixo-100">Valor exato<input type="number" step="0.01" value={valorExato} onChange={(e) => setValorExato(e.target.value)} placeholder="0,00" /></label>
+        <label className="fg-valor fg-fixo-100">Valor mínimo<input type="number" step="0.01" value={valorMinimo} onChange={(e) => setValorMinimo(e.target.value)} placeholder="0,00" /></label>
+        <label className="fg-valor fg-fixo-100">Valor máximo<input type="number" step="0.01" value={valorMaximo} onChange={(e) => setValorMaximo(e.target.value)} placeholder="0,00" /></label>
+        <button type="button" className="fg-acao fg-limpar-filtros" onClick={limparFiltrosBusca}>Limpar</button>
+        <button className="admin-primary-button fg-acao fg-buscar" onClick={aplicarFiltros}>Buscar</button>
+      </div>
     </div>
     {mensagem && <div className="admin-message error">{mensagem}</div>}
     <div className="financeiro-geral-paginacao">
@@ -526,12 +571,12 @@ export default function FinanceiroGeralAdminPage() {
       <div className="fg-modal">
         <div className="fg-modal-header"><h2>{lancamentoEditandoId === null ? 'Novo Lançamento' : 'Alterar Lançamento'}</h2><button type="button" onClick={fecharModalLancamento} aria-label="Fechar">×</button></div>
         <div className="fg-modal-grid">
-          <label>Data<input type="date" value={novoLancamento.data_lancamento || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, data_lancamento: e.target.value }))} /></label>
+          <label>Data<input ref={campoDataLancamentoRef} type="date" value={novoLancamento.data_lancamento || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, data_lancamento: e.target.value }))} /></label>
           <label className="fg-modal-descricao">Descrição<input autoFocus value={novoLancamento.descricao_original || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, descricao_original: e.target.value }))} /></label>
           <label>Origem<input value={novoLancamento.origem || 'MANUAL'} onChange={(e) => setNovoLancamento((r) => ({ ...r, origem: e.target.value }))} /></label>
           {campos.filter((c) => c.key !== 'total').map((c) => <label key={c.key}>{c.label}<input type="number" step={/^prod[1-4]_quant$/.test(c.key) ? '1' : (/^prod[1-4]_valor$/.test(c.key) ? '0.000001' : '0.01')} value={novoLancamento[c.key] ?? ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, [c.key]: e.target.value }))} /></label>)}
         </div>
-        <div className="fg-modal-actions">{lancamentoEditandoId !== null && <button type="button" className="fg-modal-excluir" onClick={excluirLancamentoEmEdicao} disabled={incluindo || excluindoId !== null}>{excluindoId !== null ? 'Excluindo...' : 'Excluir lançamento'}</button>}<button type="button" onClick={fecharModalLancamento} disabled={incluindo || excluindoId !== null}>Cancelar</button><button type="button" className="admin-primary-button" onClick={salvarNovoLancamento} disabled={incluindo || excluindoId !== null}>{incluindo ? 'Salvando...' : (lancamentoEditandoId === null ? 'Salvar lançamento' : 'Salvar alterações')}</button></div>
+        <div className="fg-modal-actions">{lancamentoEditandoId !== null && <><button type="button" className="fg-modal-excluir" onClick={excluirLancamentoEmEdicao} disabled={incluindo || excluindoId !== null}>{excluindoId !== null ? 'Excluindo...' : 'Excluir lançamento'}</button><button type="button" className="fg-modal-incluir" onClick={prepararInclusaoNoModal} disabled={incluindo || excluindoId !== null}>Incluir</button></>}<button type="button" className="fg-modal-cancelar" onClick={fecharModalLancamento} disabled={incluindo || excluindoId !== null}>Cancelar</button><button type="button" className="admin-primary-button" onClick={salvarNovoLancamento} disabled={incluindo || excluindoId !== null}>{incluindo ? 'Salvando...' : (lancamentoEditandoId === null ? 'Salvar lançamento' : 'Salvar alterações')}</button></div>
       </div>
     </div>}
     <footer className="financeiro-geral-rodape-pagina">

@@ -534,8 +534,10 @@ export async function consolidarFinanceiroGeral({
       }
       vendaCartaoPorData.set(dataVenda, acumulado)
     }
-    const vendaCartaoAbertura = vendaCartaoPorData.get(dataAnterior(inicioLancamentos))
-    if (vendaCartaoAbertura) saldoContas.set('conta12', arred2(vendaCartaoAbertura.vendas_bruta))
+    // O saldo inicial da coluna Cartão deve vir exclusivamente do último
+    // Saldo do dia/Saldo anterior já apurado. A venda bruta do dia anterior,
+    // inclusive Pix recebido maquininha, é movimento daquele dia e não pode
+    // substituir nem ser somada novamente à abertura do período seguinte.
 
     // Estoque inicial: quantidade da abertura do primeiro LMC do período e custo da última compra anterior.
     const estoque = new Map(CAMPOS_PRODUTOS.map((p) => [p, { quantidade: 0, medio: 0 }]))
@@ -687,6 +689,7 @@ export async function consolidarFinanceiroGeral({
       const lmcDia = (vendasPorDia.get(dia) || []).sort((a, b) => (produtoDestino(a.produto) || 'prod9').localeCompare(produtoDestino(b.produto) || 'prod9') || Number(a.id) - Number(b.id))
       const ajustes = {}; const resultados = {}
       let totalVendasDia = 0
+      let creditoCartaoProcessadoNoDia = false
       for (const row of lmcDia) {
         const p = produtoDestino(row.produto)
         if (!p) { ignorados += 1; continue }
@@ -778,6 +781,25 @@ export async function consolidarFinanceiroGeral({
       for (const campo of CAMPOS_CONTAS) {
         saldoContas.set(campo, arred2(numero(saldoContasInicioDia.get(campo)) + numero(movimentosContasDia?.[campo])))
       }
+
+      // A coluna Cartão possui recálculo independente e estritamente acumulativo:
+      // saldo anterior do Cartão + todos os lançamentos ativos do próprio dia = saldo do dia.
+      // As descrições de saldo também são excluídas para impedir que linhas antigas ou
+      // importadas com tipo incorreto sejam somadas como movimento e dupliquem o fechamento.
+      const [[movimentoCartaoDia]] = await conn.query(
+        `SELECT COALESCE(SUM(conta12), 0) AS total_cartao
+           FROM financeiro_geral
+          WHERE empresa_id = ? AND data_lancamento = ? AND status = 'ATIVO'
+            AND tipo_lancamento <> 'SALDO'
+            AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) NOT LIKE 'SALDO DO DIA%'
+            AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) NOT LIKE 'SALDO INICIAL DO DIA%'
+            AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) NOT LIKE 'SALDO ANTERIOR%'`,
+        [empresa, dia]
+      )
+      saldoContas.set(
+        'conta12',
+        arred2(numero(saldoContasInicioDia.get('conta12')) + numero(movimentoCartaoDia?.total_cartao))
+      )
 
       const valoresSaldo = {}
       for (const [campo, valor] of saldoContas.entries()) valoresSaldo[campo] = arred2(valor)
@@ -952,6 +974,7 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         await conn.query('DELETE FROM financeiro_geral WHERE id = ?', [separacao.id])
       }
       let totalVendasDia = 0
+      let creditoCartaoProcessadoNoDia = false
 
       // A linha de abertura só pode definir a base no primeiro dia solicitado.
       // Nos dias seguintes, a abertura deve ser obrigatoriamente o "Saldo do dia"
@@ -1021,16 +1044,16 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
           }
           for (const campo of CAMPOS_CONTAS) saldoContas.set(campo, arred2(numero(saldoContas.get(campo)) + numero(row[campo])))
         }
-        if (creditoCartao) {
-          // Também no recálculo, usa exclusivamente a taxa da tabela
-          // vendas_cartao do dia anterior, para as descrições permitidas.
+        if (creditoCartao && !creditoCartaoProcessadoNoDia) {
+          // A taxa é um único movimento diário. Mesmo que existam vários créditos
+          // de cartão no SPOT no mesmo dia, ela não pode ser descontada mais de uma vez.
+          creditoCartaoProcessadoNoDia = true
           const taxaDiaAnterior = numero(vendaCartaoPorData.get(dataAnterior(dia))?.taxa)
           const descontoTaxas = arred2(-Math.abs(taxaDiaAnterior))
-          saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + descontoTaxas))
           if (taxaCartaoDia) {
             taxaCartaoDia.conta12 = descontoTaxas
             await atualizarCamposLinha(conn, taxaCartaoDia.id, { conta12: descontoTaxas })
-          } else {
+          } else if (descontoTaxas !== 0) {
             await gravarLinhaSegura({
               empresa, data: dia, descricao: 'Desconto taxas Cartão', tipo: 'TAXA_CARTAO', origem: 'SISTEMA',
               tabelaOrigem: 'recalculo', registroOrigemId: row.registro_origem_id || row.id,

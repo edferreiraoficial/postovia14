@@ -336,11 +336,25 @@ function extrairVendasCartaoExcel(wb) {
 async function limparPeriodoVendasCartao({ empresaId, vendas }) {
   const faixa = faixaDatasSql(vendas)
   if (!faixa) return 0
+
+  // Cada arquivo substitui somente lançamentos da mesma descrição no período.
+  // Assim, por exemplo, a importação de "Pix recebido maquininha" não apaga
+  // os registros já importados como "Vendas no Cartão", e vice-versa.
+  const descricoes = [...new Set(
+    vendas
+      .map((venda) => String(venda.descricao || '').trim().toUpperCase())
+      .filter(Boolean)
+  )]
+
+  if (!descricoes.length) return 0
+
+  const placeholders = descricoes.map(() => '?').join(', ')
   const [resultado] = await db.query(
     `DELETE FROM vendas_cartao
      WHERE empresa_id = ?
-       AND data_lancamento BETWEEN ? AND ?`,
-    [empresaId, faixa.inicio, faixa.fim]
+       AND data_lancamento BETWEEN ? AND ?
+       AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) IN (${placeholders})`,
+    [empresaId, faixa.inicio, faixa.fim, ...descricoes]
   )
   return resultado.affectedRows || 0
 }
