@@ -339,7 +339,7 @@ export async function salvarExtratosBanco({
         natureza,
         origem
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empresaId,
         contaBancariaId,
