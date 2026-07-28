@@ -572,6 +572,12 @@ app.post('/api/importar-excel-banco', upload.fields([
     const arquivoSpot = files.spot?.[0] || null
     const arquivoItau = files.itau?.[0] || null
     const contaBancariaId = Number(req.body?.contaBancariaId || 0) || null
+    const dataInicial = String(req.body?.dataInicial || '').trim()
+    const dataFinal = String(req.body?.dataFinal || '').trim()
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal) || dataInicial > dataFinal) {
+      return res.status(400).json({ ok: false, erro: 'Informe um período inicial e final válido para a importação.' })
+    }
 
     if (!arquivoLmc && !arquivoCompras && !arquivoVendasCartao && !arquivoExtrato && !arquivoSpot && !arquivoItau) {
       return res.status(400).json({
@@ -595,6 +601,8 @@ app.post('/api/importar-excel-banco', upload.fields([
       contaBancariaId,
       arquivoSpot,
       arquivoItau,
+      dataInicial,
+      dataFinal,
     })
 
     res.json({
@@ -627,6 +635,12 @@ app.post('/api/importar-pdfs', upload.fields([
     const arquivoCompras = files.compras?.[0] || null
     const arquivoSpot = files.spot?.[0] || null
     const arquivoItau = files.itau?.[0] || null
+    const dataInicial = String(req.body?.dataInicial || '').trim()
+    const dataFinal = String(req.body?.dataFinal || '').trim()
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal) || dataInicial > dataFinal) {
+      return res.status(400).json({ ok: false, erro: 'Informe um período inicial e final válido para a importação.' })
+    }
 
     if (!arquivoLmc && !arquivoCompras && !arquivoSpot && !arquivoItau) {
       return res.status(400).json({
@@ -640,6 +654,8 @@ app.post('/api/importar-pdfs', upload.fields([
       arquivoCompras,
       arquivoSpot,
       arquivoItau,
+      dataInicial,
+      dataFinal,
     })
 
     res.json({

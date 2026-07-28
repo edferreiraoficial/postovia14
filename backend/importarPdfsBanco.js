@@ -1018,13 +1018,38 @@ async function extrairDadosBanco(arquivoBanco, banco) {
   return montarLinhasBancoSpot(lancamentos)
 }
 
+function validarPeriodoImportacao(dataInicial, dataFinal) {
+  const inicio = String(dataInicial || '').trim()
+  const fim = String(dataFinal || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fim) || inicio > fim) {
+    throw new Error('Informe um período inicial e final válido para a importação.')
+  }
+  return { inicio, fim }
+}
+
+function filtrarPorPeriodo(dados, periodo, campo = 'data') {
+  return (dados || []).filter((item) => {
+    const dataSql = dataBrParaSql(item?.[campo])
+    return dataSql && dataSql >= periodo.inicio && dataSql <= periodo.fim
+  })
+}
+
+function filtrarLmcPorPeriodo(dadosLmc, periodo) {
+  return Object.fromEntries(
+    Object.entries(dadosLmc || {}).map(([produto, linhas]) => [produto, filtrarPorPeriodo(linhas, periodo)])
+  )
+}
+
 export async function importarPdfsBanco({
   arquivoLmc,
   arquivoCompras,
   arquivoSpot,
   arquivoItau,
+  dataInicial,
+  dataFinal,
 }) {
   const empresa = await obterEmpresaPadrao()
+  const periodo = validarPeriodoImportacao(dataInicial, dataFinal)
 
   let totalLmc = 0
   let totalCompras = 0
@@ -1032,7 +1057,7 @@ export async function importarPdfsBanco({
   let totalItau = 0
 
   if (arquivoLmc) {
-    const dadosLmc = await extrairDadosLmc(arquivoLmc)
+    const dadosLmc = filtrarLmcPorPeriodo(await extrairDadosLmc(arquivoLmc), periodo)
 
     totalLmc = await salvarLmcNoBanco({
       empresaId: empresa.id,
@@ -1041,7 +1066,11 @@ export async function importarPdfsBanco({
   }
 
   if (arquivoCompras) {
-    const compras = await extrairDadosCompras(arquivoCompras)
+    const comprasExtraidas = await extrairDadosCompras(arquivoCompras)
+    const compras = (comprasExtraidas || []).filter((item) => {
+      const dataSql = dataBrParaSql(item?.dataEmissao || item?.data)
+      return dataSql && dataSql >= periodo.inicio && dataSql <= periodo.fim
+    })
 
     totalCompras = await salvarComprasNoBanco({
       empresaId: empresa.id,
@@ -1050,7 +1079,7 @@ export async function importarPdfsBanco({
   }
 
   if (arquivoSpot) {
-    const dadosSpot = await extrairDadosBanco(arquivoSpot, 'SPOT')
+    const dadosSpot = filtrarPorPeriodo(await extrairDadosBanco(arquivoSpot, 'SPOT'), periodo)
 
     totalSpot = await salvarExtratosBanco({
       empresaId: empresa.id,
@@ -1060,7 +1089,7 @@ export async function importarPdfsBanco({
   }
 
   if (arquivoItau) {
-    const dadosItau = await extrairDadosBanco(arquivoItau, 'ITAU')
+    const dadosItau = filtrarPorPeriodo(await extrairDadosBanco(arquivoItau, 'ITAU'), periodo)
 
     totalItau = await salvarExtratosBanco({
       empresaId: empresa.id,

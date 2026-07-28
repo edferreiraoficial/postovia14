@@ -151,6 +151,28 @@ function faixaDatasSql(dados, campo = 'data') {
   return { inicio: datas[0], fim: datas[datas.length - 1] }
 }
 
+function validarPeriodoImportacao(dataInicial, dataFinal) {
+  const inicio = String(dataInicial || '').trim()
+  const fim = String(dataFinal || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fim) || inicio > fim) {
+    throw new Error('Informe um período inicial e final válido para a importação.')
+  }
+  return { inicio, fim }
+}
+
+function filtrarPorPeriodo(dados, periodo, campo = 'data') {
+  return (dados || []).filter((item) => {
+    const dataSql = dataBrParaSql(item?.[campo])
+    return dataSql && dataSql >= periodo.inicio && dataSql <= periodo.fim
+  })
+}
+
+function filtrarLmcPorPeriodo(dadosLmc, periodo) {
+  return Object.fromEntries(
+    Object.entries(dadosLmc || {}).map(([produto, linhas]) => [produto, filtrarPorPeriodo(linhas, periodo)])
+  )
+}
+
 async function carregarWorkbook(arquivo, nomeTipo) {
   if (!arquivo) return null
 
@@ -333,8 +355,8 @@ function extrairVendasCartaoExcel(wb) {
   return vendas.sort((a, b) => dataBrParaSql(a.data) < dataBrParaSql(b.data) ? -1 : 1)
 }
 
-async function limparPeriodoVendasCartao({ empresaId, vendas }) {
-  const faixa = faixaDatasSql(vendas)
+async function limparPeriodoVendasCartao({ empresaId, vendas, periodo }) {
+  const faixa = periodo || faixaDatasSql(vendas)
   if (!faixa) return 0
 
   // Cada arquivo substitui somente lançamentos da mesma descrição no período.
@@ -379,8 +401,8 @@ async function salvarVendasCartao({ empresaId, vendas }) {
   return total
 }
 
-async function limparPeriodoExtrato({ empresaId, contaBancariaId, origem, lancamentos }) {
-  const faixa = faixaDatasSql(lancamentos)
+async function limparPeriodoExtrato({ empresaId, contaBancariaId, origem, lancamentos, periodo }) {
+  const faixa = periodo || faixaDatasSql(lancamentos)
   if (!faixa) return 0
   const [resultado] = await db.query(
     `DELETE FROM extratos_bancarios
@@ -392,8 +414,8 @@ async function limparPeriodoExtrato({ empresaId, contaBancariaId, origem, lancam
   return resultado.affectedRows || 0
 }
 
-async function limparPeriodoCompras(compras) {
-  const faixa = faixaDatasSql(compras, 'dataEmissao') || faixaDatasSql(compras, 'data')
+async function limparPeriodoCompras(compras, periodo) {
+  const faixa = periodo || faixaDatasSql(compras, 'dataEmissao') || faixaDatasSql(compras, 'data')
   if (!faixa) return 0
   const [resultado] = await db.query(
     `DELETE FROM compras
@@ -403,9 +425,9 @@ async function limparPeriodoCompras(compras) {
   return resultado.affectedRows || 0
 }
 
-async function limparPeriodoLmc(dadosLmc) {
+async function limparPeriodoLmc(dadosLmc, periodo) {
   const linhas = Object.values(dadosLmc).flat()
-  const faixa = faixaDatasSql(linhas)
+  const faixa = periodo || faixaDatasSql(linhas)
   if (!faixa) return 0
   const [resultado] = await db.query(
     `DELETE FROM lmc_movimentos
@@ -415,8 +437,9 @@ async function limparPeriodoLmc(dadosLmc) {
   return resultado.affectedRows || 0
 }
 
-export async function importarExcelBanco({ arquivoLmc, arquivoCompras, arquivoVendasCartao, arquivoExtrato, contaBancariaId, arquivoSpot, arquivoItau }) {
+export async function importarExcelBanco({ arquivoLmc, arquivoCompras, arquivoVendasCartao, arquivoExtrato, contaBancariaId, arquivoSpot, arquivoItau, dataInicial, dataFinal }) {
   const empresa = await obterEmpresaPadrao()
+  const periodo = validarPeriodoImportacao(dataInicial, dataFinal)
   const resultado = {
     lmc: 0,
     compras: 0,
@@ -464,14 +487,15 @@ export async function importarExcelBanco({ arquivoLmc, arquivoCompras, arquivoVe
     if (!conta) throw new Error('A conta bancária selecionada não foi encontrada para esta empresa.')
 
     const wb = await carregarWorkbook(arquivoBancario, `Excel ${conta.nome_conta}`)
-    const lancamentos = extrairExtratoExcel(wb, conta.banco)
-    if (!lancamentos.length) throw new Error(`Excel ${conta.nome_conta}: nenhum lançamento válido encontrado.`)
+    const lancamentos = filtrarPorPeriodo(extrairExtratoExcel(wb, conta.banco), periodo)
+    if (!lancamentos.length) throw new Error(`Excel ${conta.nome_conta}: nenhum lançamento válido encontrado dentro do período selecionado.`)
 
     resultado.removidos.extrato = await limparPeriodoExtrato({
       empresaId: empresa.id,
       contaBancariaId: conta.id,
       origem: conta.banco,
       lancamentos,
+      periodo,
     })
     resultado.extrato = await salvarExtratosBanco({
       empresaId: empresa.id,
@@ -484,26 +508,26 @@ export async function importarExcelBanco({ arquivoLmc, arquivoCompras, arquivoVe
 
   if (arquivoCompras) {
     const wb = await carregarWorkbook(arquivoCompras, 'Excel Compras')
-    const compras = extrairComprasExcel(wb)
-    if (!compras.length) throw new Error('Excel Compras: nenhuma compra válida encontrada.')
-    resultado.removidos.compras = await limparPeriodoCompras(compras)
+    const compras = filtrarPorPeriodo(extrairComprasExcel(wb), periodo, 'dataEmissao')
+    if (!compras.length) throw new Error('Excel Compras: nenhuma compra válida encontrada dentro do período selecionado.')
+    resultado.removidos.compras = await limparPeriodoCompras(compras, periodo)
     resultado.compras = await salvarComprasNoBanco({ empresaId: empresa.id, compras })
   }
 
   if (arquivoVendasCartao) {
     const wb = await carregarWorkbook(arquivoVendasCartao, 'Excel Vendas Cartão')
-    const vendas = extrairVendasCartaoExcel(wb)
-    if (!vendas.length) throw new Error('Excel Vendas Cartão: nenhum lançamento válido encontrado.')
-    resultado.removidos.vendasCartao = await limparPeriodoVendasCartao({ empresaId: empresa.id, vendas })
+    const vendas = filtrarPorPeriodo(extrairVendasCartaoExcel(wb), periodo)
+    if (!vendas.length) throw new Error('Excel Vendas Cartão: nenhum lançamento válido encontrado dentro do período selecionado.')
+    resultado.removidos.vendasCartao = await limparPeriodoVendasCartao({ empresaId: empresa.id, vendas, periodo })
     resultado.vendasCartao = await salvarVendasCartao({ empresaId: empresa.id, vendas })
   }
 
   if (arquivoLmc) {
     const wb = await carregarWorkbook(arquivoLmc, 'Excel Vendas/LMC')
-    const dadosLmc = extrairLmcExcel(wb)
+    const dadosLmc = filtrarLmcPorPeriodo(extrairLmcExcel(wb), periodo)
     const totalLinhas = Object.values(dadosLmc).reduce((s, linhas) => s + linhas.length, 0)
-    if (!totalLinhas) throw new Error('Excel Vendas/LMC: nenhum movimento válido encontrado.')
-    resultado.removidos.lmc = await limparPeriodoLmc(dadosLmc)
+    if (!totalLinhas) throw new Error('Excel Vendas/LMC: nenhum movimento válido encontrado dentro do período selecionado.')
+    resultado.removidos.lmc = await limparPeriodoLmc(dadosLmc, periodo)
     resultado.lmc = await salvarLmcNoBanco({ empresaId: empresa.id, dadosLmc })
   }
 

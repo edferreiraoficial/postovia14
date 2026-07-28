@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 
+const dataIso = (data: Date) => data.toISOString().slice(0, 10);
+const primeiroDiaMesAtual = () => { const agora = new Date(); return dataIso(new Date(agora.getFullYear(), agora.getMonth(), 1)); };
+const ultimoDiaMesAtual = () => { const agora = new Date(); return dataIso(new Date(agora.getFullYear(), agora.getMonth() + 1, 0)); };
+
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
 type ContaBancaria = {
@@ -28,6 +32,8 @@ export default function ImportarExcelBancoAdminPage() {
   const [carregandoContas, setCarregandoContas] = useState(false);
   const [importando, setImportando] = useState(false);
   const [mensagem, setMensagem] = useState('');
+  const [dataInicial, setDataInicial] = useState(primeiroDiaMesAtual());
+  const [dataFinal, setDataFinal] = useState(ultimoDiaMesAtual());
 
   useEffect(() => {
     async function carregarContas() {
@@ -60,6 +66,16 @@ export default function ImportarExcelBancoAdminPage() {
       return;
     }
 
+    if (!dataInicial || !dataFinal) {
+      setMensagem('Informe a data inicial e final do período que deseja importar.');
+      return;
+    }
+
+    if (dataInicial > dataFinal) {
+      setMensagem('A data inicial não pode ser maior que a data final.');
+      return;
+    }
+
     if (arquivoExtrato && !contaBancariaId) {
       setMensagem('Selecione a conta bancária que receberá o extrato.');
       return;
@@ -68,6 +84,8 @@ export default function ImportarExcelBancoAdminPage() {
     try {
       setImportando(true);
       const formData = new FormData();
+      formData.append('dataInicial', dataInicial);
+      formData.append('dataFinal', dataFinal);
       if (arquivoExtrato) {
         formData.append('extrato', arquivoExtrato);
         formData.append('contaBancariaId', contaBancariaId);
@@ -129,6 +147,20 @@ export default function ImportarExcelBancoAdminPage() {
       </section>
 
       <form onSubmit={importarExcel} className="admin-tool-form" style={{ width: '100%', gap: 8 }}>
+        <section className="admin-tool-card" style={{ width: '100%', padding: '10px 12px' }}>
+          <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>Período da importação</strong>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
+            <label style={{ display: 'grid', gap: 5, color: '#334155', fontWeight: 600 }}>
+              Data inicial
+              <input type="date" value={dataInicial} onChange={(e) => { const valor = e.target.value; setDataInicial(valor); if (valor > dataFinal) setDataFinal(valor); }} disabled={importando} style={{ minHeight: 38, border: '1px solid #CBD5E1', borderRadius: 7, padding: '0 10px' }} />
+            </label>
+            <label style={{ display: 'grid', gap: 5, color: '#334155', fontWeight: 600 }}>
+              Data final
+              <input type="date" value={dataFinal} onChange={(e) => { const valor = e.target.value; setDataFinal(valor); if (valor < dataInicial) setDataInicial(valor); }} disabled={importando} style={{ minHeight: 38, border: '1px solid #CBD5E1', borderRadius: 7, padding: '0 10px' }} />
+            </label>
+            <span style={{ color: '#64748B', paddingBottom: 9 }}>Somente registros dentro deste período serão importados. Datas anteriores e posteriores serão preservadas.</span>
+          </div>
+        </section>
         <section className="admin-tool-card admin-upload-card" style={{ ...cardCompacto, width: '100%', padding: '10px 12px' }}>
           <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>Importação de Extrato Bancário</strong>
           <div style={linhaCompacta}>

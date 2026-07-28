@@ -80,7 +80,16 @@ export default function EstoqueBancoAdminPage() {
 
     try {
       setImportando(true);
+      if (!dataInicial || !dataFinal) {
+        return setMensagem('Informe a data inicial e final do período que deseja importar.');
+      }
+      if (dataInicial > dataFinal) {
+        return setMensagem('A data inicial não pode ser maior que a data final.');
+      }
+
       const formData = new FormData();
+      formData.append('dataInicial', dataInicial);
+      formData.append('dataFinal', dataFinal);
       if (arquivoLmc) formData.append('lmc', arquivoLmc);
       if (arquivoCompras) formData.append('compras', arquivoCompras);
       if (arquivoSpot) formData.append('spot', arquivoSpot);
@@ -212,6 +221,20 @@ export default function EstoqueBancoAdminPage() {
       </section>
 
       <form onSubmit={importarPdfs} className="admin-tool-form" style={{ width: '100%', gap: 6 }}>
+        <section className="admin-tool-card" style={{ width: '100%', padding: '10px 12px' }}>
+          <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>Período da importação</strong>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
+            <label style={{ display: 'grid', gap: 5, color: '#334155', fontWeight: 600 }}>
+              Data inicial
+              <input type="date" value={dataInicial} onChange={(e) => ajustarDataInicial(e.target.value)} disabled={importando} style={{ minHeight: 38, border: '1px solid #CBD5E1', borderRadius: 7, padding: '0 10px' }} />
+            </label>
+            <label style={{ display: 'grid', gap: 5, color: '#334155', fontWeight: 600 }}>
+              Data final
+              <input type="date" value={dataFinal} onChange={(e) => ajustarDataFinal(e.target.value)} disabled={importando} style={{ minHeight: 38, border: '1px solid #CBD5E1', borderRadius: 7, padding: '0 10px' }} />
+            </label>
+            <span style={{ color: '#64748B', paddingBottom: 9 }}>Somente registros dentro deste período serão importados. Datas anteriores e posteriores serão preservadas.</span>
+          </div>
+        </section>
         <section className="admin-tool-card admin-upload-card" style={{ ...cardCompacto, width: '100%', padding: '8px 12px' }}>
           <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>PDF Extrato Itaú</strong>
           <div style={linhaCompacta}>
