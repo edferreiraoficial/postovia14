@@ -58,6 +58,9 @@ function normalizarDescricaoBanco(descricao = '') {
 
 function limparDescricaoLancamento(descricao = '') {
   return String(descricao)
+    // Remove horário técnico trazido pelo PDF, sem alterar números existentes
+    // no nome do favorecido ou nos dados bancários da descrição.
+    .replace(/^\s*\d{2}:\d{2}:\d{2}\s+/, '')
     .replace(/\d{2}\/\d{2}\/\d{4}/g, '')
     .replace(/\d{2}\/\d{2}(?=\d|\s|-)/g, '')
     .replace(/\d{2}\/\d{2}/g, '')

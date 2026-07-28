@@ -169,6 +169,9 @@ function parseLinhaLancamento(linha) {
   const ultimoNumero = numeros.at(-1)
   const valorNumero = brToNumber(ultimoNumero[0])
   let descricao = removerUltimoNumero(resto, ultimoNumero)
+    // Alguns extratos SPOT antepõem o horário ao histórico. O horário não faz
+    // parte da descrição contábil e não deve seguir para Excel ou banco.
+    .replace(/^\s*\d{2}:\d{2}:\d{2}\s+/, '')
     .replace(/^lançamentos\s+/i, '')
     .replace(/^descricao\s+/i, '')
     // Remove cabeçalhos/rodapés que alguns PDFs colam na mesma linha do lançamento.

@@ -156,6 +156,11 @@ function ordemLancamentoSpot(row) {
   return 10
 }
 
+function ehDepositoDinheiroAtm(row) {
+  const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
+  return descricao === 'DEPOSITO DINHEIRO ATM' || descricao.includes('DEP DIN ATM')
+}
+
 function ehPixDepositosVendas(row) {
   const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
   return descricao.includes('PIX E DEPOSITO') && descricao.includes('VENDAS')
@@ -630,6 +635,13 @@ export async function consolidarFinanceiroGeral({
         const creditoCartao = campo === 'conta01' && ehCreditoVendasCartao(row)
         const pixMaquininha = campo === 'conta01' && ehPixRecebidoMaquininha(row)
         const valoresLinha = { [campo]: valor }
+        const depositoAtmItau = campo === 'conta02' && valor > 0 && ehDepositoDinheiroAtm(row)
+        if (depositoAtmItau) {
+          // Todo depósito em dinheiro identificado no Itaú representa entrada no
+          // banco e saída física do Caixa no mesmo valor.
+          valoresLinha.conta11 = -Math.abs(valor)
+          saldoContas.set('conta11', arred2(numero(saldoContas.get('conta11')) + valoresLinha.conta11))
+        }
         if (creditoCartao) {
           // Crédito vendas cartão é um movimento: replica o valor do SPOT
           // na coluna Cartão com sinal negativo.
@@ -1017,6 +1029,14 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         const creditoCartao = ehCreditoVendasCartao(row) && numero(row.conta01) !== 0
         const pixMaquininha = ehPixRecebidoMaquininha(row) && numero(row.conta01) !== 0
         const tarifaPixRecebido = ehTarifaPixRecebidoMaquininha(row)
+        const depositoAtmItau = numero(row.conta02) > 0 && ehDepositoDinheiroAtm(row)
+        if (depositoAtmItau) {
+          const caixaCorreto = -Math.abs(numero(row.conta02))
+          if (arred2(row.conta11) !== arred2(caixaCorreto)) {
+            row.conta11 = caixaCorreto
+            await atualizarCamposLinha(conn, row.id, { conta11: caixaCorreto })
+          }
+        }
         // A tarifa pertence somente ao SPOT. Crédito de cartão e Pix recebido
         // pela maquininha são replicados em Cartão com o mesmo valor negativo.
         if (tarifaPixRecebido && numero(row.conta12) !== 0) {

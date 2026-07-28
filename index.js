@@ -1737,6 +1737,169 @@ app.get('/api/financeiro-geral/relatorio', async (req, res) => {
 })
 
 
+
+function periodoCompetenciaAuditoria(competencia) {
+  const meses = { JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6, JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12 }
+  const texto = String(competencia || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
+  const match = texto.match(/^(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)(\d{2}|\d{4})$/)
+  if (!match) throw new Error('Competência inválida.')
+  const mes = meses[match[1]]
+  const ano = Number(match[2].length === 2 ? `20${match[2]}` : match[2])
+  const inicial = `${ano}-${String(mes).padStart(2, '0')}-01`
+  const final = new Date(Date.UTC(ano, mes, 0)).toISOString().slice(0, 10)
+  return { inicial, final, mes, ano }
+}
+
+function numeroAuditoria(valor) {
+  const n = Number(valor || 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function arredAuditoria(valor) {
+  return Math.round((numeroAuditoria(valor) + Number.EPSILON) * 100) / 100
+}
+
+app.get('/api/auditoria/financeiro-geral', async (req, res) => {
+  try {
+    const empresaId = Number(req.query.empresaId || 1)
+    const competencia = String(req.query.competencia || 'Mar26')
+    const { inicial, final } = periodoCompetenciaAuditoria(competencia)
+    const contas = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
+    const produtos = ['prod1', 'prod2', 'prod3', 'prod4']
+    const campos = [...contas, ...produtos.flatMap((p) => [`${p}_quant`, `${p}_valor`, `${p}_total`]), 'total']
+
+    const [rows] = await db.query(
+      `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
+              descricao_original, descricao_normalizada, tipo_lancamento, origem,
+              chave_integracao, ${campos.join(', ')}
+         FROM financeiro_geral
+        WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento BETWEEN ? AND ?
+        ORDER BY data_lancamento ASC, id ASC`,
+      [empresaId, inicial, final]
+    )
+
+    const [baseRows] = await db.query(
+      `SELECT ${contas.join(', ')}
+         FROM financeiro_geral
+        WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento < ?
+          AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO DO DIA%'
+        ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
+      [empresaId, inicial]
+    )
+
+    const [duplicadas] = await db.query(
+      `SELECT chave_integracao, COUNT(*) AS quantidade
+         FROM financeiro_geral
+        WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento BETWEEN ? AND ?
+          AND chave_integracao IS NOT NULL AND chave_integracao <> ''
+        GROUP BY chave_integracao HAVING COUNT(*) > 1`,
+      [empresaId, inicial, final]
+    )
+
+    const normalizar = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
+    const issues = []
+    const adicionar = (nivel, categoria, data, descricao, detalhe, valor = null, id = null) => {
+      issues.push({ nivel, categoria, data, descricao, detalhe, valor, id })
+    }
+
+    for (const item of duplicadas) {
+      adicionar('CRITICO', 'Duplicidade', '', 'Chave de integração repetida', `${item.quantidade} lançamentos compartilham a chave ${item.chave_integracao}.`)
+    }
+
+    const porDia = new Map()
+    for (const row of rows) {
+      const dia = String(row.data_lancamento)
+      if (!porDia.has(dia)) porDia.set(dia, [])
+      porDia.get(dia).push(row)
+
+      const desc = normalizar(row.descricao_normalizada || row.descricao_original)
+      const spot = arredAuditoria(row.conta01)
+      const itau = arredAuditoria(row.conta02)
+      const caixa = arredAuditoria(row.conta11)
+      const cartao = arredAuditoria(row.conta12)
+
+      if (desc.includes('CREDITO VENDAS CARTAO') && (spot <= 0 || cartao !== -Math.abs(spot))) {
+        adicionar('CRITICO', 'Cartão', dia, row.descricao_original, 'Crédito Vendas Cartão deve ser positivo no SPOT e negativo no Cartão, no mesmo valor.', spot, row.id)
+      }
+      if (desc.includes('PIX RECEBIDO') && desc.includes('MAQUIN') && !desc.includes('TARIFA') && (spot <= 0 || cartao !== -Math.abs(spot))) {
+        adicionar('CRITICO', 'PIX maquininha', dia, row.descricao_original, 'Pix recebido na maquininha deve ser positivo no SPOT e negativo no Cartão, no mesmo valor.', spot, row.id)
+      }
+      if (desc.includes('TARIFA PIX RECEBIDO') && cartao !== 0) {
+        adicionar('CRITICO', 'Tarifa PIX', dia, row.descricao_original, 'Tarifa PIX recebimento deve movimentar somente o SPOT.', cartao, row.id)
+      }
+      if ((desc === 'DEPOSITO DINHEIRO ATM' || desc.includes('DEP DIN ATM')) && (itau <= 0 || caixa !== -Math.abs(itau))) {
+        adicionar('CRITICO', 'Caixa x Itaú', dia, row.descricao_original, 'Depósito dinheiro ATM deve entrar positivo no Itaú e sair negativo no Caixa, no mesmo valor.', itau, row.id)
+      }
+
+      if (desc.startsWith('SALDO DO DIA')) {
+        for (const p of produtos) {
+          const esperado = arredAuditoria(numeroAuditoria(row[`${p}_quant`]) * numeroAuditoria(row[`${p}_valor`]))
+          const informado = arredAuditoria(row[`${p}_total`])
+          if (Math.abs(esperado - informado) > 0.01) {
+            adicionar('ATENCAO', 'Estoque', dia, row.descricao_original, `${p}: total do estoque difere de quantidade × preço médio.`, informado, row.id)
+          }
+        }
+        for (const campo of ['conta01', 'conta02', 'conta11', 'conta12', 'conta13']) {
+          if (numeroAuditoria(row[campo]) < -0.01) {
+            adicionar('ATENCAO', 'Saldo negativo', dia, row.descricao_original, `${campo} encerrou o dia com saldo negativo.`, row[campo], row.id)
+          }
+        }
+      }
+    }
+
+    const saldoCorrente = new Map(contas.map((c) => [c, numeroAuditoria(baseRows[0]?.[c])]))
+    let possuiBase = Boolean(baseRows[0])
+    const dias = []
+    for (const [data, linhas] of porDia.entries()) {
+      const movimentos = linhas.filter((r) => !normalizar(r.descricao_normalizada || r.descricao_original).startsWith('SALDO'))
+      const saldos = linhas.filter((r) => normalizar(r.descricao_normalizada || r.descricao_original).startsWith('SALDO DO DIA'))
+      const fechamento = saldos.at(-1) || null
+      const entradas = movimentos.reduce((t, r) => t + contas.reduce((s, c) => s + Math.max(0, numeroAuditoria(r[c])), 0), 0)
+      const saidas = movimentos.reduce((t, r) => t + contas.reduce((s, c) => s + Math.abs(Math.min(0, numeroAuditoria(r[c]))), 0), 0)
+
+      if (saldos.length > 1) adicionar('CRITICO', 'Fechamento', data, 'Saldo do dia duplicado', `Foram encontradas ${saldos.length} linhas de fechamento no mesmo dia.`)
+      if (!fechamento && movimentos.length) adicionar('CRITICO', 'Fechamento', data, 'Saldo do dia ausente', 'Existem movimentos, mas não há linha de Saldo do dia.')
+
+      if (possuiBase && fechamento) {
+        for (const campo of contas) {
+          const movimento = movimentos.reduce((t, r) => t + numeroAuditoria(r[campo]), 0)
+          const esperado = arredAuditoria(numeroAuditoria(saldoCorrente.get(campo)) + movimento)
+          const informado = arredAuditoria(fechamento[campo])
+          if (Math.abs(esperado - informado) > 0.01) {
+            adicionar('CRITICO', 'Continuidade de saldo', data, fechamento.descricao_original, `${campo}: esperado ${esperado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, encontrado ${informado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`, informado, fechamento.id)
+          }
+        }
+      }
+      if (fechamento) {
+        for (const campo of contas) saldoCorrente.set(campo, numeroAuditoria(fechamento[campo]))
+        possuiBase = true
+      }
+      dias.push({ data, lancamentos: movimentos.length, entradas: arredAuditoria(entradas), saidas: arredAuditoria(saidas), possuiFechamento: Boolean(fechamento), alertas: issues.filter((i) => i.data === data).length })
+    }
+
+    const criticos = issues.filter((i) => i.nivel === 'CRITICO').length
+    const atencoes = issues.filter((i) => i.nivel === 'ATENCAO').length
+    const ordemNivelAuditoria = { CRITICO: 0, ATENCAO: 1, INFO: 2 }
+    res.json({
+      ok: true,
+      periodo: { inicial, final, competencia },
+      resumo: {
+        lancamentos: rows.length,
+        diasAnalisados: porDia.size,
+        diasSemFechamento: dias.filter((d) => !d.possuiFechamento && d.lancamentos > 0).length,
+        criticos,
+        atencoes,
+        status: criticos ? 'REPROVADO' : atencoes ? 'ATENCAO' : 'APROVADO',
+      },
+      issues: issues.sort((a, b) => (ordemNivelAuditoria[a.nivel] ?? 9) - (ordemNivelAuditoria[b.nivel] ?? 9) || String(a.data).localeCompare(String(b.data))),
+      dias,
+    })
+  } catch (error) {
+    console.error('ERRO /api/auditoria/financeiro-geral:', error)
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao auditar o Financeiro Geral.' })
+  }
+})
+
 app.get('/api/compras', async (req, res) => {
   try {
     const { dataInicial, dataFinal } = obterIntervaloDatas(req)
