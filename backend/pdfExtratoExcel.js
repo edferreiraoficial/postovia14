@@ -156,6 +156,13 @@ function removerUltimoNumero(texto, numeroEncontrado) {
     .trim()
 }
 
+function limparHorarioInicialDescricao(descricao = '') {
+  return String(descricao)
+    .replace(/^\s*[\u200B-\u200D\uFEFF]*(?:\d{2}\s*:\s*){2}\d{2}(?:[.,]\d+)?\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function parseLinhaLancamento(linha) {
   const matchData = linha.match(DATA_RE)
   if (!matchData) return null
@@ -171,7 +178,7 @@ function parseLinhaLancamento(linha) {
   let descricao = removerUltimoNumero(resto, ultimoNumero)
     // Alguns extratos SPOT antepõem o horário ao histórico. O horário não faz
     // parte da descrição contábil e não deve seguir para Excel ou banco.
-    .replace(/^\s*\d{2}:\d{2}:\d{2}\s+/, '')
+    .replace(/^\s*[\u200B-\u200D\uFEFF]*(?:\d{2}\s*:\s*){2}\d{2}(?:[.,]\d+)?\s*/, '')
     .replace(/^lançamentos\s+/i, '')
     .replace(/^descricao\s+/i, '')
     // Remove cabeçalhos/rodapés que alguns PDFs colam na mesma linha do lançamento.
@@ -179,6 +186,8 @@ function parseLinhaLancamento(linha) {
     .replace(/extrato-lancamentos.*$/i, '')
     .replace(/data\s*lançamentos\s*valor.*$/i, '')
     .trim()
+
+  descricao = limparHorarioInicialDescricao(descricao)
 
   if (/SALDO\s+ANTERIOR/i.test(normalizado)) {
     return { data, descricao: 'Saldo anterior', valor: null, saldo: valorNumero, tipo: 'SALDO_ANTERIOR', original: linha }
@@ -252,7 +261,7 @@ function consolidarItauDiariamente(lancamentos) {
     }
 
     for (const item of demais) {
-      saida.push({ data, descricao: item.descricao, valor: item.valor, saldo: null })
+      saida.push({ data, descricao: limparHorarioInicialDescricao(item.descricao), valor: item.valor, saldo: null })
     }
 
     if (saldoFinalDia) {
@@ -342,7 +351,7 @@ function consolidarSpotDiariamente(lancamentos) {
 
     const demais = movimentosDia.filter((_, idx) => !usados.has(idx))
     for (const item of demais) {
-      saida.push({ data, descricao: item.descricao, valor: item.valor, saldo: null })
+      saida.push({ data, descricao: limparHorarioInicialDescricao(item.descricao), valor: item.valor, saldo: null })
     }
 
     if (saldoFinalDia) {

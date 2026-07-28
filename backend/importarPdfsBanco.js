@@ -60,7 +60,7 @@ function limparDescricaoLancamento(descricao = '') {
   return String(descricao)
     // Remove horário técnico trazido pelo PDF, sem alterar números existentes
     // no nome do favorecido ou nos dados bancários da descrição.
-    .replace(/^\s*\d{2}:\d{2}:\d{2}\s+/, '')
+    .replace(/^\s*[\u200B-\u200D\uFEFF]*(?:\d{2}\s*:\s*){2}\d{2}(?:[.,]\d+)?\s*/, '')
     .replace(/\d{2}\/\d{2}\/\d{4}/g, '')
     .replace(/\d{2}\/\d{2}(?=\d|\s|-)/g, '')
     .replace(/\d{2}\/\d{2}/g, '')
@@ -593,7 +593,7 @@ function extrairSaldoDia(linha, data, descricao) {
 function extrairMovimentoBanco(linha, data, prefixoData) {
   const restoOriginal = String(linha)
     .replace(new RegExp(`^${prefixoData.replace(/\//g, '\\/')}\\s*`), '')
-    .replace(/^\d{2}:\d{2}:\d{2}\s*/, '')
+    .replace(/^\s*[\u200B-\u200D\uFEFF]*(?:\d{2}\s*:\s*){2}\d{2}(?:[.,]\d+)?\s*/, '')
     .trim()
 
   const textoParaValor = separarAtmDoValor(prepararTextoBancoParaValor(restoOriginal))
@@ -826,7 +826,7 @@ function montarLinhasBancoAgrupado(lancamentos, banco) {
     grupos.demais.forEach(linha => {
       saida.push({
         data,
-        descricao: linha.descricao,
+        descricao: limparDescricaoLancamento(linha.descricao),
         valor: linha.valor,
         saldo: null,
       })
