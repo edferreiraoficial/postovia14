@@ -1170,6 +1170,14 @@ app.post('/api/financeiro-geral/reconsolidar-zero', async (req, res) => {
     const empresaId = Number(req.body?.empresa_id || req.body?.empresaId || 1)
     const dataInicial = String(req.body?.dataInicial || '').trim()
     const dataFinal = String(req.body?.dataFinal || '').trim()
+    const colunaSolicitada = String(req.body?.coluna || 'TODAS').trim()
+    const colunasRecriaveis = new Set([
+      ...Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`),
+      ...['prod1_quant','prod1_valor','prod1_total','prod2_quant','prod2_valor','prod2_total','prod3_quant','prod3_valor','prod3_total','prod4_quant','prod4_valor','prod4_total'],
+    ])
+    if (colunaSolicitada !== 'TODAS' && !colunasRecriaveis.has(colunaSolicitada)) {
+      throw new Error('A coluna selecionada para recriação é inválida.')
+    }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) {
       throw new Error('Informe um período válido.')
     }
@@ -1188,12 +1196,30 @@ app.post('/api/financeiro-geral/reconsolidar-zero', async (req, res) => {
 
     // O saldo do dia travado é preservado e usado como base. A recriação começa
     // exclusivamente no dia seguinte, sem excluir nem regravar o período protegido.
+    const recriacaoCompleta = colunaSolicitada === 'TODAS'
+    if (!recriacaoCompleta) {
+      // Preserva as demais colunas e limpa somente os movimentos da coluna escolhida.
+      // As linhas de saldo ficam para fornecer a abertura correta e serão recalculadas
+      // ao final da consolidação.
+      await db.query(
+        `UPDATE financeiro_geral
+            SET ${colunaSolicitada} = 0,
+                total = (COALESCE(conta01,0)+COALESCE(conta02,0)+COALESCE(conta03,0)+COALESCE(conta04,0)+COALESCE(conta05,0)+COALESCE(conta06,0)+COALESCE(conta07,0)+COALESCE(conta08,0)+COALESCE(conta09,0)+COALESCE(conta10,0)+COALESCE(conta11,0)+COALESCE(conta12,0)+COALESCE(conta13,0)+COALESCE(conta14,0)+COALESCE(conta15,0)+COALESCE(conta16,0)+COALESCE(conta17,0)+COALESCE(conta18,0)+COALESCE(conta19,0)+COALESCE(conta20,0)+COALESCE(conta21,0)+COALESCE(conta22,0)+COALESCE(conta23,0)+COALESCE(conta24,0)+COALESCE(conta25,0)+COALESCE(conta26,0)+COALESCE(conta27,0)+COALESCE(conta28,0)+COALESCE(conta29,0)+COALESCE(conta30,0)),
+                atualizado_em = NOW()
+          WHERE empresa_id = ?
+            AND data_lancamento BETWEEN ? AND ?
+            AND status = 'ATIVO'
+            AND tipo_lancamento <> 'SALDO'`,
+        [empresaId, dataInicialEfetiva, dataFinal]
+      )
+    }
+
     const resultado = await consolidarFinanceiroGeral({
       empresaId,
       dataInicial: dataInicialEfetiva,
       dataFinal,
       usuarioId: req.usuario?.id || null,
-      limparAntes: true,
+      limparAntes: recriacaoCompleta,
       dataSaldoAnterior: dataInicialEfetiva,
       dataInicioLancamentos: dataInicialEfetiva,
       dataMinimaGravacao: dataInicialEfetiva,
@@ -1204,7 +1230,7 @@ app.post('/api/financeiro-geral/reconsolidar-zero', async (req, res) => {
       : ''
     res.json({
       ok: true,
-      mensagem: `Financeiro Geral recriado no período de ${dataInicialEfetiva.split('-').reverse().join('/')} a ${dataFinal.split('-').reverse().join('/')}.${avisoTrava}`,
+      mensagem: `${recriacaoCompleta ? 'Financeiro Geral' : `Coluna ${colunaSolicitada}`} recriado(a) no período de ${dataInicialEfetiva.split('-').reverse().join('/')} a ${dataFinal.split('-').reverse().join('/')}.${avisoTrava}`,
       resultado,
     })
   } catch (error) {

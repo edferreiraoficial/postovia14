@@ -78,6 +78,10 @@ export default function FinanceiroGeralAdminPage() {
   const [lancamentoEditandoId, setLancamentoEditandoId] = useState<number | null>(null);
   const [dataLinhaSelecionada, setDataLinhaSelecionada] = useState('');
   const [excluindoId, setExcluindoId] = useState<number | null>(null);
+  const [recriarAberto, setRecriarAberto] = useState(false);
+  const [recriarDataInicial, setRecriarDataInicial] = useState('');
+  const [recriarDataFinal, setRecriarDataFinal] = useState(fimMes());
+  const [recriarColuna, setRecriarColuna] = useState('TODAS');
   const tabelaWrapRef = useRef<HTMLDivElement | null>(null);
   const scrollRodapeRef = useRef<HTMLDivElement | null>(null);
   const scrollRodapeConteudoRef = useRef<HTMLDivElement | null>(null);
@@ -460,47 +464,43 @@ export default function FinanceiroGeralAdminPage() {
     }
   };
 
+  const abrirRecriacao = () => {
+    const inicioPermitido = dataTravaConsolidacao ? diaSeguinte(dataTravaConsolidacao) : dataInicial;
+    setRecriarDataInicial(inicioPermitido || inicioMes());
+    setRecriarDataFinal(dataFinal || fimMes());
+    setRecriarColuna('TODAS');
+    setRecriarAberto(true);
+  };
+
   const reconsolidarDoZero = async () => {
-    const periodoInicial = dataTravaConsolidacao ? diaSeguinte(dataTravaConsolidacao) : dataInicial;
+    const periodoInicial = recriarDataInicial;
+    const periodoFinal = recriarDataFinal;
+    if (!periodoInicial || !periodoFinal) { setMensagem('Informe o período inicial e final para recriar.'); return; }
+    if (periodoInicial > periodoFinal) { setMensagem('A data inicial não pode ser posterior à data final.'); return; }
+    const campoSelecionado = recriarColuna === 'TODAS' ? null : campos.find((c) => c.key === recriarColuna);
+    const nomeColuna = campoSelecionado?.label || 'Todas as colunas';
+    const confirmar = window.confirm(
+      `ATENÇÃO: a recriação será executada para ${nomeColuna}.\n\n` +
+      `Período: ${dataBr(periodoInicial)} a ${dataBr(periodoFinal)}.\n\nDeseja continuar?`
+    );
+    if (!confirmar) return;
 
-    // Antes da confirmação, ajusta o filtro para o primeiro dia permitido e
-    // atualiza a planilha exatamente com o período que será recriado.
-    setDataInicial(periodoInicial);
-    setPagina(1);
     setCarregando(true);
-    setMensagem('Atualizando o período permitido para recriação...');
+    setMensagem(`Recriando ${nomeColuna} no período selecionado...`);
     try {
-      const p = new URLSearchParams({ empresaId: '1', dataInicial: periodoInicial, dataFinal, pagina: '1', porPagina: String(porPagina) });
-      if (descricao.trim()) p.set('descricao', descricao.trim());
-      if (origem) p.set('origem', origem);
-      if (contaFiltro) p.set('conta', contaFiltro);
-      if (valorExato !== '') p.set('valorExato', valorExato);
-      if (valorMinimo !== '') p.set('valorMinimo', valorMinimo);
-      if (valorMaximo !== '') p.set('valorMaximo', valorMaximo);
-      const filtroRes = await fetch(`${API_BASE}/financeiro-geral/lancamentos?${p.toString()}`);
-      const filtroDados = await filtroRes.json().catch(() => ({}));
-      if (!filtroRes.ok) throw new Error(filtroDados.erro || 'Erro ao atualizar o período.');
-      setLinhas(filtroDados.lancamentos || []);
-      setTotais(filtroDados.totais || {});
-      setUltimoSaldo(filtroDados.ultimoSaldo || {});
-      setTotalRegistros(Number(filtroDados.paginacao?.total || 0));
-
-      const confirmar = window.confirm(
-        `ATENÇÃO: todos os lançamentos consolidados serão eliminados e recriados do zero.\n\n` +
-        `Período que será recriado: ${dataBr(periodoInicial)} a ${dataBr(dataFinal)}.\n\nSomente os dados desse período serão consolidados.\nDeseja continuar?`
-      );
-      if (!confirmar) { setMensagem('Período atualizado. Recriação cancelada.'); return; }
-
-      setMensagem('Eliminando a consolidação atual e recriando os lançamentos...');
       const res = await fetch(`${API_BASE}/financeiro-geral/reconsolidar-zero`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa_id: 1, dataInicial: periodoInicial, dataFinal }),
+        body: JSON.stringify({ empresa_id: 1, dataInicial: periodoInicial, dataFinal: periodoFinal, coluna: recriarColuna }),
       });
       const dados = await res.json().catch(() => ({}));
-      if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao reconsolidar os lançamentos.');
+      if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao recriar os lançamentos.');
+      setDataInicial(periodoInicial);
+      setDataFinal(periodoFinal);
+      setPagina(1);
+      setRecriarAberto(false);
       setMensagem(dados.mensagem || 'Financeiro Geral recriado com sucesso.');
       await carregar();
-    } catch (e: any) { setMensagem(e.message || 'Erro ao reconsolidar os lançamentos.'); }
+    } catch (e: any) { setMensagem(e.message || 'Erro ao recriar os lançamentos.'); }
     finally { setCarregando(false); }
   };
 
@@ -544,7 +544,7 @@ export default function FinanceiroGeralAdminPage() {
       <label className="form-check financeiro-geral-movimento"><input className="form-check-input" type="checkbox" checked={somenteMovimento} onChange={(e) => setSomenteMovimento(e.target.checked)} /><span className="form-check-label">Exibir apenas colunas com movimento</span></label>
       <div className="financeiro-geral-processamento">
         <button type="button" className="admin-primary-button" onClick={consolidarFinanceiroGeral} disabled={carregando}>Consolidar</button>
-        <button type="button" className="admin-primary-button" onClick={reconsolidarDoZero} disabled={carregando}>Recriar do zero</button>
+        <button type="button" className="admin-primary-button" onClick={abrirRecriacao} disabled={carregando}>Recriar</button>
         <button type="button" className="admin-primary-button" onClick={abrirNovoLancamento} disabled={carregando}>Novo Lançamento</button>
       </div>
       <div className="financeiro-geral-paginacao-direita" data-layout="linhas-e-paginas">
@@ -569,6 +569,18 @@ export default function FinanceiroGeralAdminPage() {
       </tr>)}</tbody>
       <tfoot className="financeiro-geral-titulos-rodape"><tr><th></th><th></th><th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
     </table></div>
+    {recriarAberto && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Recriar Financeiro Geral">
+      <div className="fg-modal fg-modal-recriar">
+        <div className="fg-modal-header"><h2>Recriar Financeiro Geral</h2><button type="button" onClick={() => setRecriarAberto(false)} aria-label="Fechar">×</button></div>
+        <div className="fg-modal-grid fg-modal-grid-recriar">
+          <label>Coluna a recriar<select value={recriarColuna} onChange={(e) => setRecriarColuna(e.target.value)}><option value="TODAS">Todas as colunas</option>{campos.filter((c) => c.key !== 'total').map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select></label>
+          <label>Data inicial<input type="date" value={recriarDataInicial} min={dataTravaConsolidacao ? diaSeguinte(dataTravaConsolidacao) : undefined} onChange={(e) => setRecriarDataInicial(e.target.value)} /></label>
+          <label>Data final<input type="date" value={recriarDataFinal} onChange={(e) => setRecriarDataFinal(e.target.value)} /></label>
+        </div>
+        <p className="fg-recriar-aviso">Ao escolher uma coluna, somente os valores dessa coluna serão zerados e reconstruídos no período. As demais colunas serão preservadas.</p>
+        <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setRecriarAberto(false)} disabled={carregando}>Cancelar</button><button type="button" className="admin-primary-button" onClick={reconsolidarDoZero} disabled={carregando}>{carregando ? 'Recriando...' : 'Recriar período'}</button></div>
+      </div>
+    </div>}
     {novoLancamentoAberto && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label={lancamentoEditandoId === null ? 'Novo lançamento' : 'Alterar lançamento'}>
       <div className="fg-modal">
         <div className="fg-modal-header"><h2>{lancamentoEditandoId === null ? 'Novo Lançamento' : 'Alterar Lançamento'}</h2><button type="button" onClick={fecharModalLancamento} aria-label="Fechar">×</button></div>
