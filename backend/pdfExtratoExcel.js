@@ -203,25 +203,17 @@ function extrairLancamentos(texto) {
     .filter(Boolean)
 }
 
-function ehPixDepositoVenda(lancamento) {
+function ehDepositoAtmItau(lancamento) {
   const desc = normalizarTexto(lancamento.descricao)
   const valor = Number(lancamento.valor || 0)
-
-  if (valor <= 0) return false
-  if (desc.includes('TARIFA PIX')) return false
-
-  return (
-    desc.includes('PIX QRS') ||
-    desc.includes('PIX TRANSF') ||
-    desc.includes('CREDITO PIX') ||
-    desc.includes('DEP DIN ATM') ||
-    desc.includes('DEP DINHEIRO ATM') ||
-    desc.includes('DEP CHEQUE ATM') ||
-    desc.includes('CREDITO DE VENDAS') ||
-    desc === 'DE VENDAS'
-  )
+  return valor > 0 && desc.includes('ATM')
 }
 
+function ehPixAgrupavelItau(lancamento) {
+  const desc = normalizarTexto(lancamento.descricao)
+  const valor = Number(lancamento.valor || 0)
+  return valor > 0 && valor < 500 && desc.includes('PIX') && !desc.includes('ATM')
+}
 
 function consolidarItauDiariamente(lancamentos) {
   const ordenados = [...lancamentos].sort((a, b) => {
@@ -236,39 +228,28 @@ function consolidarItauDiariamente(lancamentos) {
   const auditoria = []
 
   if (saldoAnterior) {
-    saida.push({
-      data: saldoAnterior.data,
-      descricao: 'Saldo anterior',
-      valor: null,
-      saldo: saldoAnterior.saldo,
-    })
+    saida.push({ data: saldoAnterior.data, descricao: 'Saldo anterior', valor: null, saldo: saldoAnterior.saldo })
   }
 
   for (const data of datas) {
     const linhasDia = movimentos.filter(l => l.data === data)
-    const saldoFinalDia = linhasDia.find(l => l.tipo === 'SALDO') || null
+    const saldoFinalDia = linhasDia.filter(l => l.tipo === 'SALDO').at(-1) || null
     const movimentosDia = linhasDia.filter(l => l.tipo !== 'SALDO')
-    const pixDepositos = movimentosDia.filter(ehPixDepositoVenda)
-    const demais = movimentosDia.filter(l => !ehPixDepositoVenda(l))
+    const depositosAtm = movimentosDia.filter(ehDepositoAtmItau)
+    const pixAgrupados = movimentosDia.filter(ehPixAgrupavelItau)
+    const demais = movimentosDia.filter(l => !ehDepositoAtmItau(l) && !ehPixAgrupavelItau(l))
     const inicioDia = saida.length
-    const totalPixDepositos = pixDepositos.reduce((total, item) => total + Number(item.valor || 0), 0)
 
-    if (pixDepositos.length) {
-      saida.push({
-        data,
-        descricao: 'Pix e depositos Vendas',
-        valor: totalPixDepositos,
-        saldo: null,
-      })
+    if (depositosAtm.length) {
+      saida.push({ data, descricao: 'Deposito dinheiro ATM', valor: somarGrupo(depositosAtm), saldo: null })
+    }
+
+    if (pixAgrupados.length) {
+      saida.push({ data, descricao: 'Pix recebidos', valor: somarGrupo(pixAgrupados), saldo: null })
     }
 
     for (const item of demais) {
-      saida.push({
-        data,
-        descricao: item.descricao,
-        valor: item.valor,
-        saldo: null,
-      })
+      saida.push({ data, descricao: item.descricao, valor: item.valor, saldo: null })
     }
 
     if (saldoFinalDia) {
@@ -282,8 +263,8 @@ function consolidarItauDiariamente(lancamentos) {
     auditoria.push({
       data,
       qtdLancamentosOriginais: movimentosDia.length,
-      qtdPixDepositosAgrupados: pixDepositos.length,
-      totalPixDepositos,
+      qtdPixDepositosAgrupados: depositosAtm.length + pixAgrupados.length,
+      totalPixDepositos: somarGrupo(depositosAtm) + somarGrupo(pixAgrupados),
       qtdDemaisLancamentos: demais.length,
       saldoFinal: saldoFinalDia?.saldo ?? null,
     })
@@ -295,12 +276,13 @@ function consolidarItauDiariamente(lancamentos) {
 function ehCreditoPixMaquininhaSpot(lancamento) {
   const desc = normalizarTexto(lancamento.descricao)
   const valor = Number(lancamento.valor || 0)
-  return valor > 0 && valor <= 2000 && desc.includes('CREDITO PIX')
+  return valor > 0 && valor < 500 && desc.includes('CREDITO PIX')
 }
 
 function ehTarifaPixRecebimentoSpot(lancamento) {
   const desc = normalizarTexto(lancamento.descricao)
-  return desc.includes('TARIFA PIX') && desc.includes('RECEBIMENTO')
+  const valor = Number(lancamento.valor || 0)
+  return valor < 0 && desc.includes('TARIFA PIX') && desc.includes('RECEBIMENTO')
 }
 
 function ehTarifaPixEnvioSpot(lancamento) {
@@ -310,23 +292,7 @@ function ehTarifaPixEnvioSpot(lancamento) {
 
 function ehCreditoVendasCartaoSpot(lancamento) {
   const desc = normalizarTexto(lancamento.descricao)
-  return desc.includes('CREDITO DE VENDAS') || desc === 'DE VENDAS'
-}
-
-function ehPixDepositoVendasSpot(lancamento) {
-  const desc = normalizarTexto(lancamento.descricao)
-  const valor = Number(lancamento.valor || 0)
-  if (valor <= 0) return false
-  if (ehCreditoPixMaquininhaSpot(lancamento)) return false
-  if (ehCreditoVendasCartaoSpot(lancamento)) return false
-  if (desc.includes('TARIFA PIX')) return false
-  return (
-    desc.includes('CREDITO PIX') ||
-    desc.includes('PIX') ||
-    desc.includes('ATM') ||
-    desc.includes('DEPOSITO') ||
-    desc.includes('DEP ')
-  )
+  return desc.includes('CREDITO DE VENDAS') || desc.includes('CREDITO VENDAS') || desc === 'DE VENDAS'
 }
 
 function somarGrupo(linhas) {
@@ -366,11 +332,10 @@ function consolidarSpotDiariamente(lancamentos) {
     }
 
     const inicioDia = saida.length
+    const creditoVendas = addGrupo('Crédito Vendas Cartão', ehCreditoVendasCartaoSpot)
     const creditoPixMaquininha = addGrupo('Pix recebido maquininha', ehCreditoPixMaquininhaSpot)
     const tarifaRecebimento = addGrupo('Tarifa pix recebido maquininha', ehTarifaPixRecebimentoSpot)
     const tarifaEnvio = addGrupo('Tarifa pix enviado', ehTarifaPixEnvioSpot)
-    const pixDepositos = addGrupo('Pix e depositos Vendas', ehPixDepositoVendasSpot)
-    const creditoVendas = addGrupo('Credito Vendas Cartão', ehCreditoVendasCartaoSpot)
 
     const demais = movimentosDia.filter((_, idx) => !usados.has(idx))
     for (const item of demais) {
@@ -388,8 +353,8 @@ function consolidarSpotDiariamente(lancamentos) {
     auditoria.push({
       data,
       qtdLancamentosOriginais: movimentosDia.length,
-      qtdPixDepositosAgrupados: pixDepositos.length + creditoPixMaquininha.length,
-      totalPixDepositos: somarGrupo(pixDepositos) + somarGrupo(creditoPixMaquininha),
+      qtdPixDepositosAgrupados: creditoPixMaquininha.length,
+      totalPixDepositos: somarGrupo(creditoPixMaquininha),
       qtdDemaisLancamentos: demais.length,
       saldoFinal: saldoFinalDia?.saldo ?? null,
       totalTarifaPixRecebimento: somarGrupo(tarifaRecebimento),

@@ -671,11 +671,12 @@ function buscarSaldoAnteriorCorreto(lancamentos) {
 
 function classificarMovimentosBanco(movimentos, banco, data) {
   const grupos = {
+    creditoVendas: [],
     creditoPix: [],
     tarifaRecebimento: [],
     tarifaEnvio: [],
-    pixDepositos: [],
-    creditoVendas: [],
+    depositosAtm: [],
+    pixRecebidos: [],
     demais: [],
   }
 
@@ -691,12 +692,12 @@ function classificarMovimentosBanco(movimentos, banco, data) {
         continue
       }
 
-      if ((desc.includes('credito pix') || desc.startsWith('pix ')) && valor > 0 && valor <= 2000) {
+      if (valor > 0 && valor < 500 && desc.includes('credito pix')) {
         grupos.creditoPix.push(linha)
         continue
       }
 
-      if (desc.includes('tarifa pix') && desc.includes('recebimento')) {
+      if (valor < 0 && desc.includes('tarifa pix') && desc.includes('recebimento')) {
         grupos.tarifaRecebimento.push(linha)
         continue
       }
@@ -705,33 +706,24 @@ function classificarMovimentosBanco(movimentos, banco, data) {
         grupos.tarifaEnvio.push(linha)
         continue
       }
-
     }
 
-    if (
-      banco === 'ITAU' &&
-      valor > 0 &&
-      (desc.includes('pix qrs') || desc.includes('dep din atm'))
-    ) {
-      grupos.pixDepositos.push(linha)
-      continue
+    if (banco === 'ITAU') {
+      if (valor > 0 && desc.includes('atm')) {
+        grupos.depositosAtm.push(linha)
+        continue
+      }
+
+      if (valor > 0 && valor < 500 && desc.includes('pix')) {
+        grupos.pixRecebidos.push(linha)
+        continue
+      }
     }
 
     grupos.demais.push(linha)
   }
 
   return grupos
-}
-
-function adicionarLinhaSeHouver(saida, data, descricao, linhas) {
-  if (!linhas.length) return
-
-  saida.push({
-    data,
-    descricao,
-    valor: somar(linhas),
-    saldo: null,
-  })
 }
 
 function aplicarSaldoFinalDia(saida, inicioDia, data, saldoFinalDia) {
@@ -748,15 +740,13 @@ function aplicarSaldoFinalDia(saida, inicioDia, data, saldoFinalDia) {
 function montarLinhasBancoAgrupado(lancamentos, banco) {
   const porData = agruparPorData(lancamentos)
   const datas = Object.keys(porData).sort((a, b) => converterData(a) - converterData(b))
-
   const saida = []
   let saldoAnteriorIncluido = false
-
   const saldoAnteriorCorreto = buscarSaldoAnteriorCorreto(lancamentos)
 
   for (const data of datas) {
     const linhas = porData[data]
-    const saldoFinalDia = linhas.find(l => l.tipo === 'SALDO')
+    const saldoFinalDia = linhas.filter(l => l.tipo === 'SALDO').at(-1) || null
     const inicioDia = saida.length
 
     if (!saldoAnteriorIncluido && saldoAnteriorCorreto) {
@@ -766,163 +756,71 @@ function montarLinhasBancoAgrupado(lancamentos, banco) {
         valor: null,
         saldo: saldoAnteriorCorreto.saldo,
       })
-
       saldoAnteriorIncluido = true
     }
 
     const movimentos = linhas.filter(l => l.tipo !== 'SALDO' && l.tipo !== 'SALDO_ANTERIOR')
+    const grupos = classificarMovimentosBanco(movimentos, banco, data)
 
-    const creditoPix = []
-    const tarifaRecebimento = []
-    const tarifaEnvio = []
-    const creditoVendas = []
-
-    const depDinAtm = []
-    const pixQrs = []
-    const pixTransf = []
-
-    const demais = []
-
-    for (const item of movimentos) {
-      const descricaoLimpa = limparDescricaoLancamento(item.descricao)
-      const desc = normalizarDescricaoBanco(descricaoLimpa).toLowerCase()
-      const valor = Number(item.valor || 0)
-
-      const linha = {
-        data,
-        descricao: descricaoLimpa,
-        valor,
-        saldo: null,
+    if (banco === 'SPOT') {
+      if (grupos.creditoVendas.length) {
+        saida.push({
+          data,
+          descricao: 'Crédito Vendas Cartão',
+          valor: somar(grupos.creditoVendas),
+          saldo: null,
+        })
       }
 
-      if (banco === 'SPOT') {
-        if (desc.includes('credito de vendas') || desc.includes('credito vendas') || desc === 'de vendas') {
-          creditoVendas.push(linha)
-          continue
-        }
-
-        if ((desc.includes('credito pix') || desc.startsWith('pix ')) && valor > 0 && valor <= 2000) {
-          creditoPix.push(linha)
-          continue
-        }
-
-        if (desc.includes('tarifa pix') && desc.includes('recebimento')) {
-          tarifaRecebimento.push(linha)
-          continue
-        }
-
-        if (desc.includes('tarifa pix') && desc.includes('envio')) {
-          tarifaEnvio.push(linha)
-          continue
-        }
+      if (grupos.creditoPix.length) {
+        saida.push({
+          data,
+          descricao: 'Pix recebido na maquininha',
+          valor: somar(grupos.creditoPix),
+          saldo: null,
+        })
       }
 
-      if (banco === 'ITAU') {
-        if (valor > 0 && desc.includes('dep din atm')) {
-          depDinAtm.push(linha)
-          continue
-        }
-
-        if (valor > 0 && desc.includes('pix qrs')) {
-          pixQrs.push(linha)
-          continue
-        }
-
-        if (valor > 0 && desc.includes('pix transf')) {
-          pixTransf.push(linha)
-          continue
-        }
+      if (grupos.tarifaRecebimento.length) {
+        saida.push({
+          data,
+          descricao: 'Tarifa pix recebido maquininha',
+          valor: somar(grupos.tarifaRecebimento),
+          saldo: null,
+        })
       }
 
-      demais.push(linha)
-    }
-
-    if (creditoVendas.length) {
-      saida.push({
-        data,
-        descricao: 'Credito Vendas Cartão',
-        valor: somar(creditoVendas),
-        saldo: null,
-      })
-    }
-
-    if (creditoPix.length) {
-      saida.push({
-        data,
-        descricao: 'Pix recebido maquininha',
-        valor: somar(creditoPix),
-        saldo: null,
-      })
-    }
-
-    if (tarifaRecebimento.length) {
-      saida.push({
-        data,
-        descricao: 'Tarifa pix recebido maquininha',
-        valor: somar(tarifaRecebimento),
-        saldo: null,
-      })
-    }
-
-    if (tarifaEnvio.length) {
-      saida.push({
-        data,
-        descricao: 'Tarifa pix enviado',
-        valor: somar(tarifaEnvio),
-        saldo: null,
-      })
+      if (grupos.tarifaEnvio.length) {
+        saida.push({
+          data,
+          descricao: 'Tarifa pix enviado',
+          valor: somar(grupos.tarifaEnvio),
+          saldo: null,
+        })
+      }
     }
 
     if (banco === 'ITAU') {
-      const totalPixDia = [...pixQrs, ...pixTransf]
-
-      if (totalPixDia.length) {
+      if (grupos.depositosAtm.length) {
         saida.push({
           data,
-          descricao: 'Total Pix no dia',
-          valor: somar(totalPixDia),
+          descricao: 'Deposito dinheiro ATM',
+          valor: somar(grupos.depositosAtm),
           saldo: null,
         })
       }
 
-      if (depDinAtm.length) {
+      if (grupos.pixRecebidos.length) {
         saida.push({
           data,
-          descricao: 'Total Dep Dinheiro ATM',
-          valor: somar(depDinAtm),
-          saldo: null,
-        })
-      }
-    } else {
-      if (depDinAtm.length) {
-        saida.push({
-          data,
-          descricao: 'Dep Din ATM',
-          valor: somar(depDinAtm),
-          saldo: null,
-        })
-      }
-
-      if (pixQrs.length) {
-        saida.push({
-          data,
-          descricao: 'Pix QRS',
-          valor: somar(pixQrs),
-          saldo: null,
-        })
-      }
-
-      if (pixTransf.length) {
-        saida.push({
-          data,
-          descricao: 'Pix Transf',
-          valor: somar(pixTransf),
+          descricao: 'Pix recebidos',
+          valor: somar(grupos.pixRecebidos),
           saldo: null,
         })
       }
     }
 
-    demais.forEach(linha => {
+    grupos.demais.forEach(linha => {
       saida.push({
         data,
         descricao: linha.descricao,
@@ -931,14 +829,7 @@ function montarLinhasBancoAgrupado(lancamentos, banco) {
       })
     })
 
-    if (saldoFinalDia) {
-      saida.push({
-        data,
-        descricao: 'Saldo do dia',
-        valor: null,
-        saldo: saldoFinalDia.saldo,
-      })
-    }
+    aplicarSaldoFinalDia(saida, inicioDia, data, saldoFinalDia)
   }
 
   return saida
