@@ -1340,7 +1340,10 @@ app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
     const dataFinal = String(req.body?.dataFinal || '').trim()
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) throw new Error('Informe um período válido.')
     if (dataInicial > dataFinal) throw new Error('A data inicial não pode ser posterior à data final.')
-    await validarDataDesbloqueada(empresaId, dataInicial, 'recalcular')
+    const dataTrava = await obterDataTravaConsolidacao(empresaId)
+    const primeiroDiaLiberado = dataTrava ? proximaDataLocal(dataTrava) : dataInicial
+    const dataInicialEfetiva = dataInicial < primeiroDiaLiberado ? primeiroDiaLiberado : dataInicial
+    if (dataInicialEfetiva > dataFinal) throw new Error('O período visível está integralmente dentro da data travada; não há dias liberados para atualizar.')
 
     const permitidas = new Set(FINANCEIRO_GERAL_COLUNAS.map(([campo]) => campo).filter((campo) => campo !== 'total'))
     const solicitadas = Array.isArray(req.body?.colunas) ? req.body.colunas.map(String).filter((campo) => permitidas.has(campo)) : []
@@ -1350,13 +1353,26 @@ app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
     const todasNumericas = FINANCEIRO_GERAL_COLUNAS.map(([campo]) => campo).filter((campo) => campo !== 'total')
     await conn.beginTransaction()
 
-    const [baseRows] = await conn.query(
-      `SELECT ${todasNumericas.join(', ')} FROM financeiro_geral
-       WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento < ?
-         AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO DO DIA%'
-       ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
-      [empresaId, dataInicial]
-    )
+    const saldoInicialId = Number(req.body?.saldoInicialId || 0)
+    let baseRows = []
+    if (Number.isInteger(saldoInicialId) && saldoInicialId > 0) {
+      const [visivel] = await conn.query(
+        `SELECT * FROM financeiro_geral WHERE id = ? AND empresa_id = ? AND status = 'ATIVO' LIMIT 1`,
+        [saldoInicialId, empresaId]
+      )
+      const dataVisivel = String(visivel[0]?.data_lancamento || '').slice(0, 10)
+      if (visivel[0] && dataVisivel >= dataInicialEfetiva) baseRows = visivel
+    }
+    if (!baseRows.length) {
+      const [anteriores] = await conn.query(
+        `SELECT ${todasNumericas.join(', ')} FROM financeiro_geral
+         WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento < ?
+           AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO DO DIA%'
+         ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
+        [empresaId, dataInicialEfetiva]
+      )
+      baseRows = anteriores
+    }
     const acumulado = Object.fromEntries(todasNumericas.map((campo) => [campo, Number(baseRows[0]?.[campo] || 0)]))
 
     const [aberturaRows] = await conn.query(
@@ -1365,13 +1381,13 @@ app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
          AND (UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO ANTERIOR%'
            OR UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO INICIAL DO DIA%')
        ORDER BY id ASC LIMIT 1`,
-      [empresaId, dataInicial]
+      [empresaId, dataInicialEfetiva]
     )
     if (aberturaRows[0]) for (const campo of colunas) acumulado[campo] = Number(aberturaRows[0][campo] || 0)
 
     let dias = 0
     let atualizados = 0
-    for (let data = dataInicial; data <= dataFinal; data = proximaDataLocal(data)) {
+    for (let data = dataInicialEfetiva; data <= dataFinal; data = proximaDataLocal(data)) {
       const [aberturasDia] = await conn.query(
         `SELECT id FROM financeiro_geral WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento = ?
          AND (UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO ANTERIOR%'
@@ -1413,7 +1429,7 @@ app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
     }
 
     await conn.commit()
-    res.json({ ok: true, dias, atualizados, mensagem: `Saldos atualizados em ${dias} dia(s), preservando as colunas não selecionadas.` })
+    res.json({ ok: true, dias, atualizados, dataInicialEfetiva, mensagem: `Saldos atualizados a partir de ${dataInicialEfetiva.split('-').reverse().join('/')} em ${dias} dia(s). Nenhum lançamento anterior à trava foi alterado e nenhum saldo foi criado em dia sem lançamentos.` })
   } catch (error) {
     await conn.rollback().catch(() => {})
     res.status(400).json({ ok: false, erro: error.message || 'Erro ao atualizar os saldos.' })
@@ -1859,10 +1875,17 @@ app.put('/api/financeiro-geral/lancamentos/:id', async (req, res) => {
     )
     if (!linhasAntes[0]) return res.status(404).json({ ok: false, erro: 'Lançamento não encontrado.' })
     const linhaAntes = linhasAntes[0]
-    const dataTravaConsolidacao = await validarDataDesbloqueada(Number(linhaAntes.empresa_id || 1), String(linhaAntes.data_lancamento).slice(0, 10), 'alterar')
+    const descricaoAnteriorPrevia = String(linhaAntes.descricao_normalizada || '').toUpperCase()
+    const ehSaldoAnteriorProtegido = String(linhaAntes.tipo_lancamento || '').toUpperCase() === 'SALDO' && (descricaoAnteriorPrevia.startsWith('SALDO INICIAL DO DIA') || descricaoAnteriorPrevia.startsWith('SALDO ANTERIOR'))
+    if (ehSaldoAnteriorProtegido && !(await validarSenhaAdministrativa(body.senhaAdministrativa))) {
+      return res.status(401).json({ ok: false, erro: 'Senha administrativa inválida. O Saldo anterior não foi alterado.' })
+    }
+    const dataTravaConsolidacao = ehSaldoAnteriorProtegido
+      ? await obterDataTravaConsolidacao(Number(linhaAntes.empresa_id || 1))
+      : await validarDataDesbloqueada(Number(linhaAntes.empresa_id || 1), String(linhaAntes.data_lancamento).slice(0, 10), 'alterar')
     const dataLancamento = String(body.data_lancamento || '').slice(0, 10)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataLancamento)) throw new Error('Data inválida.')
-    if (dataTravaConsolidacao && dataLancamento <= dataTravaConsolidacao) {
+    if (!ehSaldoAnteriorProtegido && dataTravaConsolidacao && dataLancamento <= dataTravaConsolidacao) {
       throw new Error(`Período consolidado e bloqueado até ${dataTravaConsolidacao.split('-').reverse().join('/')}. Não é permitido alterar o lançamento para essa data ou antes dela.`)
     }
     const ehSaldoEditado = String(linhaAntes.tipo_lancamento || '').toUpperCase() === 'SALDO'
@@ -1914,9 +1937,10 @@ app.put('/api/financeiro-geral/lancamentos/:id', async (req, res) => {
     params.push(total, req.user?.id || null, id)
     const [resultado] = await db.query(`UPDATE financeiro_geral SET ${sets.join(', ')} WHERE id = ? AND status = 'ATIVO'`, params)
     if (!resultado.affectedRows) return res.status(404).json({ ok: false, erro: 'Lançamento não encontrado.' })
-    const dataRecalculo = dataTravaConsolidacao || (ehSaldoInicialEditado
-      ? dataEfetiva
-      : (ehSaldoEditado ? proximaDataLocal(dataEfetiva) : dataEfetiva))
+    const dataRecalculoBase = ehSaldoInicialEditado ? dataEfetiva : (ehSaldoEditado ? proximaDataLocal(dataEfetiva) : dataEfetiva)
+    const dataRecalculo = dataTravaConsolidacao && dataRecalculoBase <= dataTravaConsolidacao
+      ? proximaDataLocal(dataTravaConsolidacao)
+      : dataRecalculoBase
     const recalculo = await recalcularFinanceiroGeralAPartirDe({
       empresaId: Number(linhaAntes.empresa_id), dataInicial: dataRecalculo, usuarioId: req.user?.id || null,
     })

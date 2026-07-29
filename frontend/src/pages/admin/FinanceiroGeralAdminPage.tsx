@@ -47,6 +47,7 @@ const formatarNumeroCampo = (campo: string, valor: any) => {
 };
 const escapar = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const ehSaldo = (l: Linha) => String(l.descricao_normalizada || l.descricao_original || '').toUpperCase().startsWith('SALDO');
+const ehSaldoAnterior = (l: Linha) => { const d = String(l.descricao_normalizada || l.descricao_original || '').toUpperCase(); return d.startsWith('SALDO ANTERIOR') || d.startsWith('SALDO INICIAL DO DIA'); };
 const classeLarguraCampo = (campo: CampoFinanceiro) => {
   if (['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24'].includes(campo.key)) return 'fg-col-w90';
   if (/^prod[1-4]_(quant|valor)$/.test(campo.key)) return 'fg-col-w60';
@@ -86,6 +87,7 @@ export default function FinanceiroGeralAdminPage() {
   const [novoLancamentoAberto, setNovoLancamentoAberto] = useState(false);
   const [novoLancamento, setNovoLancamento] = useState<Linha>({ data_lancamento: iso(new Date()), descricao_original: '', origem: 'MANUAL' });
   const [incluindo, setIncluindo] = useState(false);
+  const [senhaEdicaoSaldo, setSenhaEdicaoSaldo] = useState('');
   const [lancamentoEditandoId, setLancamentoEditandoId] = useState<number | null>(null);
   const [dataLinhaSelecionada, setDataLinhaSelecionada] = useState('');
   const [excluindoId, setExcluindoId] = useState<number | null>(null);
@@ -358,12 +360,12 @@ export default function FinanceiroGeralAdminPage() {
   };
 
   const abrirLancamentoParaEdicao = (linha: Linha) => {
-    if (ehSaldo(linha)) {
-      setMensagem('Linhas de saldo não podem ser alteradas ou excluídas.');
+    if (ehSaldo(linha) && !ehSaldoAnterior(linha)) {
+      setMensagem('Somente o Saldo anterior pode ser alterado. O Saldo do dia é calculado automaticamente.');
       return;
     }
     const dataLinha = String(linha.data_lancamento || '').slice(0, 10);
-    if (dataTravaConsolidacao && dataLinha && dataLinha <= dataTravaConsolidacao) {
+    if (!ehSaldoAnterior(linha) && dataTravaConsolidacao && dataLinha && dataLinha <= dataTravaConsolidacao) {
       setMensagem(`Este lançamento não pode ser alterado ou excluído porque a data ${dataBr(dataLinha)} é igual ou anterior à data travada ${dataBr(dataTravaConsolidacao)}.`);
       return;
     }
@@ -375,6 +377,7 @@ export default function FinanceiroGeralAdminPage() {
       descricao_original: linha.descricao_original || linha.descricao_normalizada || '',
       ...Object.fromEntries(campos.filter((c) => c.key !== 'total').map((c) => [c.key, linha[c.key] ?? ''])),
     });
+    setSenhaEdicaoSaldo('');
     setMensagem('');
     setNovoLancamentoAberto(true);
   };
@@ -392,8 +395,13 @@ export default function FinanceiroGeralAdminPage() {
       setMensagem('Informe a data do lançamento.');
       return;
     }
-    if (dataTravaConsolidacao && dataInformada <= dataTravaConsolidacao) {
+    const editandoSaldoAnterior = lancamentoEditandoId !== null && ehSaldoAnterior(novoLancamento);
+    if (!editandoSaldoAnterior && dataTravaConsolidacao && dataInformada <= dataTravaConsolidacao) {
       setMensagem(`Não é permitido salvar lançamento com data igual ou anterior à data travada ${dataBr(dataTravaConsolidacao)}.`);
+      return;
+    }
+    if (editandoSaldoAnterior && !senhaEdicaoSaldo.trim()) {
+      setMensagem('Informe a senha administrativa para alterar o Saldo anterior.');
       return;
     }
     if (!String(novoLancamento.descricao_original || '').trim()) {
@@ -407,7 +415,7 @@ export default function FinanceiroGeralAdminPage() {
         ? `${API_BASE}/financeiro-geral/lancamentos/${lancamentoEditandoId}`
         : `${API_BASE}/financeiro-geral/lancamentos`, {
         method: editando ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editando ? novoLancamento : { empresa_id: 1, ...novoLancamento }),
+        body: JSON.stringify(editando ? { ...novoLancamento, senhaAdministrativa: senhaEdicaoSaldo } : { empresa_id: 1, ...novoLancamento }),
       });
       const dados = await res.json().catch(() => ({}));
       if (!res.ok || dados.ok === false) throw new Error(dados.erro || (editando ? 'Erro ao alterar lançamento.' : 'Erro ao incluir lançamento.'));
@@ -447,6 +455,12 @@ export default function FinanceiroGeralAdminPage() {
 
   const abrirAtualizacaoSaldos = () => {
     setColunasAtualizarSaldo(campos.filter((c) => c.key !== 'total').map((c) => c.key));
+    const primeiroSaldoVisivel = linhas.find((linha) => ehSaldoAnterior(linha)) || linhas.find((linha) => ehSaldo(linha));
+    if (primeiroSaldoVisivel?.data_lancamento) {
+      const dataSaldo = String(primeiroSaldoVisivel.data_lancamento).slice(0, 10);
+      const minimoLiberado = dataTravaConsolidacao ? diaSeguinte(dataTravaConsolidacao) : dataSaldo;
+      setDataInicial(dataSaldo < minimoLiberado ? minimoLiberado : dataSaldo);
+    }
     setAtualizarSaldosAberto(true);
   };
 
@@ -463,7 +477,7 @@ export default function FinanceiroGeralAdminPage() {
       const res = await fetch(`${API_BASE}/financeiro-geral/atualizar-saldos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa_id: 1, dataInicial, dataFinal, colunas: colunasAtualizarSaldo }),
+        body: JSON.stringify({ empresa_id: 1, dataInicial, dataFinal, colunas: colunasAtualizarSaldo, saldoInicialId: Number((linhas.find((linha) => ehSaldoAnterior(linha)) || linhas.find((linha) => ehSaldo(linha)))?.id || 0) || null }),
       });
       const dados = await res.json().catch(() => ({}));
       if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao atualizar os saldos.');
@@ -638,7 +652,7 @@ export default function FinanceiroGeralAdminPage() {
           <div className="fg-selecao-colunas-acoes"><strong>Colunas para recalcular</strong><button type="button" onClick={() => setColunasAtualizarSaldo(campos.filter((c) => c.key !== 'total').map((c) => c.key))}>Todas</button><button type="button" onClick={() => setColunasAtualizarSaldo([])}>Limpar</button></div>
           <div className="fg-selecao-colunas-grid">{campos.filter((c) => c.key !== 'total').map((c) => <label key={c.key}><input type="checkbox" checked={colunasAtualizarSaldo.includes(c.key)} onChange={() => alternarColunaSaldo(c.key)} /><span>{c.label}</span></label>)}</div>
         </div>
-        <p className="fg-recriar-aviso">O sistema usará o saldo anterior como abertura e recalculará o Saldo do dia, em sequência, até o final do período. As colunas não selecionadas serão preservadas.</p>
+        <p className="fg-recriar-aviso">O sistema usará o primeiro saldo visível do filtro atual como referência. Se ele estiver antes da data travada, o recálculo começará no primeiro dia liberado. Nenhum lançamento anterior à trava será incluído ou alterado e não serão criados saldos em dias sem lançamentos.</p>
         <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setAtualizarSaldosAberto(false)} disabled={carregando}>Cancelar</button><button type="button" className="admin-primary-button" onClick={atualizarSaldosFinanceiroGeral} disabled={carregando}>{carregando ? 'Atualizando...' : 'Atualizar saldos'}</button></div>
       </div>
     </div>}
@@ -663,7 +677,8 @@ export default function FinanceiroGeralAdminPage() {
           <label>Origem<input value={novoLancamento.origem || 'MANUAL'} onChange={(e) => setNovoLancamento((r) => ({ ...r, origem: e.target.value }))} /></label>
           {campos.filter((c) => c.key !== 'total').map((c) => <label key={c.key}>{c.label}<input type="number" step={/^prod[1-4]_quant$/.test(c.key) ? '1' : (/^prod[1-4]_valor$/.test(c.key) ? '0.000001' : '0.01')} value={novoLancamento[c.key] ?? ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, [c.key]: e.target.value }))} /></label>)}
         </div>
-        <div className="fg-modal-actions">{lancamentoEditandoId !== null && <><button type="button" className="fg-modal-excluir" onClick={excluirLancamentoEmEdicao} disabled={incluindo || excluindoId !== null}>{excluindoId !== null ? 'Excluindo...' : 'Excluir lançamento'}</button><button type="button" className="fg-modal-incluir" onClick={prepararInclusaoNoModal} disabled={incluindo || excluindoId !== null}>Incluir</button></>}<button type="button" className="fg-modal-cancelar" onClick={fecharModalLancamento} disabled={incluindo || excluindoId !== null}>Cancelar</button><button type="button" className="admin-primary-button" onClick={salvarNovoLancamento} disabled={incluindo || excluindoId !== null}>{incluindo ? 'Salvando...' : (lancamentoEditandoId === null ? 'Salvar lançamento' : 'Salvar alterações')}</button></div>
+        {lancamentoEditandoId !== null && ehSaldoAnterior(novoLancamento) && <label className="fg-modal-senha-saldo">Senha administrativa<input type="password" value={senhaEdicaoSaldo} onChange={(e) => setSenhaEdicaoSaldo(e.target.value)} placeholder="Obrigatória para alterar o Saldo anterior" /></label>}
+        <div className="fg-modal-actions">{lancamentoEditandoId !== null && !ehSaldo(novoLancamento) && <><button type="button" className="fg-modal-excluir" onClick={excluirLancamentoEmEdicao} disabled={incluindo || excluindoId !== null}>{excluindoId !== null ? 'Excluindo...' : 'Excluir lançamento'}</button><button type="button" className="fg-modal-incluir" onClick={prepararInclusaoNoModal} disabled={incluindo || excluindoId !== null}>Incluir</button></>}<button type="button" className="fg-modal-cancelar" onClick={fecharModalLancamento} disabled={incluindo || excluindoId !== null}>Cancelar</button><button type="button" className="admin-primary-button" onClick={salvarNovoLancamento} disabled={incluindo || excluindoId !== null}>{incluindo ? 'Salvando...' : (lancamentoEditandoId === null ? 'Salvar lançamento' : 'Salvar alterações')}</button></div>
       </div>
     </div>}
     <footer className="financeiro-geral-rodape-pagina">
