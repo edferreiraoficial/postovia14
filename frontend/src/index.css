@@ -3836,3 +3836,65 @@ body,
 .fg-modal-grid-recriar input,.fg-modal-grid-recriar select{height:38px;padding:0 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff}
 .fg-recriar-aviso{margin:14px 0 0;padding:10px 12px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:13px}
 @media (max-width:760px){.fg-modal-grid-recriar{grid-template-columns:1fr}}
+
+/* Dados gravados: relatórios com o mesmo visual de planilha do Financeiro Geral */
+.consulta-planilha-wrap{
+  max-width:100%;
+  overflow:auto;
+  border:1px solid #d7dee8;
+  border-radius:6px;
+  background:#fff;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
+}
+.consulta-planilha-tabela{
+  border-collapse:separate;
+  border-spacing:0;
+  width:max-content;
+  min-width:100%;
+  table-layout:fixed;
+  font-size:.76rem;
+  background:#fff;
+}
+.consulta-planilha-tabela th,
+.consulta-planilha-tabela td{
+  border-right:1px solid #e3e8ef;
+  border-bottom:1px solid #e3e8ef;
+  padding:3px 5px;
+  height:24px;
+  line-height:1.15;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.consulta-planilha-tabela thead th{
+  position:sticky;
+  top:0;
+  z-index:3;
+  background:#edf2f8;
+  color:#243246;
+  font-weight:600;
+}
+.consulta-planilha-tabela tbody tr:hover td{
+  background:#f8fafc;
+}
+.consulta-planilha-tabela tbody td{
+  background:#fff;
+  color:#172033;
+}
+.consulta-planilha-tabela tbody tr.consulta-linha-saldo td{
+  font-weight:700;
+  background:#ccd7e3!important;
+  border-bottom-color:#a9b8c8;
+  color:#172033;
+}
+.consulta-planilha-tabela tbody tr.consulta-linha-saldo:hover td{
+  background:#ccd7e3!important;
+}
+.consulta-planilha-tabela th:first-child,
+.consulta-planilha-tabela td:first-child{
+  border-left:0;
+}
+.consulta-planilha-tabela th:last-child,
+.consulta-planilha-tabela td:last-child{
+  border-right:0;
+}

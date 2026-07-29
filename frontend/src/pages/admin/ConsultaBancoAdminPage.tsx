@@ -728,8 +728,8 @@ export default function ConsultaBancoAdminPage() {
         {importandoDados && <p>Carregando dados...</p>}
 
         {abaAtiva === 'compras' && (
-          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
-            <table className="admin-table admin-fixed-table">
+          <div className="consulta-planilha-wrap">
+            <table className="admin-table admin-fixed-table consulta-planilha-tabela">
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
@@ -769,8 +769,8 @@ export default function ConsultaBancoAdminPage() {
         )}
 
         {abaAtiva === 'lmc' && (
-          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
-            <table className="admin-table admin-fixed-table">
+          <div className="consulta-planilha-wrap">
+            <table className="admin-table admin-fixed-table consulta-planilha-tabela">
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
@@ -804,8 +804,8 @@ export default function ConsultaBancoAdminPage() {
         )}
 
         {abaAtiva === 'vendas-cartao' && (
-          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
-            <table className="admin-table admin-fixed-table">
+          <div className="consulta-planilha-wrap">
+            <table className="admin-table admin-fixed-table consulta-planilha-tabela">
               <thead><tr>
                 <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
                 <th style={{ ...estilosColunas.esquerda, width: '42ch' }}>Descrição</th>
@@ -834,8 +834,8 @@ export default function ConsultaBancoAdminPage() {
         )}
 
         {visualizandoExtrato && (
-          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
-            <table className="admin-table admin-fixed-table">
+          <div className="consulta-planilha-wrap">
+            <table className="admin-table admin-fixed-table consulta-planilha-tabela">
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
@@ -848,7 +848,7 @@ export default function ConsultaBancoAdminPage() {
               </thead>
               <tbody>
                 {dadosFiltrados.map((item) => (
-                  <tr key={item.id}>
+                  <tr key={item.id} className={normalizar(item.natureza) === 'SALDO' ? 'consulta-linha-saldo' : ''}>
                     {editando?.tipo === 'extrato' && editando.id === item.id ? <>
                       <td>{campoEdicao('data', 'date')}</td><td>{campoEdicao('descricao_original')}</td><td>{campoEdicao('natureza')}</td>
                       <td>{campoEdicao('valor', 'number')}</td><td>{campoEdicao('saldo', 'number')}</td>
