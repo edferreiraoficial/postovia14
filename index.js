@@ -1154,6 +1154,58 @@ app.put('/api/financeiro-geral/lancamentos/:id/numero', podeAjustarNumeroLancame
   }
 })
 
+
+app.put('/api/dados-gravados/:tipo/:id/numero', podeAjustarNumeroLancamento, async (req, res) => {
+  const connection = await db.getConnection()
+  try {
+    const tipo = String(req.params.tipo || '').toLowerCase()
+    const idAtual = Number(req.params.id)
+    const lancamentoInicial = Number(req.body?.lancamentoInicial)
+    const ajuste = Number(req.body?.ajuste || 0)
+    const tabelas = {
+      compras: 'compras',
+      vendas: 'lmc_movimentos',
+      'vendas-cartao': 'vendas_cartao',
+      spot: 'extratos_bancarios',
+      itau: 'extratos_bancarios',
+      extrato: 'extratos_bancarios',
+    }
+    const tabela = tabelas[tipo]
+    if (!tabela) throw new Error('Tipo de lançamento inválido.')
+    if (!Number.isInteger(idAtual) || idAtual <= 0) throw new Error('Número atual do lançamento inválido.')
+    if (!Number.isInteger(lancamentoInicial) || lancamentoInicial <= 0) throw new Error('O lançamento inicial deve ser um número inteiro maior que zero.')
+    if (!Number.isInteger(ajuste)) throw new Error('O valor para somar ou subtrair deve ser um número inteiro.')
+    const novoId = lancamentoInicial + ajuste
+    if (!Number.isInteger(novoId) || novoId <= 0) throw new Error('O número final do lançamento deve ser maior que zero.')
+    if (!(await validarSenhaAdministrativa(req.body?.senhaAdministrativa))) {
+      return res.status(401).json({ ok: false, erro: 'Senha administrativa inválida.' })
+    }
+
+    await connection.beginTransaction()
+    const [origem] = await connection.query(`SELECT id FROM ${tabela} WHERE id = ? FOR UPDATE`, [idAtual])
+    if (!origem.length) throw new Error('Lançamento não encontrado.')
+    if (novoId !== idAtual) {
+      const [conflito] = await connection.query(`SELECT id FROM ${tabela} WHERE id = ? FOR UPDATE`, [novoId])
+      if (conflito.length) {
+        const erro = new Error(`O número ${novoId} já está sendo usado por outro lançamento.`)
+        erro.statusCode = 409
+        throw erro
+      }
+      await connection.query(`UPDATE ${tabela} SET id = ? WHERE id = ?`, [novoId, idAtual])
+    }
+    const [[maximo]] = await connection.query(`SELECT COALESCE(MAX(id), 0) AS maior FROM ${tabela}`)
+    const proximo = Math.max(Number(maximo.maior || 0) + 1, novoId + 1)
+    await connection.query(`ALTER TABLE ${tabela} AUTO_INCREMENT = ${Math.trunc(proximo)}`)
+    await connection.commit()
+    res.json({ ok: true, numeroLancamento: novoId, proximoNumero: proximo, mensagem: `Número do lançamento atualizado para ${novoId}.` })
+  } catch (error) {
+    await connection.rollback().catch(() => {})
+    res.status(Number(error?.statusCode) || 400).json({ ok: false, erro: error.message || 'Erro ao ajustar o número do lançamento.' })
+  } finally {
+    connection.release()
+  }
+})
+
 async function garantirConfiguracaoFinanceiro() {
   await db.query(`CREATE TABLE IF NOT EXISTS configuracoes_financeiro (
     empresa_id INT NOT NULL PRIMARY KEY,

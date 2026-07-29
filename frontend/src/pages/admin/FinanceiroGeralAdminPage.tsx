@@ -74,8 +74,6 @@ export default function FinanceiroGeralAdminPage() {
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState('');
   const [somenteMovimento, setSomenteMovimento] = useState(true);
-  const [exibirNumeroLancamento, setExibirNumeroLancamento] = useState(false);
-  const [configNumeroAberta, setConfigNumeroAberta] = useState(false);
   const [numeroEditando, setNumeroEditando] = useState<number | null>(null);
   const [lancamentoInicial, setLancamentoInicial] = useState('');
   const [ajusteNumero, setAjusteNumero] = useState('0');
@@ -580,7 +578,6 @@ export default function FinanceiroGeralAdminPage() {
     {mensagem && <div className="admin-message error">{mensagem}</div>}
     <div className="financeiro-geral-paginacao">
       <label className="form-check financeiro-geral-movimento"><input className="form-check-input" type="checkbox" checked={somenteMovimento} onChange={(e) => setSomenteMovimento(e.target.checked)} /><span className="form-check-label">Exibir apenas colunas com movimento</span></label>
-      {podeNumeroLancamento && <div className="fg-numero-config"><button type="button" className="fg-acao" onClick={() => setConfigNumeroAberta((v) => !v)}>Configurações</button>{configNumeroAberta && <label className="form-check"><input className="form-check-input" type="checkbox" checked={exibirNumeroLancamento} onChange={(e) => setExibirNumeroLancamento(e.target.checked)} /><span className="form-check-label">Exibir coluna Nº Lanc</span></label>}</div>}
       <div className="financeiro-geral-processamento">
         <button type="button" className="admin-primary-button" onClick={consolidarFinanceiroGeral} disabled={carregando}>Consolidar</button>
         <button type="button" className="admin-primary-button" onClick={abrirRecriacao} disabled={carregando}>Recriar</button>
@@ -597,17 +594,17 @@ export default function FinanceiroGeralAdminPage() {
         </div>
       </div>
     </div>
-    <div ref={cabecalhoFlutuanteRef} className="financeiro-geral-cabecalho-flutuante" aria-hidden="true"><table className="financeiro-geral-tabela"><colgroup>{exibirNumeroLancamento && podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup><thead><tr>{exibirNumeroLancamento && podeNumeroLancamento && <th>Nº Lanc</th>}<th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead></table></div>
-    <div ref={tabelaWrapRef} className="admin-card financeiro-geral-tabela-wrap"><table className="financeiro-geral-tabela"><colgroup>{exibirNumeroLancamento && podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup>
-      <thead><tr>{exibirNumeroLancamento && podeNumeroLancamento && <th>Nº Lanc</th>}<th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead>
-      <tbody>{carregando ? <tr><td colSpan={3 + colunasVisiveis.length + (exibirNumeroLancamento && podeNumeroLancamento ? 1 : 0)}>Carregando...</td></tr> : linhas.map(l => <tr key={l.id} className={`${ehSaldo(l) ? 'fg-linha-saldo' : ''} ${!ehSaldo(l) ? 'fg-linha-editavel' : ''}`.trim()} onDoubleClick={() => abrirLancamentoParaEdicao(l)}>
-        {exibirNumeroLancamento && podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={(e) => { e.stopPropagation(); abrirAjusteNumero(l); }}>{l.id}</td>}
+    <div ref={cabecalhoFlutuanteRef} className="financeiro-geral-cabecalho-flutuante" aria-hidden="true"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" />{podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup><thead><tr><th>Data</th><th>Descrição</th>{podeNumeroLancamento && <th>Nº Lanc</th>}<th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead></table></div>
+    <div ref={tabelaWrapRef} className="admin-card financeiro-geral-tabela-wrap"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" />{podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup>
+      <thead><tr><th>Data</th><th>Descrição</th>{podeNumeroLancamento && <th>Nº Lanc</th>}<th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead>
+      <tbody>{carregando ? <tr><td colSpan={3 + colunasVisiveis.length + (podeNumeroLancamento ? 1 : 0)}>Carregando...</td></tr> : linhas.map(l => <tr key={l.id} className={`${ehSaldo(l) ? 'fg-linha-saldo' : ''} ${!ehSaldo(l) ? 'fg-linha-editavel' : ''}`.trim()} onDoubleClick={() => abrirLancamentoParaEdicao(l)}>
         <td>{dataBr(l.data_lancamento)}</td>
         <td className="fg-descricao">{l.descricao_original || l.descricao_normalizada}</td>
+        {podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={(e) => { e.stopPropagation(); abrirAjusteNumero(l); }}>{l.id}</td>}
         <td>{ehSaldo(l) ? '' : l.origem}</td>
         {colunasVisiveis.map(c => <td key={c.key} className={`${Number(l[c.key] || 0) < 0 ? 'fg-negativo' : ''} ${c.key === 'total' ? 'fg-total' : ''}`.trim()}>{formatarCelula(l, c.key)}</td>)}
       </tr>)}</tbody>
-      <tfoot className="financeiro-geral-titulos-rodape"><tr>{exibirNumeroLancamento && podeNumeroLancamento && <th></th>}<th></th><th></th><th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
+      <tfoot className="financeiro-geral-titulos-rodape"><tr><th></th><th></th>{podeNumeroLancamento && <th></th>}<th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
     </table></div>
     {numeroEditando !== null && podeNumeroLancamento && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Ajustar número do lançamento">
       <form className="fg-modal fg-modal-recriar" onSubmit={salvarAjusteNumero}>

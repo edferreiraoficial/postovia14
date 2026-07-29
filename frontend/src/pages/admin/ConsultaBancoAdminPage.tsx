@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../store/auth';
+import { hasPermission } from '../../authPermissions';
 
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -51,6 +53,8 @@ const cardCompacto = { padding: 10, gap: 1 } as const;
 type LinhaRelatorio = Record<string, string | number | null | undefined>;
 
 export default function ConsultaBancoAdminPage() {
+  const { user } = useAuth();
+  const podeNumeroLancamento = hasPermission(user, 'numero_lancamento');
   const [abaAtiva, setAbaAtiva] = useState('compras');
   const [compras, setCompras] = useState<any[]>([]);
   const [lmc, setLmc] = useState<any[]>([]);
@@ -70,6 +74,11 @@ export default function ConsultaBancoAdminPage() {
   const [filtrosEdicao, setFiltrosEdicao] = useState(filtrosVazios);
   const [filtrosAplicados, setFiltrosAplicados] = useState(filtrosVazios);
   const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const [numeroEditando, setNumeroEditando] = useState<{ tipo: string; id: number } | null>(null);
+  const [lancamentoInicial, setLancamentoInicial] = useState('');
+  const [ajusteNumero, setAjusteNumero] = useState('0');
+  const [senhaAdministrativa, setSenhaAdministrativa] = useState('');
+  const [salvandoNumero, setSalvandoNumero] = useState(false);
 
   const periodoSelecionado = useMemo(() => {
     return `dataInicial=${encodeURIComponent(dataInicial)}&dataFinal=${encodeURIComponent(dataFinal)}`;
@@ -161,30 +170,65 @@ export default function ConsultaBancoAdminPage() {
   const linhasRelatorio = useMemo<LinhaRelatorio[]>(() => {
     if (abaAtiva === 'compras') {
       return dadosFiltrados.map((item) => ({
-        Data: item.data_emissao, Produto: item.produto, Fornecedor: item.fornecedor, NF: item.numero_nf,
+        Data: item.data_emissao, ...(podeNumeroLancamento ? { 'Nº Lanc': item.id } : {}), Produto: item.produto, Fornecedor: item.fornecedor, NF: item.numero_nf,
         Quantidade: numero(item.quantidade), Custo: custoDecimal(item.custo), 'Valor Total': valorMonetario(item.valor_total),
         'Quant. Recebida': numero(item.quant_rec), 'Preço Pago': custoDecimal(item.preco_pag), 'Valor Pago': valorMonetario(item.valor_pag),
       }));
     }
     if (abaAtiva === 'lmc') {
       return dadosFiltrados.map((item) => ({
-        Data: item.data_movimento, Produto: item.produto, Abertura: numero(item.estoque_abertura),
+        Data: item.data_movimento, ...(podeNumeroLancamento ? { 'Nº Lanc': item.id } : {}), Produto: item.produto, Abertura: numero(item.estoque_abertura),
         'Vendas (qt)': numero(item.quantidade_vendas), 'Vendas (R$)': valorMonetario(item.valor_vendas),
         'Ajuste (qt)': numero(item.ajuste_quantidade), Fechamento: numero(item.estoque_fechamento),
       }));
     }
     if (abaAtiva === 'vendas-cartao') {
       return dadosFiltrados.map((item) => ({
-        Data: item.data_lancamento, Descrição: item.descricao_original,
+        Data: item.data_lancamento, ...(podeNumeroLancamento ? { 'Nº Lanc': item.id } : {}), Descrição: item.descricao_original,
         'Venda Bruta': valorMonetario(item.vendas_bruta), 'Venda Líquida': valorMonetario(item.venda_liquida),
         Taxas: valorMonetario(item.taxa),
       }));
     }
     return dadosFiltrados.map((item) => ({
-      Data: item.data_lancamento, Descrição: item.descricao_original, Natureza: item.natureza,
+      Data: item.data_lancamento, ...(podeNumeroLancamento ? { 'Nº Lanc': item.id } : {}), Descrição: item.descricao_original, Natureza: item.natureza,
       Valor: valorExtrato(item), Saldo: saldoExtrato(item.saldo),
     }));
-  }, [abaAtiva, dadosFiltrados]);
+  }, [abaAtiva, dadosFiltrados, podeNumeroLancamento]);
+
+  function abrirAjusteNumero(tipo: string, item: any) {
+    if (!podeNumeroLancamento) return;
+    const id = Number(item?.id || 0);
+    if (!Number.isInteger(id) || id <= 0) return;
+    setNumeroEditando({ tipo, id });
+    setLancamentoInicial(String(id));
+    setAjusteNumero('0');
+    setSenhaAdministrativa('');
+    setMensagem('');
+  }
+
+  async function salvarAjusteNumero(event: FormEvent) {
+    event.preventDefault();
+    if (!numeroEditando || !podeNumeroLancamento) return;
+    setSalvandoNumero(true);
+    setMensagem('');
+    try {
+      const response = await fetch(`${API_BASE}/dados-gravados/${numeroEditando.tipo}/${numeroEditando.id}/numero`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lancamentoInicial: Number(lancamentoInicial), ajuste: Number(ajusteNumero || 0), senhaAdministrativa }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json.erro || 'Erro ao ajustar o número do lançamento.');
+      setNumeroEditando(null);
+      setSenhaAdministrativa('');
+      setMensagem(json.mensagem || 'Número do lançamento atualizado.');
+      await carregarTodosDados();
+    } catch (error) {
+      setMensagem(error instanceof Error ? error.message : 'Erro ao ajustar o número do lançamento.');
+    } finally {
+      setSalvandoNumero(false);
+    }
+  }
 
   function aplicarFiltros() {
     setFiltrosAplicados({ ...filtrosEdicao });
@@ -733,6 +777,7 @@ export default function ConsultaBancoAdminPage() {
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
+                  {podeNumeroLancamento && <th style={{ ...estilosColunas.direita, width: '10ch' }}>Nº Lanc</th>}
                   <th style={{ ...estilosColunas.esquerda, width: '13ch' }}>Produto</th>
                   <th style={{ ...estilosColunas.esquerda, width: '54ch' }}>Fornecedor</th>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>NF</th>
@@ -749,11 +794,11 @@ export default function ConsultaBancoAdminPage() {
                 {dadosFiltrados.map((item) => (
                   <tr key={item.id}>
                     {editando?.tipo === 'compras' && editando.id === item.id ? <>
-                      <td>{campoEdicao('data', 'date')}</td><td>{campoEdicao('produto')}</td><td>{campoEdicao('fornecedor')}</td>
+                      <td>{campoEdicao('data', 'date')}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('compras', item)}>{item.id}</td>}<td>{campoEdicao('produto')}</td><td>{campoEdicao('fornecedor')}</td>
                       <td>{campoEdicao('numero_nf')}</td><td>{campoEdicao('quantidade', 'number')}</td><td>{campoEdicao('custo', 'number')}</td><td>{campoEdicao('valor_total', 'number')}</td>
                       <td>{campoEdicao('quant_rec', 'number')}</td><td>{campoEdicao('preco_pag', 'number')}</td><td>{campoEdicao('valor_pag', 'number')}</td>
                     </> : <>
-                      <td style={estilosColunas.esquerda}>{textoFixo(item.data_emissao, 11)}</td><td style={estilosColunas.esquerda}>{textoFixo(item.produto, 13)}</td>
+                      <td style={estilosColunas.esquerda}>{textoFixo(item.data_emissao, 11)}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" style={estilosColunas.direita} title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('compras', item)}>{item.id}</td>}<td style={estilosColunas.esquerda}>{textoFixo(item.produto, 13)}</td>
                       <td style={estilosColunas.esquerda}>{textoFixo(item.fornecedor, 54)}</td><td style={estilosColunas.esquerda}>{textoFixo(item.numero_nf, 11)}</td>
                       <td style={estilosColunas.direita}>{textoNumero(numero(item.quantidade), 13)}</td><td style={estilosColunas.direita}>{textoNumero(custoDecimal(item.custo), 11)}</td>
                       <td style={estilosColunas.direita}>{valorMonetario(item.valor_total)}</td>
@@ -774,6 +819,7 @@ export default function ConsultaBancoAdminPage() {
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
+                  {podeNumeroLancamento && <th style={{ ...estilosColunas.direita, width: '10ch' }}>Nº Lanc</th>}
                   <th style={{ ...estilosColunas.esquerda, width: '13ch' }}>Produto</th>
                   <th style={{ ...estilosColunas.direita, width: '16ch' }}>Abertura</th>
                   <th style={{ ...estilosColunas.direita, width: '13ch' }}>Vendas (qt)</th>
@@ -787,10 +833,10 @@ export default function ConsultaBancoAdminPage() {
                 {dadosFiltrados.map((item) => (
                   <tr key={item.id}>
                     {editando?.tipo === 'vendas' && editando.id === item.id ? <>
-                      <td>{campoEdicao('data', 'date')}</td><td>{campoEdicao('produto')}</td><td>{campoEdicao('estoque_abertura', 'number')}</td>
+                      <td>{campoEdicao('data', 'date')}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('vendas', item)}>{item.id}</td>}<td>{campoEdicao('produto')}</td><td>{campoEdicao('estoque_abertura', 'number')}</td>
                       <td>{campoEdicao('quantidade_vendas', 'number')}</td><td>{campoEdicao('valor_vendas', 'number')}</td><td>{campoEdicao('ajuste_quantidade', 'number')}</td><td>{campoEdicao('estoque_fechamento', 'number')}</td>
                     </> : <>
-                      <td style={estilosColunas.esquerda}>{textoFixo(item.data_movimento, 11)}</td><td style={estilosColunas.esquerda}>{textoFixo(item.produto, 13)}</td>
+                      <td style={estilosColunas.esquerda}>{textoFixo(item.data_movimento, 11)}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" style={estilosColunas.direita} title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('vendas', item)}>{item.id}</td>}<td style={estilosColunas.esquerda}>{textoFixo(item.produto, 13)}</td>
                       <td style={estilosColunas.direita}>{textoNumero(numero(item.estoque_abertura), 16)}</td><td style={estilosColunas.direita}>{textoNumero(numero(item.quantidade_vendas), 13)}</td>
                       <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.valor_vendas), 13)}</td><td style={estilosColunas.direita}>{textoNumero(numero(item.ajuste_quantidade), 13)}</td>
                       <td style={estilosColunas.direita}>{textoNumero(numero(item.estoque_fechamento), 13)}</td>
@@ -808,6 +854,7 @@ export default function ConsultaBancoAdminPage() {
             <table className="admin-table admin-fixed-table consulta-planilha-tabela">
               <thead><tr>
                 <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
+                {podeNumeroLancamento && <th style={{ ...estilosColunas.direita, width: '10ch' }}>Nº Lanc</th>}
                 <th style={{ ...estilosColunas.esquerda, width: '42ch' }}>Descrição</th>
                 <th style={{ ...estilosColunas.direita, width: '15ch' }}>Venda Bruta</th>
                 <th style={{ ...estilosColunas.direita, width: '15ch' }}>Venda Líquida</th>
@@ -817,10 +864,11 @@ export default function ConsultaBancoAdminPage() {
               <tbody>{dadosFiltrados.map((item) => (
                 <tr key={item.id}>
                   {editando?.tipo === 'vendas-cartao' && editando.id === item.id ? <>
-                    <td>{campoEdicao('data', 'date')}</td><td>{campoEdicao('descricao_original')}</td>
+                    <td>{campoEdicao('data', 'date')}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('vendas-cartao', item)}>{item.id}</td>}<td>{campoEdicao('descricao_original')}</td>
                     <td>{campoEdicao('vendas_bruta', 'number')}</td><td>{campoEdicao('venda_liquida', 'number')}</td><td>{campoEdicao('taxa', 'number')}</td>
                   </> : <>
                     <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>
+                    {podeNumeroLancamento && <td className="fg-numero-lancamento" style={estilosColunas.direita} title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('vendas-cartao', item)}>{item.id}</td>}
                     <td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 42)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.vendas_bruta), 15)}</td>
                     <td style={estilosColunas.direita}>{textoNumero(valorMonetario(item.venda_liquida), 15)}</td>
@@ -839,6 +887,7 @@ export default function ConsultaBancoAdminPage() {
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
+                  {podeNumeroLancamento && <th style={{ ...estilosColunas.direita, width: '10ch' }}>Nº Lanc</th>}
                   <th style={{ ...estilosColunas.esquerda, width: '61ch' }}>Descrição</th>
                   <th style={{ ...estilosColunas.direita, width: '15ch' }}>Natureza</th>
                   <th style={{ ...estilosColunas.direita, width: '14ch' }}>Valor</th>
@@ -850,10 +899,10 @@ export default function ConsultaBancoAdminPage() {
                 {dadosFiltrados.map((item) => (
                   <tr key={item.id} className={normalizar(item.natureza) === 'SALDO' ? 'consulta-linha-saldo' : ''}>
                     {editando?.tipo === 'extrato' && editando.id === item.id ? <>
-                      <td>{campoEdicao('data', 'date')}</td><td>{campoEdicao('descricao_original')}</td><td>{campoEdicao('natureza')}</td>
+                      <td>{campoEdicao('data', 'date')}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('extrato', item)}>{item.id}</td>}<td>{campoEdicao('descricao_original')}</td><td>{campoEdicao('natureza')}</td>
                       <td>{campoEdicao('valor', 'number')}</td><td>{campoEdicao('saldo', 'number')}</td>
                     </> : <>
-                      <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td><td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
+                      <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" style={estilosColunas.direita} title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('extrato', item)}>{item.id}</td>}<td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 61)}</td>
                       <td style={estilosColunas.direita}>{textoNumero(item.natureza, 13) + '  '}</td><td style={estilosColunas.direita}>{textoNumero(valorExtrato(item), 14)}</td>
                       <td style={estilosColunas.direita}>{textoNumero(saldoExtrato(item.saldo), 14)}</td>
                     </>}
@@ -865,6 +914,18 @@ export default function ConsultaBancoAdminPage() {
           </div>
         )}
       </section>
+      {numeroEditando !== null && podeNumeroLancamento && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Ajustar número do lançamento">
+        <form className="fg-modal fg-modal-recriar" onSubmit={salvarAjusteNumero}>
+          <div className="fg-modal-header"><h2>Ajustar Nº do Lançamento</h2><button type="button" onClick={() => setNumeroEditando(null)} aria-label="Fechar">×</button></div>
+          <div className="fg-modal-grid">
+            <label>Lançamento inicial<input type="number" min="1" step="1" required value={lancamentoInicial} onChange={(e) => setLancamentoInicial(e.target.value)} /></label>
+            <label>Somar ou subtrair<input type="number" step="1" required value={ajusteNumero} onChange={(e) => setAjusteNumero(e.target.value)} /><small>Use positivo para somar e negativo para subtrair.</small></label>
+            <label>Senha administrativa<input type="password" required value={senhaAdministrativa} onChange={(e) => setSenhaAdministrativa(e.target.value)} /></label>
+          </div>
+          <p className="fg-recriar-aviso">Número final: <strong>{Number(lancamentoInicial || 0) + Number(ajusteNumero || 0)}</strong>. Números menores ou iguais a zero e números já utilizados serão recusados.</p>
+          <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setNumeroEditando(null)} disabled={salvandoNumero}>Cancelar</button><button type="submit" className="admin-primary-button" disabled={salvandoNumero}>{salvandoNumero ? 'Salvando...' : 'Salvar ajuste'}</button></div>
+        </form>
+      </div>}
     </div>
   );
 }
