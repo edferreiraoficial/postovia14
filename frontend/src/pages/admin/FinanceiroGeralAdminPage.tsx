@@ -90,6 +90,8 @@ export default function FinanceiroGeralAdminPage() {
   const [dataLinhaSelecionada, setDataLinhaSelecionada] = useState('');
   const [excluindoId, setExcluindoId] = useState<number | null>(null);
   const [recriarAberto, setRecriarAberto] = useState(false);
+  const [atualizarSaldosAberto, setAtualizarSaldosAberto] = useState(false);
+  const [colunasAtualizarSaldo, setColunasAtualizarSaldo] = useState<string[]>([]);
   const [recriarDataInicial, setRecriarDataInicial] = useState('');
   const [recriarDataFinal, setRecriarDataFinal] = useState(fimMes());
   const [recriarColuna, setRecriarColuna] = useState('TODAS');
@@ -443,33 +445,33 @@ export default function FinanceiroGeralAdminPage() {
     try { const p = parametros(false); p.set('colunas', colunasVisiveis.map((c) => c.key).join(',')); const res = await fetch(`${API_BASE}/financeiro-geral/excel?${p}`); if (!res.ok) throw new Error('Erro ao gerar Excel.'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `financeiro_geral_${dataInicial}_${dataFinal}.xlsx`; a.click(); URL.revokeObjectURL(url); } catch (e: any) { setMensagem(e.message); }
   };
 
-  const consolidarFinanceiroGeral = async () => {
-    const confirmar = window.confirm(
-      `Consolidar os lançamentos financeiros no período de ${dataBr(dataInicial)} a ${dataBr(dataFinal)}?\n\n` +
-      'Os lançamentos já consolidados serão atualizados sem duplicação.'
-    );
-    if (!confirmar) return;
+  const abrirAtualizacaoSaldos = () => {
+    setColunasAtualizarSaldo(campos.filter((c) => c.key !== 'total').map((c) => c.key));
+    setAtualizarSaldosAberto(true);
+  };
 
+  const alternarColunaSaldo = (campo: string) => {
+    setColunasAtualizarSaldo((atuais) => atuais.includes(campo) ? atuais.filter((item) => item !== campo) : [...atuais, campo]);
+  };
+
+  const atualizarSaldosFinanceiroGeral = async () => {
+    if (!dataInicial || !dataFinal) { setMensagem('Informe o período inicial e final.'); return; }
+    if (!colunasAtualizarSaldo.length) { setMensagem('Selecione pelo menos uma coluna para recalcular.'); return; }
     setCarregando(true);
-    setMensagem('Consolidando os lançamentos do período...');
+    setMensagem('Atualizando os saldos do período...');
     try {
-      const res = await fetch(`${API_BASE}/financeiro-geral/consolidar`, {
+      const res = await fetch(`${API_BASE}/financeiro-geral/atualizar-saldos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa_id: 1, dataInicial, dataFinal }),
+        body: JSON.stringify({ empresa_id: 1, dataInicial, dataFinal, colunas: colunasAtualizarSaldo }),
       });
       const dados = await res.json().catch(() => ({}));
-      if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao consolidar os lançamentos.');
-
-      const semMapeamento = dados.resultado?.contasSemMapeamento || [];
-      const complemento = semMapeamento.length
-        ? ` Contas sem vinculação: ${semMapeamento.map((item: any) => item.nome).join(', ')}.`
-        : '';
-      setPagina(1);
-      setMensagem(`${dados.mensagem || 'Financeiro Geral consolidado com sucesso.'}${complemento}`);
+      if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao atualizar os saldos.');
+      setAtualizarSaldosAberto(false);
+      setMensagem(dados.mensagem || 'Saldos atualizados com sucesso.');
       await carregar();
     } catch (e: any) {
-      setMensagem(e.message || 'Erro ao consolidar os lançamentos.');
+      setMensagem(e.message || 'Erro ao atualizar os saldos.');
     } finally {
       setCarregando(false);
     }
@@ -583,7 +585,7 @@ export default function FinanceiroGeralAdminPage() {
     <div className="financeiro-geral-paginacao">
       <label className="form-check financeiro-geral-movimento"><input className="form-check-input" type="checkbox" checked={somenteMovimento} onChange={(e) => setSomenteMovimento(e.target.checked)} /><span className="form-check-label">Exibir apenas colunas com movimento</span></label>
       <div className="financeiro-geral-processamento">
-        <button type="button" className="admin-primary-button" onClick={consolidarFinanceiroGeral} disabled={carregando}>Consolidar</button>
+        <button type="button" className="admin-primary-button" onClick={abrirAtualizacaoSaldos} disabled={carregando}>Atualizar saldos</button>
         <button type="button" className="admin-primary-button" onClick={abrirRecriacao} disabled={carregando}>Recriar</button>
         <button type="button" className="admin-primary-button" onClick={abrirNovoLancamento} disabled={carregando}>Novo Lançamento</button>
       </div>
@@ -624,6 +626,21 @@ export default function FinanceiroGeralAdminPage() {
         <p className="fg-recriar-aviso">A partir de <strong>{dataBr(dataInicialNumero)}</strong>, {modoRenumeracao === 'ajuste' ? 'o valor será somado ou subtraído de cada Nº Lanc' : `a numeração será reiniciada em ${numeroInicialRenumeracao || 'X'}`} seguindo a ordem atual dos lançamentos. Números menores ou iguais a zero e conflitos com lançamentos anteriores serão recusados.</p>
         <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setNumeroEditando(null)} disabled={salvandoNumero}>Cancelar</button><button type="submit" className="admin-primary-button" disabled={salvandoNumero}>{salvandoNumero ? 'Salvando...' : 'Salvar ajuste'}</button></div>
       </form>
+    </div>}
+    {atualizarSaldosAberto && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Atualizar saldos do Financeiro Geral">
+      <div className="fg-modal fg-modal-recriar fg-modal-atualizar-saldos">
+        <div className="fg-modal-header"><h2>Atualizar saldos</h2><button type="button" onClick={() => setAtualizarSaldosAberto(false)} aria-label="Fechar">×</button></div>
+        <div className="fg-modal-grid fg-modal-grid-recriar">
+          <label>Data inicial<input type="date" value={dataInicial} min={dataTravaConsolidacao ? diaSeguinte(dataTravaConsolidacao) : undefined} onChange={(e) => setDataInicial(e.target.value)} /></label>
+          <label>Data final<input type="date" value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} /></label>
+        </div>
+        <div className="fg-selecao-colunas-saldo">
+          <div className="fg-selecao-colunas-acoes"><strong>Colunas para recalcular</strong><button type="button" onClick={() => setColunasAtualizarSaldo(campos.filter((c) => c.key !== 'total').map((c) => c.key))}>Todas</button><button type="button" onClick={() => setColunasAtualizarSaldo([])}>Limpar</button></div>
+          <div className="fg-selecao-colunas-grid">{campos.filter((c) => c.key !== 'total').map((c) => <label key={c.key}><input type="checkbox" checked={colunasAtualizarSaldo.includes(c.key)} onChange={() => alternarColunaSaldo(c.key)} /><span>{c.label}</span></label>)}</div>
+        </div>
+        <p className="fg-recriar-aviso">O sistema usará o saldo anterior como abertura e recalculará o Saldo do dia, em sequência, até o final do período. As colunas não selecionadas serão preservadas.</p>
+        <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setAtualizarSaldosAberto(false)} disabled={carregando}>Cancelar</button><button type="button" className="admin-primary-button" onClick={atualizarSaldosFinanceiroGeral} disabled={carregando}>{carregando ? 'Atualizando...' : 'Atualizar saldos'}</button></div>
+      </div>
     </div>}
     {recriarAberto && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Recriar Financeiro Geral">
       <div className="fg-modal fg-modal-recriar">

@@ -1332,6 +1332,96 @@ app.put('/api/configuracoes-financeiro', async (req, res) => {
   }
 })
 
+app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
+  const conn = await db.getConnection()
+  try {
+    const empresaId = Number(req.body?.empresa_id || req.body?.empresaId || 1)
+    const dataInicial = String(req.body?.dataInicial || '').trim()
+    const dataFinal = String(req.body?.dataFinal || '').trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) throw new Error('Informe um período válido.')
+    if (dataInicial > dataFinal) throw new Error('A data inicial não pode ser posterior à data final.')
+    await validarDataDesbloqueada(empresaId, dataInicial, 'recalcular')
+
+    const permitidas = new Set(FINANCEIRO_GERAL_COLUNAS.map(([campo]) => campo).filter((campo) => campo !== 'total'))
+    const solicitadas = Array.isArray(req.body?.colunas) ? req.body.colunas.map(String).filter((campo) => permitidas.has(campo)) : []
+    const colunas = [...new Set(solicitadas)]
+    if (!colunas.length) throw new Error('Selecione pelo menos uma coluna para recalcular.')
+
+    const todasNumericas = FINANCEIRO_GERAL_COLUNAS.map(([campo]) => campo).filter((campo) => campo !== 'total')
+    await conn.beginTransaction()
+
+    const [baseRows] = await conn.query(
+      `SELECT ${todasNumericas.join(', ')} FROM financeiro_geral
+       WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento < ?
+         AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO DO DIA%'
+       ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
+      [empresaId, dataInicial]
+    )
+    const acumulado = Object.fromEntries(todasNumericas.map((campo) => [campo, Number(baseRows[0]?.[campo] || 0)]))
+
+    const [aberturaRows] = await conn.query(
+      `SELECT * FROM financeiro_geral
+       WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento = ?
+         AND (UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO ANTERIOR%'
+           OR UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO INICIAL DO DIA%')
+       ORDER BY id ASC LIMIT 1`,
+      [empresaId, dataInicial]
+    )
+    if (aberturaRows[0]) for (const campo of colunas) acumulado[campo] = Number(aberturaRows[0][campo] || 0)
+
+    let dias = 0
+    let atualizados = 0
+    for (let data = dataInicial; data <= dataFinal; data = proximaDataLocal(data)) {
+      const [aberturasDia] = await conn.query(
+        `SELECT id FROM financeiro_geral WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento = ?
+         AND (UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO ANTERIOR%'
+           OR UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO INICIAL DO DIA%')
+         ORDER BY id ASC`, [empresaId, data]
+      )
+      if (aberturasDia[0]) {
+        const sets = colunas.map((campo) => `${campo} = ?`).join(', ')
+        await conn.query(`UPDATE financeiro_geral SET ${sets}, descricao_original='Saldo anterior', descricao_normalizada='SALDO ANTERIOR', tipo_lancamento='SALDO', total=(COALESCE(conta01,0)+COALESCE(conta02,0)+COALESCE(conta03,0)+COALESCE(conta04,0)+COALESCE(conta05,0)+COALESCE(conta06,0)+COALESCE(conta07,0)+COALESCE(conta08,0)+COALESCE(conta09,0)+COALESCE(conta10,0)+COALESCE(conta11,0)+COALESCE(conta12,0)+COALESCE(conta13,0)+COALESCE(conta14,0)+COALESCE(conta15,0)+COALESCE(conta16,0)+COALESCE(conta17,0)+COALESCE(conta18,0)+COALESCE(conta19,0)+COALESCE(conta20,0)+COALESCE(conta21,0)+COALESCE(conta22,0)+COALESCE(conta23,0)+COALESCE(conta24,0)+COALESCE(conta25,0)+COALESCE(conta26,0)+COALESCE(conta27,0)+COALESCE(conta28,0)+COALESCE(conta29,0)+COALESCE(conta30,0)+COALESCE(prod1_total,0)+COALESCE(prod2_total,0)+COALESCE(prod3_total,0)+COALESCE(prod4_total,0)), atualizado_em=NOW() WHERE id=?`, [...colunas.map((campo) => acumulado[campo]), aberturasDia[0].id])
+        atualizados += 1
+      }
+
+      const somas = colunas.map((campo) => `COALESCE(SUM(${campo}),0) AS ${campo}`).join(', ')
+      const [[movimentos]] = await conn.query(
+        `SELECT ${somas} FROM financeiro_geral WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento = ?
+         AND tipo_lancamento <> 'SALDO'
+         AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) NOT LIKE 'SALDO%'`,
+        [empresaId, data]
+      )
+      for (const campo of colunas) acumulado[campo] = Math.round((Number(acumulado[campo] || 0) + Number(movimentos?.[campo] || 0) + Number.EPSILON) * 1e6) / 1e6
+
+      // Preço médio é derivado do valor total dividido pela quantidade quando os três campos do produto forem recalculados.
+      for (let i = 1; i <= 4; i += 1) {
+        const q = `prod${i}_quant`, v = `prod${i}_valor`, t = `prod${i}_total`
+        if (colunas.includes(q) && colunas.includes(t) && colunas.includes(v) && Number(acumulado[q]) !== 0) acumulado[v] = Math.round((Number(acumulado[t]) / Number(acumulado[q])) * 1e6) / 1e6
+      }
+
+      const [fechamentos] = await conn.query(
+        `SELECT id FROM financeiro_geral WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento = ?
+         AND UPPER(TRIM(COALESCE(descricao_normalizada, descricao_original, ''))) LIKE 'SALDO DO DIA%'
+         ORDER BY id DESC`, [empresaId, data]
+      )
+      if (fechamentos[0]) {
+        const sets = colunas.map((campo) => `${campo} = ?`).join(', ')
+        await conn.query(`UPDATE financeiro_geral SET ${sets}, total=(COALESCE(conta01,0)+COALESCE(conta02,0)+COALESCE(conta03,0)+COALESCE(conta04,0)+COALESCE(conta05,0)+COALESCE(conta06,0)+COALESCE(conta07,0)+COALESCE(conta08,0)+COALESCE(conta09,0)+COALESCE(conta10,0)+COALESCE(conta11,0)+COALESCE(conta12,0)+COALESCE(conta13,0)+COALESCE(conta14,0)+COALESCE(conta15,0)+COALESCE(conta16,0)+COALESCE(conta17,0)+COALESCE(conta18,0)+COALESCE(conta19,0)+COALESCE(conta20,0)+COALESCE(conta21,0)+COALESCE(conta22,0)+COALESCE(conta23,0)+COALESCE(conta24,0)+COALESCE(conta25,0)+COALESCE(conta26,0)+COALESCE(conta27,0)+COALESCE(conta28,0)+COALESCE(conta29,0)+COALESCE(conta30,0)+COALESCE(prod1_total,0)+COALESCE(prod2_total,0)+COALESCE(prod3_total,0)+COALESCE(prod4_total,0)), atualizado_em=NOW() WHERE id=?`, [...colunas.map((campo) => acumulado[campo]), fechamentos[0].id])
+        atualizados += 1
+      }
+      dias += 1
+    }
+
+    await conn.commit()
+    res.json({ ok: true, dias, atualizados, mensagem: `Saldos atualizados em ${dias} dia(s), preservando as colunas não selecionadas.` })
+  } catch (error) {
+    await conn.rollback().catch(() => {})
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao atualizar os saldos.' })
+  } finally {
+    conn.release()
+  }
+})
+
 app.post('/api/financeiro-geral/consolidar', async (req, res) => {
   try {
     const empresaId = Number(req.body?.empresa_id || req.body?.empresaId || 1)
@@ -1624,7 +1714,7 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
              FROM financeiro_geral WHERE ${filtro.sql}
              ORDER BY data_lancamento ASC,
                       CASE
-                        WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO INICIAL DO DIA%' THEN 0
+                        WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO INICIAL DO DIA%' OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO ANTERIOR%' THEN 0
                         WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO DO DIA%' THEN 2
                         ELSE 1
                       END ASC,
