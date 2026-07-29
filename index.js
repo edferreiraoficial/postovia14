@@ -112,7 +112,7 @@ app.post('/api/auth/login', async (req, res) => {
     const [permissoes] = await db.query(
       `SELECT dashboard, dados_gravados, importar_pdf, importar_excel,
               pdf_excel, lancamentos, auditoria, cadastros, configuracoes,
-              incluir, editar, excluir, imprimir
+              incluir, editar, excluir, imprimir, numero_lancamento
        FROM permissoes
        WHERE usuario_id = ?
        LIMIT 1`,
@@ -147,7 +147,7 @@ app.get('/api/auth/me', autenticarRequisicao, async (req, res) => {
     const [permissoes] = await db.query(
       `SELECT dashboard, dados_gravados, importar_pdf, importar_excel,
               pdf_excel, lancamentos, auditoria, cadastros, configuracoes,
-              incluir, editar, excluir, imprimir
+              incluir, editar, excluir, imprimir, numero_lancamento
        FROM permissoes
        WHERE usuario_id = ?
        LIMIT 1`,
@@ -169,7 +169,7 @@ app.use('/api', autenticarRequisicao)
 const CAMPOS_PERMISSAO = [
   'dashboard', 'dados_gravados', 'importar_pdf', 'importar_excel',
   'pdf_excel', 'lancamentos', 'auditoria', 'cadastros', 'configuracoes',
-  'incluir', 'editar', 'excluir', 'imprimir',
+  'incluir', 'editar', 'excluir', 'imprimir', 'numero_lancamento',
 ]
 
 async function podeGerenciarUsuarios(req, res, next) {
@@ -209,7 +209,7 @@ async function salvarPermissoes(connection, usuarioId, permissoes) {
       `UPDATE permissoes SET
         dashboard = ?, dados_gravados = ?, importar_pdf = ?, importar_excel = ?,
         pdf_excel = ?, lancamentos = ?, auditoria = ?, cadastros = ?, configuracoes = ?,
-        incluir = ?, editar = ?, excluir = ?, imprimir = ?
+        incluir = ?, editar = ?, excluir = ?, imprimir = ?, numero_lancamento = ?
        WHERE usuario_id = ?`,
       [...CAMPOS_PERMISSAO.map((campo) => dados[campo]), usuarioId]
     )
@@ -218,8 +218,8 @@ async function salvarPermissoes(connection, usuarioId, permissoes) {
       `INSERT INTO permissoes
         (usuario_id, dashboard, dados_gravados, importar_pdf, importar_excel,
          pdf_excel, lancamentos, auditoria, cadastros, configuracoes,
-         incluir, editar, excluir, imprimir)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         incluir, editar, excluir, imprimir, numero_lancamento)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [usuarioId, ...CAMPOS_PERMISSAO.map((campo) => dados[campo])]
     )
   }
@@ -232,7 +232,7 @@ app.get('/api/usuarios', podeGerenciarUsuarios, async (req, res) => {
               u.ultimo_login, u.criado_em, u.atualizado_em,
               p.dashboard, p.dados_gravados, p.importar_pdf, p.importar_excel,
               p.pdf_excel, p.lancamentos, p.auditoria, p.cadastros, p.configuracoes,
-              p.incluir, p.editar, p.excluir, p.imprimir
+              p.incluir, p.editar, p.excluir, p.imprimir, p.numero_lancamento
        FROM usuarios u
        LEFT JOIN permissoes p ON p.usuario_id = u.id
        ORDER BY u.criado_em ASC, u.id ASC`
@@ -264,7 +264,7 @@ app.post('/api/usuarios', podeGerenciarUsuarios, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?)`,
       [nome, usuario, email, hash, perfil, ativo]
     )
-    await salvarPermissoes(connection, result.insertId, req.body?.permissoes || {})
+    await salvarPermissoes(connection, result.insertId, perfil === 'ADMIN' ? { ...(req.body?.permissoes || {}), numero_lancamento: true } : (req.body?.permissoes || {}))
     await connection.commit()
     res.status(201).json({ ok: true, id: result.insertId })
   } catch (error) {
@@ -303,7 +303,7 @@ app.put('/api/usuarios/:id', podeGerenciarUsuarios, async (req, res) => {
        WHERE id = ?`,
       [nome, usuario, email, perfil, ativo, id]
     )
-    await salvarPermissoes(connection, id, req.body?.permissoes || {})
+    await salvarPermissoes(connection, id, perfil === 'ADMIN' ? { ...(req.body?.permissoes || {}), numero_lancamento: true } : (req.body?.permissoes || {}))
     await connection.commit()
     res.json({ ok: true })
   } catch (error) {
@@ -338,7 +338,7 @@ async function obterPermissoesUsuario(usuarioId) {
   const [rows] = await db.query(
     `SELECT dashboard, dados_gravados, importar_pdf, importar_excel,
             pdf_excel, lancamentos, auditoria, cadastros, configuracoes,
-            incluir, editar, excluir, imprimir
+            incluir, editar, excluir, imprimir, numero_lancamento
      FROM permissoes
      WHERE usuario_id = ?
      LIMIT 1`,
@@ -1070,6 +1070,89 @@ async function consultarResumoDadosGravados(req, res) {
 }
 
 
+
+
+async function garantirPermissaoNumeroLancamento() {
+  const [colunas] = await db.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'permissoes'
+      AND COLUMN_NAME = 'numero_lancamento'
+    LIMIT 1
+  `)
+  if (!colunas.length) {
+    await db.query(`ALTER TABLE permissoes ADD COLUMN numero_lancamento TINYINT(1) NOT NULL DEFAULT 0 AFTER imprimir`)
+  }
+  await db.query(`
+    UPDATE permissoes p
+    INNER JOIN usuarios u ON u.id = p.usuario_id
+    SET p.numero_lancamento = 1
+    WHERE UPPER(u.perfil) = 'ADMIN' AND p.numero_lancamento <> 1
+  `)
+}
+
+async function podeAjustarNumeroLancamento(req, res, next) {
+  try {
+    if (String(req.usuario?.perfil || '').toUpperCase() === 'ADMIN') return next()
+    const permissoes = req.permissoes || await obterPermissoesUsuario(req.usuario.id)
+    if (Number(permissoes?.numero_lancamento || 0) === 1) return next()
+    return res.status(403).json({ ok: false, erro: 'Seu usuário não possui permissão para visualizar ou alterar o número do lançamento.' })
+  } catch (error) {
+    return res.status(500).json({ ok: false, erro: error.message || 'Erro ao validar a permissão de número de lançamento.' })
+  }
+}
+
+async function validarSenhaAdministrativa(senha) {
+  const informada = String(senha || '')
+  if (!informada) return false
+  if (process.env.SENHA_ADMIN && informada === String(process.env.SENHA_ADMIN)) return true
+  const [admins] = await db.query(`SELECT senha FROM usuarios WHERE UPPER(perfil) = 'ADMIN' AND ativo = 1`)
+  for (const admin of admins) {
+    if (await bcrypt.compare(informada, String(admin.senha || ''))) return true
+  }
+  return false
+}
+
+app.put('/api/financeiro-geral/lancamentos/:id/numero', podeAjustarNumeroLancamento, async (req, res) => {
+  const connection = await db.getConnection()
+  try {
+    const idAtual = Number(req.params.id)
+    const lancamentoInicial = Number(req.body?.lancamentoInicial)
+    const ajuste = Number(req.body?.ajuste || 0)
+    if (!Number.isInteger(idAtual) || idAtual <= 0) throw new Error('Número atual do lançamento inválido.')
+    if (!Number.isInteger(lancamentoInicial) || lancamentoInicial <= 0) throw new Error('O lançamento inicial deve ser um número inteiro maior que zero.')
+    if (!Number.isInteger(ajuste)) throw new Error('O valor para somar ou subtrair deve ser um número inteiro.')
+    const novoId = lancamentoInicial + ajuste
+    if (!Number.isInteger(novoId) || novoId <= 0) throw new Error('O número final do lançamento deve ser maior que zero.')
+    if (!(await validarSenhaAdministrativa(req.body?.senhaAdministrativa))) {
+      return res.status(401).json({ ok: false, erro: 'Senha administrativa inválida.' })
+    }
+
+    await connection.beginTransaction()
+    const [origem] = await connection.query('SELECT id FROM financeiro_geral WHERE id = ? FOR UPDATE', [idAtual])
+    if (!origem.length) throw new Error('Lançamento não encontrado.')
+    if (novoId !== idAtual) {
+      const [conflito] = await connection.query('SELECT id FROM financeiro_geral WHERE id = ? FOR UPDATE', [novoId])
+      if (conflito.length) {
+        const erro = new Error(`O número ${novoId} já está sendo usado por outro lançamento.`)
+        erro.statusCode = 409
+        throw erro
+      }
+      await connection.query('UPDATE financeiro_geral SET id = ?, atualizado_em = NOW(), usuario_id = ? WHERE id = ?', [novoId, req.usuario.id, idAtual])
+    }
+    const [[maximo]] = await connection.query('SELECT COALESCE(MAX(id), 0) AS maior FROM financeiro_geral')
+    const proximo = Math.max(Number(maximo.maior || 0) + 1, novoId + 1)
+    await connection.query(`ALTER TABLE financeiro_geral AUTO_INCREMENT = ${Math.trunc(proximo)}`)
+    await connection.commit()
+    res.json({ ok: true, numeroLancamento: novoId, proximoNumero: proximo, mensagem: `Número do lançamento atualizado para ${novoId}.` })
+  } catch (error) {
+    await connection.rollback().catch(() => {})
+    res.status(Number(error?.statusCode) || 400).json({ ok: false, erro: error.message || 'Erro ao ajustar o número do lançamento.' })
+  } finally {
+    connection.release()
+  }
+})
 
 async function garantirConfiguracaoFinanceiro() {
   await db.query(`CREATE TABLE IF NOT EXISTS configuracoes_financeiro (
@@ -2461,9 +2544,20 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'docs', 'index.html'))
 })
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`)
-  migrarContasFinanceiras().catch((error) => {
-    console.error('Migração não bloqueante de contas financeiras:', error)
+async function iniciarServidor() {
+  try {
+    await garantirPermissaoNumeroLancamento()
+  } catch (error) {
+    console.error('Erro na migração da permissão Número de Lançamento:', error)
+    process.exitCode = 1
+    return
+  }
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT}`)
+    migrarContasFinanceiras().catch((error) => {
+      console.error('Migração não bloqueante de contas financeiras:', error)
+    })
   })
-})
+}
+
+iniciarServidor()

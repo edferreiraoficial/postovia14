@@ -11,7 +11,8 @@ export type PermissionKey =
   | 'incluir'
   | 'editar'
   | 'excluir'
-  | 'imprimir';
+  | 'imprimir'
+  | 'numero_lancamento';
 
 export type PermissionUser = {
   perfil?: string | null;

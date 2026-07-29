@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from '../../store/auth';
+import { hasPermission } from '../../authPermissions';
 
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -52,6 +54,8 @@ const classeLarguraCampo = (campo: CampoFinanceiro) => {
 };
 
 export default function FinanceiroGeralAdminPage() {
+  const { user } = useAuth();
+  const podeNumeroLancamento = hasPermission(user, 'numero_lancamento');
   const [dataInicial, setDataInicial] = useState('');
   const [dataFinal, setDataFinal] = useState(fimMes());
   const [descricao, setDescricao] = useState('');
@@ -70,6 +74,13 @@ export default function FinanceiroGeralAdminPage() {
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState('');
   const [somenteMovimento, setSomenteMovimento] = useState(true);
+  const [exibirNumeroLancamento, setExibirNumeroLancamento] = useState(false);
+  const [configNumeroAberta, setConfigNumeroAberta] = useState(false);
+  const [numeroEditando, setNumeroEditando] = useState<number | null>(null);
+  const [lancamentoInicial, setLancamentoInicial] = useState('');
+  const [ajusteNumero, setAjusteNumero] = useState('0');
+  const [senhaAdministrativa, setSenhaAdministrativa] = useState('');
+  const [salvandoNumero, setSalvandoNumero] = useState(false);
   const [dataTravaConsolidacao, setDataTravaConsolidacao] = useState('');
   const [configuracaoFinanceiraCarregada, setConfiguracaoFinanceiraCarregada] = useState(false);
   const [novoLancamentoAberto, setNovoLancamentoAberto] = useState(false);
@@ -514,6 +525,33 @@ export default function FinanceiroGeralAdminPage() {
     } catch (e: any) { setMensagem(e.message || 'Erro ao gerar PDF.'); }
   };
 
+  const abrirAjusteNumero = (linha: Linha) => {
+    if (!podeNumeroLancamento) return;
+    const numero = Number(linha.id);
+    setNumeroEditando(numero);
+    setLancamentoInicial(String(numero));
+    setAjusteNumero('0');
+    setSenhaAdministrativa('');
+    setMensagem('');
+  };
+
+  const salvarAjusteNumero = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!numeroEditando || !podeNumeroLancamento) return;
+    setSalvandoNumero(true); setMensagem('');
+    try {
+      const res = await fetch(`${API_BASE}/financeiro-geral/lancamentos/${numeroEditando}/numero`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lancamentoInicial: Number(lancamentoInicial), ajuste: Number(ajusteNumero || 0), senhaAdministrativa }),
+      });
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(dados.erro || 'Erro ao ajustar o número do lançamento.');
+      setNumeroEditando(null); setSenhaAdministrativa('');
+      await carregar();
+    } catch (e: any) { setMensagem(e.message || 'Erro ao ajustar o número do lançamento.'); }
+    finally { setSalvandoNumero(false); }
+  };
+
   return <section className="financeiro-geral-page">
     <header className="admin-page-heading financeiro-geral-heading">
       <div className="financeiro-geral-heading-texto"><h1>Financeiro Geral</h1><p>Visualize, edite e exporte os lançamentos consolidados.{dataTravaConsolidacao ? ` Alterações bloqueadas até ${dataBr(dataTravaConsolidacao)}.` : ''}</p></div>
@@ -542,6 +580,7 @@ export default function FinanceiroGeralAdminPage() {
     {mensagem && <div className="admin-message error">{mensagem}</div>}
     <div className="financeiro-geral-paginacao">
       <label className="form-check financeiro-geral-movimento"><input className="form-check-input" type="checkbox" checked={somenteMovimento} onChange={(e) => setSomenteMovimento(e.target.checked)} /><span className="form-check-label">Exibir apenas colunas com movimento</span></label>
+      {podeNumeroLancamento && <div className="fg-numero-config"><button type="button" className="fg-acao" onClick={() => setConfigNumeroAberta((v) => !v)}>Configurações</button>{configNumeroAberta && <label className="form-check"><input className="form-check-input" type="checkbox" checked={exibirNumeroLancamento} onChange={(e) => setExibirNumeroLancamento(e.target.checked)} /><span className="form-check-label">Exibir coluna Nº Lanc</span></label>}</div>}
       <div className="financeiro-geral-processamento">
         <button type="button" className="admin-primary-button" onClick={consolidarFinanceiroGeral} disabled={carregando}>Consolidar</button>
         <button type="button" className="admin-primary-button" onClick={abrirRecriacao} disabled={carregando}>Recriar</button>
@@ -558,17 +597,30 @@ export default function FinanceiroGeralAdminPage() {
         </div>
       </div>
     </div>
-    <div ref={cabecalhoFlutuanteRef} className="financeiro-geral-cabecalho-flutuante" aria-hidden="true"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup><thead><tr><th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead></table></div>
-    <div ref={tabelaWrapRef} className="admin-card financeiro-geral-tabela-wrap"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup>
-      <thead><tr><th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead>
-      <tbody>{carregando ? <tr><td colSpan={3 + colunasVisiveis.length}>Carregando...</td></tr> : linhas.map(l => <tr key={l.id} className={`${ehSaldo(l) ? 'fg-linha-saldo' : ''} ${!ehSaldo(l) ? 'fg-linha-editavel' : ''}`.trim()} onDoubleClick={() => abrirLancamentoParaEdicao(l)}>
+    <div ref={cabecalhoFlutuanteRef} className="financeiro-geral-cabecalho-flutuante" aria-hidden="true"><table className="financeiro-geral-tabela"><colgroup>{exibirNumeroLancamento && podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup><thead><tr>{exibirNumeroLancamento && podeNumeroLancamento && <th>Nº Lanc</th>}<th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead></table></div>
+    <div ref={tabelaWrapRef} className="admin-card financeiro-geral-tabela-wrap"><table className="financeiro-geral-tabela"><colgroup>{exibirNumeroLancamento && podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-data" /><col className="fg-col-descricao" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup>
+      <thead><tr>{exibirNumeroLancamento && podeNumeroLancamento && <th>Nº Lanc</th>}<th>Data</th><th>Descrição</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead>
+      <tbody>{carregando ? <tr><td colSpan={3 + colunasVisiveis.length + (exibirNumeroLancamento && podeNumeroLancamento ? 1 : 0)}>Carregando...</td></tr> : linhas.map(l => <tr key={l.id} className={`${ehSaldo(l) ? 'fg-linha-saldo' : ''} ${!ehSaldo(l) ? 'fg-linha-editavel' : ''}`.trim()} onDoubleClick={() => abrirLancamentoParaEdicao(l)}>
+        {exibirNumeroLancamento && podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={(e) => { e.stopPropagation(); abrirAjusteNumero(l); }}>{l.id}</td>}
         <td>{dataBr(l.data_lancamento)}</td>
         <td className="fg-descricao">{l.descricao_original || l.descricao_normalizada}</td>
         <td>{ehSaldo(l) ? '' : l.origem}</td>
         {colunasVisiveis.map(c => <td key={c.key} className={`${Number(l[c.key] || 0) < 0 ? 'fg-negativo' : ''} ${c.key === 'total' ? 'fg-total' : ''}`.trim()}>{formatarCelula(l, c.key)}</td>)}
       </tr>)}</tbody>
-      <tfoot className="financeiro-geral-titulos-rodape"><tr><th></th><th></th><th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
+      <tfoot className="financeiro-geral-titulos-rodape"><tr>{exibirNumeroLancamento && podeNumeroLancamento && <th></th>}<th></th><th></th><th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
     </table></div>
+    {numeroEditando !== null && podeNumeroLancamento && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Ajustar número do lançamento">
+      <form className="fg-modal fg-modal-recriar" onSubmit={salvarAjusteNumero}>
+        <div className="fg-modal-header"><h2>Ajustar Nº do Lançamento</h2><button type="button" onClick={() => setNumeroEditando(null)} aria-label="Fechar">×</button></div>
+        <div className="fg-modal-grid">
+          <label>Lançamento inicial<input type="number" min="1" step="1" required value={lancamentoInicial} onChange={(e) => setLancamentoInicial(e.target.value)} /></label>
+          <label>Somar ou subtrair<input type="number" step="1" required value={ajusteNumero} onChange={(e) => setAjusteNumero(e.target.value)} /><small>Use positivo para somar e negativo para subtrair.</small></label>
+          <label>Senha administrativa<input type="password" required value={senhaAdministrativa} onChange={(e) => setSenhaAdministrativa(e.target.value)} /></label>
+        </div>
+        <p className="fg-recriar-aviso">Número final: <strong>{Number(lancamentoInicial || 0) + Number(ajusteNumero || 0)}</strong>. Números menores ou iguais a zero e números já utilizados serão recusados.</p>
+        <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setNumeroEditando(null)} disabled={salvandoNumero}>Cancelar</button><button type="submit" className="admin-primary-button" disabled={salvandoNumero}>{salvandoNumero ? 'Salvando...' : 'Salvar ajuste'}</button></div>
+      </form>
+    </div>}
     {recriarAberto && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Recriar Financeiro Geral">
       <div className="fg-modal fg-modal-recriar">
         <div className="fg-modal-header"><h2>Recriar Financeiro Geral</h2><button type="button" onClick={() => setRecriarAberto(false)} aria-label="Fechar">×</button></div>

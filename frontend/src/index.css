@@ -3898,3 +3898,5 @@ body,
 .consulta-planilha-tabela td:last-child{
   border-right:0;
 }
+
+.fg-col-numero{width:78px;min-width:78px;max-width:78px}.fg-numero-lancamento{font-weight:700;text-align:center;cursor:pointer;user-select:none}.fg-numero-lancamento:hover{text-decoration:underline}.fg-numero-config{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.fg-modal-grid small{display:block;margin-top:4px;font-size:11px;color:#64748b}
