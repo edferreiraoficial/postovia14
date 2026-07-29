@@ -1117,87 +1117,148 @@ async function validarSenhaAdministrativa(senha) {
 app.put('/api/financeiro-geral/lancamentos/:id/numero', podeAjustarNumeroLancamento, async (req, res) => {
   const connection = await db.getConnection()
   try {
-    const idAtual = Number(req.params.id)
-    const lancamentoInicial = Number(req.body?.lancamentoInicial)
+    const idSelecionado = Number(req.params.id)
+    const dataInicial = String(req.body?.dataInicial || '').slice(0, 10)
+    const modo = String(req.body?.modo || 'ajuste').toLowerCase()
     const ajuste = Number(req.body?.ajuste || 0)
-    if (!Number.isInteger(idAtual) || idAtual <= 0) throw new Error('Número atual do lançamento inválido.')
-    if (!Number.isInteger(lancamentoInicial) || lancamentoInicial <= 0) throw new Error('O lançamento inicial deve ser um número inteiro maior que zero.')
-    if (!Number.isInteger(ajuste)) throw new Error('O valor para somar ou subtrair deve ser um número inteiro.')
-    const novoId = lancamentoInicial + ajuste
-    if (!Number.isInteger(novoId) || novoId <= 0) throw new Error('O número final do lançamento deve ser maior que zero.')
+    const numeroInicial = Number(req.body?.numeroInicial || 0)
+    if (!Number.isInteger(idSelecionado) || idSelecionado <= 0) throw new Error('Número atual do lançamento inválido.')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial)) throw new Error('Informe uma data inicial válida.')
+    if (!['ajuste', 'inicial'].includes(modo)) throw new Error('Escolha uma forma válida de renumeração.')
+    if (modo === 'ajuste' && (!Number.isInteger(ajuste) || ajuste === 0)) throw new Error('Informe um número inteiro diferente de zero para somar ou subtrair.')
+    if (modo === 'inicial' && (!Number.isInteger(numeroInicial) || numeroInicial <= 0)) throw new Error('Informe um número inicial inteiro maior que zero.')
     if (!(await validarSenhaAdministrativa(req.body?.senhaAdministrativa))) {
       return res.status(401).json({ ok: false, erro: 'Senha administrativa inválida.' })
     }
 
     await connection.beginTransaction()
-    const [origem] = await connection.query('SELECT id FROM financeiro_geral WHERE id = ? FOR UPDATE', [idAtual])
-    if (!origem.length) throw new Error('Lançamento não encontrado.')
-    if (novoId !== idAtual) {
-      const [conflito] = await connection.query('SELECT id FROM financeiro_geral WHERE id = ? FOR UPDATE', [novoId])
-      if (conflito.length) {
-        const erro = new Error(`O número ${novoId} já está sendo usado por outro lançamento.`)
-        erro.statusCode = 409
-        throw erro
-      }
-      await connection.query('UPDATE financeiro_geral SET id = ?, atualizado_em = NOW(), usuario_id = ? WHERE id = ?', [novoId, req.usuario.id, idAtual])
+    const [selecionado] = await connection.query('SELECT id FROM financeiro_geral WHERE id = ? FOR UPDATE', [idSelecionado])
+    if (!selecionado.length) throw new Error('Lançamento selecionado não foi encontrado.')
+
+    const [afetados] = await connection.query(`
+      SELECT id, data_lancamento
+      FROM financeiro_geral
+      WHERE DATE(data_lancamento) >= ?
+      ORDER BY data_lancamento ASC, id ASC
+      FOR UPDATE
+    `, [dataInicial])
+    if (!afetados.length) throw new Error('Não existem lançamentos a partir da data inicial informada.')
+
+    const idsAfetados = new Set(afetados.map((linha) => Number(linha.id)))
+    const alteracoes = afetados.map((linha, indice) => ({
+      antigo: Number(linha.id),
+      novo: modo === 'inicial' ? numeroInicial + indice : Number(linha.id) + ajuste,
+    }))
+    const menorNovo = Math.min(...alteracoes.map((item) => item.novo))
+    if (menorNovo <= 0) throw new Error('A renumeração produziria números de lançamento menores ou iguais a zero.')
+    const novosIds = alteracoes.map((item) => item.novo)
+    if (new Set(novosIds).size !== novosIds.length) throw new Error('A renumeração produziria números de lançamento duplicados.')
+
+    const placeholders = novosIds.map(() => '?').join(',')
+    const [conflitos] = await connection.query(`SELECT id FROM financeiro_geral WHERE id IN (${placeholders}) FOR UPDATE`, novosIds)
+    const conflitoExterno = conflitos.find((linha) => !idsAfetados.has(Number(linha.id)))
+    if (conflitoExterno) {
+      const erro = new Error(`O número ${conflitoExterno.id} já está sendo usado por um lançamento anterior à data inicial.`)
+      erro.statusCode = 409
+      throw erro
     }
-    const [[maximo]] = await connection.query('SELECT COALESCE(MAX(id), 0) AS maior FROM financeiro_geral')
-    const proximo = Math.max(Number(maximo.maior || 0) + 1, novoId + 1)
-    await connection.query(`ALTER TABLE financeiro_geral AUTO_INCREMENT = ${Math.trunc(proximo)}`)
+
+    const [[maximoAntes]] = await connection.query('SELECT COALESCE(MAX(id), 0) AS maior FROM financeiro_geral')
+    const maiorNovo = Math.max(...novosIds)
+    const deslocamentoTemporario = Math.max(Number(maximoAntes.maior || 0), maiorNovo) + afetados.length + 1000
+    for (const item of alteracoes) {
+      await connection.query('UPDATE financeiro_geral SET id = ? WHERE id = ?', [item.antigo + deslocamentoTemporario, item.antigo])
+    }
+    for (const item of alteracoes) {
+      await connection.query(
+        'UPDATE financeiro_geral SET id = ?, atualizado_em = NOW(), usuario_id = ? WHERE id = ?',
+        [item.novo, req.usuario.id, item.antigo + deslocamentoTemporario]
+      )
+    }
+
+    const [[maximoDepois]] = await connection.query('SELECT COALESCE(MAX(id), 0) AS maior FROM financeiro_geral')
+    const proximo = Number(maximoDepois.maior || 0) + 1
     await connection.commit()
-    res.json({ ok: true, numeroLancamento: novoId, proximoNumero: proximo, mensagem: `Número do lançamento atualizado para ${novoId}.` })
+    await connection.query(`ALTER TABLE financeiro_geral AUTO_INCREMENT = ${Math.trunc(proximo)}`)
+    const descricao = modo === 'inicial' ? `iniciando em ${numeroInicial}` : `${ajuste > 0 ? 'somando' : 'subtraindo'} ${Math.abs(ajuste)}`
+    res.json({ ok: true, dataInicial, modo, ajuste, numeroInicial, quantidadeAlterada: alteracoes.length, proximoNumero: proximo,
+      mensagem: `${alteracoes.length} lançamento(s) foram renumerados a partir de ${dataInicial.split('-').reverse().join('/')}, ${descricao}, preservando a ordem atual.` })
   } catch (error) {
     await connection.rollback().catch(() => {})
-    res.status(Number(error?.statusCode) || 400).json({ ok: false, erro: error.message || 'Erro ao ajustar o número do lançamento.' })
+    res.status(Number(error?.statusCode) || 400).json({ ok: false, erro: error.message || 'Erro ao ajustar os números dos lançamentos.' })
   } finally {
     connection.release()
   }
 })
-
 
 app.put('/api/dados-gravados/:tipo/:id/numero', podeAjustarNumeroLancamento, async (req, res) => {
   const connection = await db.getConnection()
   try {
     const tipo = String(req.params.tipo || '').toLowerCase()
     const idAtual = Number(req.params.id)
-    const lancamentoInicial = Number(req.body?.lancamentoInicial)
+    const dataInicial = String(req.body?.dataInicial || '').slice(0, 10)
+    const modo = String(req.body?.modo || 'ajuste').toLowerCase()
     const ajuste = Number(req.body?.ajuste || 0)
-    const tabelas = {
-      compras: 'compras',
-      vendas: 'lmc_movimentos',
-      'vendas-cartao': 'vendas_cartao',
-      spot: 'extratos_bancarios',
-      itau: 'extratos_bancarios',
-      extrato: 'extratos_bancarios',
+    const numeroInicial = Number(req.body?.numeroInicial || 0)
+    const configuracoes = {
+      compras: { tabela: 'compras', data: 'data_emissao' },
+      vendas: { tabela: 'lmc_movimentos', data: 'data_movimento' },
+      'vendas-cartao': { tabela: 'vendas_cartao', data: 'data_lancamento' },
+      spot: { tabela: 'extratos_bancarios', data: 'data_lancamento', banco: 'SPOT' },
+      itau: { tabela: 'extratos_bancarios', data: 'data_lancamento', banco: 'ITAU' },
+      extrato: { tabela: 'extratos_bancarios', data: 'data_lancamento' },
     }
-    const tabela = tabelas[tipo]
-    if (!tabela) throw new Error('Tipo de lançamento inválido.')
+    const config = configuracoes[tipo]
+    if (!config) throw new Error('Tipo de lançamento inválido.')
     if (!Number.isInteger(idAtual) || idAtual <= 0) throw new Error('Número atual do lançamento inválido.')
-    if (!Number.isInteger(lancamentoInicial) || lancamentoInicial <= 0) throw new Error('O lançamento inicial deve ser um número inteiro maior que zero.')
-    if (!Number.isInteger(ajuste)) throw new Error('O valor para somar ou subtrair deve ser um número inteiro.')
-    const novoId = lancamentoInicial + ajuste
-    if (!Number.isInteger(novoId) || novoId <= 0) throw new Error('O número final do lançamento deve ser maior que zero.')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial)) throw new Error('Informe uma data inicial válida.')
+    if (!['ajuste', 'inicial'].includes(modo)) throw new Error('Escolha uma forma válida de renumeração.')
+    if (modo === 'ajuste' && (!Number.isInteger(ajuste) || ajuste === 0)) throw new Error('Informe um número inteiro diferente de zero para somar ou subtrair.')
+    if (modo === 'inicial' && (!Number.isInteger(numeroInicial) || numeroInicial <= 0)) throw new Error('Informe um número inicial inteiro maior que zero.')
     if (!(await validarSenhaAdministrativa(req.body?.senhaAdministrativa))) {
       return res.status(401).json({ ok: false, erro: 'Senha administrativa inválida.' })
     }
 
+    const { tabela, data: colunaData, banco } = config
     await connection.beginTransaction()
     const [origem] = await connection.query(`SELECT id FROM ${tabela} WHERE id = ? FOR UPDATE`, [idAtual])
     if (!origem.length) throw new Error('Lançamento não encontrado.')
-    if (novoId !== idAtual) {
-      const [conflito] = await connection.query(`SELECT id FROM ${tabela} WHERE id = ? FOR UPDATE`, [novoId])
-      if (conflito.length) {
-        const erro = new Error(`O número ${novoId} já está sendo usado por outro lançamento.`)
-        erro.statusCode = 409
-        throw erro
-      }
-      await connection.query(`UPDATE ${tabela} SET id = ? WHERE id = ?`, [novoId, idAtual])
+    const filtroBanco = banco ? ` AND UPPER(COALESCE(banco, origem, '')) LIKE ?` : ''
+    const parametros = banco ? [dataInicial, `%${banco}%`] : [dataInicial]
+    const [afetados] = await connection.query(`
+      SELECT id, ${colunaData} AS data_ordem
+      FROM ${tabela}
+      WHERE DATE(${colunaData}) >= ?${filtroBanco}
+      ORDER BY ${colunaData} ASC, id ASC
+      FOR UPDATE
+    `, parametros)
+    if (!afetados.length) throw new Error('Não existem lançamentos a partir da data inicial informada.')
+
+    const idsAfetados = new Set(afetados.map((linha) => Number(linha.id)))
+    const alteracoes = afetados.map((linha, indice) => ({ antigo: Number(linha.id), novo: modo === 'inicial' ? numeroInicial + indice : Number(linha.id) + ajuste }))
+    const novosIds = alteracoes.map((item) => item.novo)
+    if (Math.min(...novosIds) <= 0) throw new Error('A renumeração produziria números menores ou iguais a zero.')
+    if (new Set(novosIds).size !== novosIds.length) throw new Error('A renumeração produziria números duplicados.')
+    const placeholders = novosIds.map(() => '?').join(',')
+    const [conflitos] = await connection.query(`SELECT id FROM ${tabela} WHERE id IN (${placeholders}) FOR UPDATE`, novosIds)
+    const conflitoExterno = conflitos.find((linha) => !idsAfetados.has(Number(linha.id)))
+    if (conflitoExterno) {
+      const erro = new Error(`O número ${conflitoExterno.id} já está sendo usado por outro lançamento.`)
+      erro.statusCode = 409
+      throw erro
     }
+
+    const [[maximoAntes]] = await connection.query(`SELECT COALESCE(MAX(id), 0) AS maior FROM ${tabela}`)
+    const deslocamentoTemporario = Math.max(Number(maximoAntes.maior || 0), ...novosIds) + afetados.length + 1000
+    for (const item of alteracoes) await connection.query(`UPDATE ${tabela} SET id = ? WHERE id = ?`, [item.antigo + deslocamentoTemporario, item.antigo])
+    for (const item of alteracoes) await connection.query(`UPDATE ${tabela} SET id = ? WHERE id = ?`, [item.novo, item.antigo + deslocamentoTemporario])
     const [[maximo]] = await connection.query(`SELECT COALESCE(MAX(id), 0) AS maior FROM ${tabela}`)
-    const proximo = Math.max(Number(maximo.maior || 0) + 1, novoId + 1)
-    await connection.query(`ALTER TABLE ${tabela} AUTO_INCREMENT = ${Math.trunc(proximo)}`)
+    const proximo = Number(maximo.maior || 0) + 1
     await connection.commit()
-    res.json({ ok: true, numeroLancamento: novoId, proximoNumero: proximo, mensagem: `Número do lançamento atualizado para ${novoId}.` })
+    await connection.query(`ALTER TABLE ${tabela} AUTO_INCREMENT = ${Math.trunc(proximo)}`)
+    const descricao = modo === 'inicial' ? `iniciando em ${numeroInicial}` : `${ajuste > 0 ? 'somando' : 'subtraindo'} ${Math.abs(ajuste)}`
+    res.json({ ok: true, dataInicial, modo, quantidadeAlterada: alteracoes.length, proximoNumero: proximo,
+      mensagem: `${alteracoes.length} lançamento(s) foram renumerados a partir de ${dataInicial.split('-').reverse().join('/')}, ${descricao}, preservando a ordem atual.` })
   } catch (error) {
     await connection.rollback().catch(() => {})
     res.status(Number(error?.statusCode) || 400).json({ ok: false, erro: error.message || 'Erro ao ajustar o número do lançamento.' })

@@ -75,8 +75,10 @@ export default function FinanceiroGeralAdminPage() {
   const [mensagem, setMensagem] = useState('');
   const [somenteMovimento, setSomenteMovimento] = useState(true);
   const [numeroEditando, setNumeroEditando] = useState<number | null>(null);
-  const [lancamentoInicial, setLancamentoInicial] = useState('');
+  const [dataInicialNumero, setDataInicialNumero] = useState('');
+  const [modoRenumeracao, setModoRenumeracao] = useState<'ajuste' | 'inicial'>('ajuste');
   const [ajusteNumero, setAjusteNumero] = useState('0');
+  const [numeroInicialRenumeracao, setNumeroInicialRenumeracao] = useState('1');
   const [senhaAdministrativa, setSenhaAdministrativa] = useState('');
   const [salvandoNumero, setSalvandoNumero] = useState(false);
   const [dataTravaConsolidacao, setDataTravaConsolidacao] = useState('');
@@ -527,8 +529,10 @@ export default function FinanceiroGeralAdminPage() {
     if (!podeNumeroLancamento) return;
     const numero = Number(linha.id);
     setNumeroEditando(numero);
-    setLancamentoInicial(String(numero));
+    setDataInicialNumero(String(linha.data_lancamento || '').slice(0, 10));
+    setModoRenumeracao('ajuste');
     setAjusteNumero('0');
+    setNumeroInicialRenumeracao(String(numero));
     setSenhaAdministrativa('');
     setMensagem('');
   };
@@ -540,7 +544,7 @@ export default function FinanceiroGeralAdminPage() {
     try {
       const res = await fetch(`${API_BASE}/financeiro-geral/lancamentos/${numeroEditando}/numero`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lancamentoInicial: Number(lancamentoInicial), ajuste: Number(ajusteNumero || 0), senhaAdministrativa }),
+        body: JSON.stringify({ modo: modoRenumeracao, dataInicial: dataInicialNumero, ajuste: Number(ajusteNumero || 0), numeroInicial: Number(numeroInicialRenumeracao || 0), senhaAdministrativa }),
       });
       const dados = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(dados.erro || 'Erro ao ajustar o número do lançamento.');
@@ -610,11 +614,14 @@ export default function FinanceiroGeralAdminPage() {
       <form className="fg-modal fg-modal-recriar" onSubmit={salvarAjusteNumero}>
         <div className="fg-modal-header"><h2>Ajustar Nº do Lançamento</h2><button type="button" onClick={() => setNumeroEditando(null)} aria-label="Fechar">×</button></div>
         <div className="fg-modal-grid">
-          <label>Lançamento inicial<input type="number" min="1" step="1" required value={lancamentoInicial} onChange={(e) => setLancamentoInicial(e.target.value)} /></label>
-          <label>Somar ou subtrair<input type="number" step="1" required value={ajusteNumero} onChange={(e) => setAjusteNumero(e.target.value)} /><small>Use positivo para somar e negativo para subtrair.</small></label>
+          <label>Data inicial<input type="date" required value={dataInicialNumero} onChange={(e) => setDataInicialNumero(e.target.value)} /></label>
+          <label>Forma de renumerar<select value={modoRenumeracao} onChange={(e) => setModoRenumeracao(e.target.value as 'ajuste' | 'inicial')}><option value="ajuste">Somar/subtrair</option><option value="inicial">Iniciar do número X</option></select></label>
+          {modoRenumeracao === 'ajuste' ?
+            <label>Somar ou subtrair<input type="number" step="1" required value={ajusteNumero} onChange={(e) => setAjusteNumero(e.target.value)} /><small>Use positivo para somar e negativo para subtrair.</small></label> :
+            <label>Número inicial<input type="number" min="1" step="1" required value={numeroInicialRenumeracao} onChange={(e) => setNumeroInicialRenumeracao(e.target.value)} /><small>O primeiro lançamento da data receberá este número; os seguintes continuarão em sequência.</small></label>}
           <label>Senha administrativa<input type="password" required value={senhaAdministrativa} onChange={(e) => setSenhaAdministrativa(e.target.value)} /></label>
         </div>
-        <p className="fg-recriar-aviso">Número final: <strong>{Number(lancamentoInicial || 0) + Number(ajusteNumero || 0)}</strong>. Números menores ou iguais a zero e números já utilizados serão recusados.</p>
+        <p className="fg-recriar-aviso">A partir de <strong>{dataBr(dataInicialNumero)}</strong>, {modoRenumeracao === 'ajuste' ? 'o valor será somado ou subtraído de cada Nº Lanc' : `a numeração será reiniciada em ${numeroInicialRenumeracao || 'X'}`} seguindo a ordem atual dos lançamentos. Números menores ou iguais a zero e conflitos com lançamentos anteriores serão recusados.</p>
         <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setNumeroEditando(null)} disabled={salvandoNumero}>Cancelar</button><button type="submit" className="admin-primary-button" disabled={salvandoNumero}>{salvandoNumero ? 'Salvando...' : 'Salvar ajuste'}</button></div>
       </form>
     </div>}
