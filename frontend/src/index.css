@@ -3943,3 +3943,26 @@ body,
   .financeiro-geral-heading-exportacoes{grid-template-columns:1fr!important}
   .fg-selecao-colunas-grid{grid-template-columns:1fr}
 }
+
+
+/* Financeiro Geral — editor de Saldo anterior: área de senha mais confortável */
+.fg-modal-senha-saldo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 28px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.fg-modal-senha-saldo input {
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: 2px;
+}

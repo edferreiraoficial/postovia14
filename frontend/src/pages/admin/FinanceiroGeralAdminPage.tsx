@@ -345,17 +345,18 @@ export default function FinanceiroGeralAdminPage() {
     });
     setMensagem('');
     setNovoLancamentoAberto(true);
+    window.setTimeout(() => campoDataLancamentoRef.current?.focus(), 0);
   };
 
   const prepararInclusaoNoModal = () => {
     setLancamentoEditandoId(null);
     setNovoLancamento({
-      data_lancamento: dataLinhaSelecionada,
+      data_lancamento: '',
       descricao_original: '',
       origem: 'MANUAL',
       ...Object.fromEntries(campos.filter((c) => c.key !== 'total').map((c) => [c.key, ''])),
     });
-    setMensagem(dataLinhaSelecionada ? `Novo lançamento preparado para ${dataBr(dataLinhaSelecionada)}.` : 'Informe a data para incluir o novo lançamento.');
+    setMensagem('Informe a data para incluir o novo lançamento.');
     window.setTimeout(() => campoDataLancamentoRef.current?.focus(), 0);
   };
 
@@ -673,7 +674,7 @@ export default function FinanceiroGeralAdminPage() {
         <div className="fg-modal-header"><h2>{lancamentoEditandoId === null ? 'Novo Lançamento' : 'Alterar Lançamento'}</h2><button type="button" onClick={fecharModalLancamento} aria-label="Fechar">×</button></div>
         <div className="fg-modal-grid">
           <label>Data<input ref={campoDataLancamentoRef} type="date" value={novoLancamento.data_lancamento || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, data_lancamento: e.target.value }))} /></label>
-          <label className="fg-modal-descricao">Descrição<input autoFocus value={novoLancamento.descricao_original || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, descricao_original: e.target.value }))} /></label>
+          <label className="fg-modal-descricao">Descrição<input value={novoLancamento.descricao_original || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, descricao_original: e.target.value }))} /></label>
           <label>Origem<input value={novoLancamento.origem || 'MANUAL'} onChange={(e) => setNovoLancamento((r) => ({ ...r, origem: e.target.value }))} /></label>
           {campos.filter((c) => c.key !== 'total').map((c) => <label key={c.key}>{c.label}<input type="number" step={/^prod[1-4]_quant$/.test(c.key) ? '1' : (/^prod[1-4]_valor$/.test(c.key) ? '0.000001' : '0.01')} value={novoLancamento[c.key] ?? ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, [c.key]: e.target.value }))} /></label>)}
         </div>

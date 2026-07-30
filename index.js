@@ -1746,13 +1746,15 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
                         WHEN conta03 <> 0 THEN 3
                         WHEN conta11 <> 0 THEN 4
                         WHEN conta12 <> 0 THEN 5
-                        /* Compras e vendas permanecem juntas no bloco de produtos.
-                           A venda também possui conta13, mas deve vir depois da compra. */
+                        /* Compras, vendas, ajustes e resultado líquido permanecem no bloco de produtos. */
                         WHEN tipo_lancamento IN ('COMPRA', 'VENDA', 'AJUSTE', 'RESULTADO')
                           OR prod1_quant <> 0 OR prod1_valor <> 0 OR prod1_total <> 0
                           OR prod2_quant <> 0 OR prod2_valor <> 0 OR prod2_total <> 0
                           OR prod3_quant <> 0 OR prod3_valor <> 0 OR prod3_total <> 0
                           OR prod4_quant <> 0 OR prod4_valor <> 0 OR prod4_total <> 0 THEN 9
+                        /* Separações de vendas (cartão, dinheiro etc.) vêm depois dos produtos e do resultado líquido. */
+                        WHEN tipo_lancamento = 'SEPARACAO_VENDAS'
+                          OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SEPARA%VENDAS%' THEN 10
                         WHEN conta13 <> 0 THEN 6
                         WHEN conta21 <> 0 THEN 7
                         WHEN conta04 <> 0 OR conta05 <> 0 OR conta06 <> 0 OR conta07 <> 0 OR conta08 <> 0
