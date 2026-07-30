@@ -2403,10 +2403,42 @@ app.get('/api/extratos-conta', async (req, res) => {
         e.id ASC
     `, [dataInicial, dataFinal, contaBancariaId])
 
-    const dados = dadosPeriodo.map((item) => ({
+    // Assim como no Financeiro Geral, exibe antes do período filtrado o último
+    // fechamento da conta. A linha é apenas apresentada como "Saldo anterior";
+    // nenhum registro novo é criado ou alterado no banco de dados.
+    const [saldosAnteriores] = await db.query(`
+      SELECT
+        e.id,
+        DATE_FORMAT(e.data_lancamento, '%d/%m/%Y') AS data_lancamento,
+        DATE_FORMAT(e.data_lancamento, '%Y-%m-%d') AS data_iso,
+        'Saldo anterior' AS descricao_original,
+        NULL AS valor,
+        e.saldo,
+        'SALDO' AS natureza,
+        e.origem,
+        e.conta_bancaria_id,
+        cb.nome_conta,
+        cb.instituicao AS banco
+      FROM extratos_bancarios e
+      INNER JOIN contas_bancarias cb ON cb.id = e.conta_bancaria_id
+      WHERE e.data_lancamento < ?
+        AND e.conta_bancaria_id = ?
+        AND (
+          UPPER(COALESCE(e.natureza, '')) = 'SALDO'
+          OR UPPER(COALESCE(e.descricao_original, '')) LIKE 'SALDO DO DIA%'
+        )
+      ORDER BY e.data_lancamento DESC, e.id DESC
+      LIMIT 1
+    `, [dataInicial, contaBancariaId])
+
+    const dadosNormalizados = dadosPeriodo.map((item) => ({
       ...item,
       saldo: Number(item.saldo || 0) === 0 ? null : item.saldo,
     }))
+    const saldoAnterior = saldosAnteriores[0]
+      ? { ...saldosAnteriores[0], saldo: Number(saldosAnteriores[0].saldo || 0) === 0 ? null : saldosAnteriores[0].saldo }
+      : null
+    const dados = saldoAnterior ? [saldoAnterior, ...dadosNormalizados] : dadosNormalizados
 
     res.json({ ok: true, dados })
   } catch (error) {
