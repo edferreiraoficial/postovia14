@@ -2541,20 +2541,46 @@ async function recalcularSaldosExtratoAPartir(conn, { empresaId, contaBancariaId
   )
 
   let atualizadas = 0
+  let criadas = 0
   let dataAtual = null
   let saldosDia = []
+  let houveMovimentoNoDia = false
 
   const fecharDia = async () => {
-    if (!dataAtual || !saldosDia.length) return
-    for (const linhaSaldo of saldosDia) {
-      await conn.query(
-        `UPDATE extratos_bancarios
-         SET saldo = ?, valor = 0, natureza = 'SALDO', atualizado_em = NOW()
-         WHERE id = ?`,
-        [Math.round((saldoAcumulado + Number.EPSILON) * 100) / 100, linhaSaldo.id]
-      )
-      atualizadas += 1
+    if (!dataAtual) return
+
+    const saldoFechamento = Math.round((saldoAcumulado + Number.EPSILON) * 100) / 100
+
+    if (saldosDia.length) {
+      for (const linhaSaldo of saldosDia) {
+        await conn.query(
+          `UPDATE extratos_bancarios
+           SET descricao_original = 'Saldo do dia',
+               descricao_normalizada = 'SALDO DO DIA',
+               tipo_lancamento = 'Saldo do dia',
+               saldo = ?, valor = 0, natureza = 'SALDO', atualizado_em = NOW()
+           WHERE id = ?`,
+          [saldoFechamento, linhaSaldo.id]
+        )
+        atualizadas += 1
+      }
+      return
     }
+
+    // Só cria fechamento para datas que realmente possuem lançamentos.
+    // Datas vazias ou contendo apenas linhas de saldo não recebem nova linha.
+    if (!houveMovimentoNoDia) return
+
+    const origemSaldo = String(conta.origem || origem || conta.instituicao || conta.nome_conta || '').trim()
+    await conn.query(
+      `INSERT INTO extratos_bancarios
+       (empresa_id, conta_bancaria_id, data_lancamento,
+        descricao_original, descricao_normalizada, tipo_lancamento,
+        valor, saldo, natureza, origem)
+       VALUES (?, ?, ?, 'Saldo do dia', 'SALDO DO DIA', 'Saldo do dia', 0, ?, 'SALDO', ?)`,
+      [empresaId, conta.id, dataAtual, saldoFechamento, origemSaldo]
+    )
+    criadas += 1
   }
 
   for (const row of linhas) {
@@ -2562,6 +2588,7 @@ async function recalcularSaldosExtratoAPartir(conn, { empresaId, contaBancariaId
     if (dataAtual !== null && dataLinha !== dataAtual) {
       await fecharDia()
       saldosDia = []
+      houveMovimentoNoDia = false
     }
     dataAtual = dataLinha
 
@@ -2577,11 +2604,19 @@ async function recalcularSaldosExtratoAPartir(conn, { empresaId, contaBancariaId
       continue
     }
     if (ehLinhaSaldoExtrato(row)) continue
+
+    houveMovimentoNoDia = true
     saldoAcumulado = Math.round((saldoAcumulado + Number(row.valor || 0) + Number.EPSILON) * 100) / 100
   }
   await fecharDia()
 
-  return { atualizado: true, linhas: atualizadas, contaId: conta.id }
+  return {
+    atualizado: true,
+    linhas: atualizadas + criadas,
+    atualizadas,
+    criadas,
+    contaId: conta.id,
+  }
 }
 
 async function obterEmpresaIdPadrao(conn) {
