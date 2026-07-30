@@ -1741,6 +1741,10 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
                              OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%DESCONTO TAXAS CARTAO%' THEN 1
                         WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%PIX RECEBIDO MAQUININHA%' THEN 1
                         WHEN conta01 <> 0 THEN 1
+                        /* Exceção: Separação de Vendas pertence ao bloco de produtos,
+                           independentemente das contas que movimenta. */
+                        WHEN tipo_lancamento = 'SEPARACAO_VENDAS'
+                          OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SEPARA%VENDAS%' THEN 9
                         /* Demais contas na ordem visual solicitada. */
                         WHEN conta02 <> 0 THEN 2
                         WHEN conta03 <> 0 THEN 3
@@ -1752,9 +1756,6 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
                           OR prod2_quant <> 0 OR prod2_valor <> 0 OR prod2_total <> 0
                           OR prod3_quant <> 0 OR prod3_valor <> 0 OR prod3_total <> 0
                           OR prod4_quant <> 0 OR prod4_valor <> 0 OR prod4_total <> 0 THEN 9
-                        /* Separações de vendas (cartão, dinheiro etc.) vêm depois dos produtos e do resultado líquido. */
-                        WHEN tipo_lancamento = 'SEPARACAO_VENDAS'
-                          OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SEPARA%VENDAS%' THEN 10
                         WHEN conta13 <> 0 THEN 6
                         WHEN conta21 <> 0 THEN 7
                         WHEN conta04 <> 0 OR conta05 <> 0 OR conta06 <> 0 OR conta07 <> 0 OR conta08 <> 0
@@ -1774,11 +1775,15 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
                         WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%TARIFA PIX RECEBIDO MAQUININHA%' THEN 4
                         /* No ITAÚ, Pix e depósitos Vendas vem antes dos demais. */
                         WHEN conta02 <> 0 AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%PIX E DEPOSIT%VENDAS%' THEN 1
-                        /* No bloco de produtos, compras sempre aparecem antes das vendas. */
+                        /* Única exceção à ordem das colunas:
+                           Separação fica depois do resultado e imediatamente antes
+                           de Ajuste de saldo e valor estoque diário. */
                         WHEN tipo_lancamento = 'COMPRA' THEN 1
                         WHEN tipo_lancamento = 'VENDA' THEN 2
-                        WHEN tipo_lancamento = 'AJUSTE' THEN 3
-                        WHEN tipo_lancamento = 'RESULTADO' THEN 4
+                        WHEN tipo_lancamento = 'RESULTADO' THEN 3
+                        WHEN tipo_lancamento = 'SEPARACAO_VENDAS'
+                          OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SEPARA%VENDAS%' THEN 4
+                        WHEN tipo_lancamento = 'AJUSTE' THEN 5
                         ELSE 10
                       END ASC,
                       CASE WHEN tipo_lancamento = 'TAXA_CARTAO' THEN COALESCE(registro_origem_id, id) ELSE COALESCE(registro_origem_id, id) END ASC,

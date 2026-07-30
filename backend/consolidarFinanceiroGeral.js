@@ -174,6 +174,11 @@ function prioridadeColunaLancamento(row, campoMapeado = null) {
       || ehPixRecebidoMaquininha(row)
       || ehTarifaPixRecebidoMaquininha(row)) return 1
 
+  // Exceção à ordem das colunas: Separação de Vendas deve permanecer no
+  // bloco de produtos, mesmo movimentando Caixa, Cartão ou outras contas.
+  // Ela será ordenada depois do Resultado e antes do Ajuste de saldo/estoque.
+  if (ehSeparacaoVendas(row)) return 9
+
   // Compras e vendas de produtos precisam permanecer no mesmo bloco de estoque.
   // A venda também movimenta conta13, mas não pode ser classificada antes como
   // lançamento financeiro, pois isso faria a baixa ocorrer antes da compra e do
@@ -211,8 +216,9 @@ function prioridadeInternaLancamento(row, campoMapeado = null) {
     const tipo = String(row?.tipo_lancamento || '').toUpperCase()
     if (tipo === 'COMPRA') return 1
     if (tipo === 'VENDA') return 2
-    if (tipo === 'AJUSTE') return 3
-    if (tipo === 'RESULTADO') return 4
+    if (tipo === 'RESULTADO') return 3
+    if (ehSeparacaoVendas(row)) return 4
+    if (tipo === 'AJUSTE') return 5
   }
   return 10
 }
@@ -952,7 +958,7 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
        FROM financeiro_geral
        WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento BETWEEN ? AND ?
        ORDER BY data_lancamento ASC,
-         CASE tipo_lancamento WHEN 'COMPRA' THEN 10 WHEN 'VENDA' THEN 20 WHEN 'SEPARACAO_VENDAS' THEN 25 WHEN 'AJUSTE' THEN 30 WHEN 'RESULTADO' THEN 40 WHEN 'SALDO' THEN 90 ELSE 5 END,
+         CASE tipo_lancamento WHEN 'COMPRA' THEN 10 WHEN 'VENDA' THEN 20 WHEN 'RESULTADO' THEN 30 WHEN 'SEPARACAO_VENDAS' THEN 40 WHEN 'AJUSTE' THEN 50 WHEN 'SALDO' THEN 90 ELSE 5 END,
          id ASC`,
       [empresa, inicio, fim]
     )
