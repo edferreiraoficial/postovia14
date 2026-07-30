@@ -778,10 +778,13 @@ export async function consolidarFinanceiroGeral({
         }
         const ajuste = numero(row.ajuste_quantidade)
         if (ajuste !== 0) {
-          ajustes[`${p}_quant`] = arred2((ajustes[`${p}_quant`] || 0) + ajuste)
-          ajustes[`${p}_valor`] = arred2(medioDia)
-          ajustes[`${p}_total`] = arred2((ajustes[`${p}_total`] || 0) + ajuste * medioDia)
-          e.quantidade += ajuste
+          // O ajuste de estoque deve conservar o preço médio real calculado no dia.
+          // Não arredondar para duas casas: os campos de produto trabalham com 6 casas.
+          const precoMedioDia = arred6(medioDia)
+          ajustes[`${p}_quant`] = arred6((ajustes[`${p}_quant`] || 0) + ajuste)
+          ajustes[`${p}_valor`] = precoMedioDia
+          ajustes[`${p}_total`] = arred6((ajustes[`${p}_total`] || 0) + ajuste * precoMedioDia)
+          e.quantidade = arred6(e.quantidade + ajuste)
         }
       }
 
