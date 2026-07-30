@@ -509,15 +509,18 @@ export async function consolidarFinanceiroGeral({
 
     const vendasCartaoDisponivel = await tabelaExiste(conn, 'vendas_cartao')
     let vendasCartao = []
+    // Créditos liquidados no começo do período podem se referir a vendas de vários
+    // dias anteriores (fins de semana, feriados e prazos da adquirente). Carrega uma
+    // janela anterior suficiente para localizar cada taxa pela data da descrição.
     if (vendasCartaoDisponivel) {
       const [rowsCartao] = await conn.query(
         `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_venda,
                 descricao_original, vendas_bruta, venda_liquida, taxa
          FROM vendas_cartao
          WHERE empresa_id = ? AND status = 'ATIVO'
-           AND data_lancamento BETWEEN ? AND ?
+           AND data_lancamento BETWEEN DATE_SUB(?, INTERVAL 60 DAY) AND ?
          ORDER BY data_lancamento ASC, id ASC`,
-        [empresa, dataAnterior(inicioLancamentos), fim]
+        [empresa, inicioLancamentos, fim]
       )
       vendasCartao = rowsCartao
     }
@@ -963,14 +966,16 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
     const vendaCartaoPorData = new Map()
     const vendasCartaoDetalhesPorData = new Map()
     if (await tabelaExiste(conn, 'vendas_cartao')) {
+      // A atualização de saldos usa a mesma janela retroativa da consolidação,
+      // evitando taxas vazias para créditos que referenciam dias anteriores ao período.
       const [vendasCartaoRows] = await conn.query(
         `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_venda,
                 descricao_original, vendas_bruta, venda_liquida, taxa
            FROM vendas_cartao
           WHERE empresa_id = ? AND status = 'ATIVO'
-            AND data_lancamento BETWEEN ? AND ?
+            AND data_lancamento BETWEEN DATE_SUB(?, INTERVAL 60 DAY) AND ?
           ORDER BY data_lancamento ASC, id ASC`,
-        [empresa, dataAnterior(inicio), fim]
+        [empresa, inicio, fim]
       )
       for (const row of vendasCartaoRows) {
         const dataVenda = String(row.data_venda).slice(0, 10)
