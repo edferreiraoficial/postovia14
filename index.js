@@ -2801,8 +2801,8 @@ app.put('/api/dados-gravados/:tipo/:id', async (req, res) => {
     if (tipo === 'vendas-cartao') {
       const descricao = String(req.body.descricao_original || 'Crédito Vendas Cartão').trim()
       const vendaBruta = Math.abs(numeroValido(req.body.vendas_bruta, 'Venda bruta', { minimo: 0 }))
-      const vendaLiquida = Math.abs(numeroValido(req.body.venda_liquida, 'Venda líquida', { minimo: 0 }))
       const taxa = Math.abs(numeroValido(req.body.taxa, 'Taxas', { minimo: 0 }))
+      const vendaLiquida = Math.max(0, vendaBruta - taxa)
       const [resultado] = await conn.query(`UPDATE vendas_cartao SET empresa_id=?, data_lancamento=?,
         descricao_original=?, descricao_normalizada=?, vendas_bruta=?, venda_liquida=?, taxa=?, atualizado_em=NOW() WHERE id=?`,
         [empresaId, data, descricao, descricao.toUpperCase(), vendaBruta, vendaLiquida, taxa, id])

@@ -340,6 +340,11 @@ export default function ConsultaBancoAdminPage() {
       if (atual.tipo === 'compras' && (campo === 'quant_rec' || campo === 'preco_pag')) {
         dados.valor_pag = (Number(dados.quant_rec || 0) * Number(dados.preco_pag || 0)).toFixed(2);
       }
+      if (atual.tipo === 'vendas-cartao' && campo === 'taxa') {
+        const vendaBruta = Number(dados.vendas_bruta || 0);
+        const taxa = Math.abs(Number(valor || 0));
+        dados.venda_liquida = Math.max(0, vendaBruta - taxa).toFixed(2);
+      }
       return { ...atual, dados };
     });
   }
