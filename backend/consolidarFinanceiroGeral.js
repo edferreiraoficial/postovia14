@@ -193,6 +193,15 @@ function ehDepositoDinheiroAtm(row) {
   return descricao === 'DEPOSITO DINHEIRO ATM' || descricao.includes('DEP DIN ATM')
 }
 
+function ehPixRecebidoItau(row) {
+  const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
+  return descricao.includes('PIX RECEBIDO') || descricao.includes('PIX RECEB')
+}
+
+function ehEntradaItauComSaidaCaixa(row) {
+  return ehDepositoDinheiroAtm(row) || ehPixRecebidoItau(row)
+}
+
 function ehPixDepositosVendas(row) {
   const descricao = normalizarTexto(row?.descricao_original || row?.descricao_normalizada)
   return descricao.includes('PIX E DEPOSITO') && descricao.includes('VENDAS')
@@ -680,10 +689,10 @@ export async function consolidarFinanceiroGeral({
         const creditoCartao = campo === 'conta01' && ehCreditoVendasCartao(row)
         const pixMaquininha = campo === 'conta01' && ehPixRecebidoMaquininha(row)
         const valoresLinha = { [campo]: valor }
-        const depositoAtmItau = campo === 'conta02' && valor > 0 && ehDepositoDinheiroAtm(row)
-        if (depositoAtmItau) {
-          // Todo depósito em dinheiro identificado no Itaú representa entrada no
-          // banco e saída física do Caixa no mesmo valor.
+        const entradaItauComSaidaCaixa = campo === 'conta02' && valor > 0 && ehEntradaItauComSaidaCaixa(row)
+        if (entradaItauComSaidaCaixa) {
+          // Depósito dinheiro ATM e Pix recebido no Itaú representam entrada no
+          // banco e saída do Caixa no mesmo valor.
           valoresLinha.conta11 = -Math.abs(valor)
           saldoContas.set('conta11', arred2(numero(saldoContas.get('conta11')) + valoresLinha.conta11))
         }
@@ -1084,8 +1093,8 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         const creditoCartao = ehCreditoVendasCartao(row) && numero(row.conta01) !== 0
         const pixMaquininha = ehPixRecebidoMaquininha(row) && numero(row.conta01) !== 0
         const tarifaPixRecebido = ehTarifaPixRecebidoMaquininha(row)
-        const depositoAtmItau = numero(row.conta02) > 0 && ehDepositoDinheiroAtm(row)
-        if (depositoAtmItau) {
+        const entradaItauComSaidaCaixa = numero(row.conta02) > 0 && ehEntradaItauComSaidaCaixa(row)
+        if (entradaItauComSaidaCaixa) {
           const caixaCorreto = -Math.abs(numero(row.conta02))
           if (arred2(row.conta11) !== arred2(caixaCorreto)) {
             row.conta11 = caixaCorreto
