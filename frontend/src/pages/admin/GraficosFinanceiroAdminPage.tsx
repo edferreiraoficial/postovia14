@@ -90,7 +90,7 @@ function caminhosLinhaSaldo(pontos: Array<{ x: number; y: number; valor: number 
   fechar(); return partes;
 }
 
-function eixosTempo(datas: string[], x: (i: number) => number, yTopo: number, yBase: number) {
+function eixosTempo(datas: string[], x: (i: number) => number, yTopo: number, yBase: number, mostrarTodosDias = false) {
   const meses: Array<{ inicio: number; fim: number; mes: number; ano: number }> = [];
   datas.forEach((data, i) => {
     const dt = new Date(`${data}T12:00:00`); const ultimo = meses[meses.length - 1];
@@ -99,7 +99,7 @@ function eixosTempo(datas: string[], x: (i: number) => number, yTopo: number, yB
   });
   return <>
     {datas.map((data, i) => Number(data.slice(8, 10)) === 1 ? <line key={`mes-${data}`} x1={x(i)} x2={x(i)} y1={yTopo} y2={yBase} stroke="#b8c0ca" strokeWidth="1.15" /> : null)}
-    {datas.map((data, i) => { const dia = Number(data.slice(8, 10)); return (i === 0 || i === datas.length - 1 || dia === 1 || dia % 7 === 0) ? <text key={`dia-${data}`} x={x(i)} y={yBase + 20} textAnchor="middle" className="gf-axis-date">{dia}</text> : null; })}
+    {datas.map((data, i) => { const dia = Number(data.slice(8, 10)); const exibir = mostrarTodosDias || i === 0 || i === datas.length - 1 || dia === 1 || dia % 7 === 0; return exibir ? <text key={`dia-${data}`} x={x(i)} y={yBase + 20} textAnchor="middle" className="gf-axis-date">{dia}</text> : null; })}
     {meses.map((m) => <text key={`${m.ano}-${m.mes}`} x={(x(m.inicio) + x(m.fim)) / 2} y={yBase + 42} textAnchor="middle" className="gf-axis-month">{nomesMes[m.mes]}{m.ano !== new Date().getFullYear() ? `/${String(m.ano).slice(-2)}` : ''}</text>)}
   </>;
 }
@@ -123,16 +123,18 @@ function GraficoAreaSaldo({ datas, valores }: { datas: string[]; valores: number
       <defs><linearGradient id="saldoPositivo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3B82F6" stopOpacity=".38"/><stop offset="1" stopColor="#3B82F6" stopOpacity=".04"/></linearGradient><linearGradient id="saldoNegativo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#EF4444" stopOpacity=".04"/><stop offset="1" stopColor="#EF4444" stopOpacity=".42"/></linearGradient></defs>
       <rect width={largura} height={altura} rx="12" fill="#fff" />
       {ticks.map((tick) => <g key={tick}><line x1={margem.esquerda} x2={largura - margem.direita} y1={y(tick)} y2={y(tick)} stroke={tick === 0 ? '#9aa6b2' : '#e8ecf1'} strokeWidth={tick === 0 ? 1.4 : 1}/><text x={margem.esquerda - 10} y={y(tick) + 4} textAnchor="end" className="gf-axis-label">{moeda(tick, 0)}</text></g>)}
-      {eixosTempo(datas, x, margem.topo, altura - margem.baixo)}
+      {eixosTempo(datas, x, margem.topo, altura - margem.baixo, datas.length <= 45)}
       <path d={caminhoAreaSaldo(pontos, yZero, true)} fill="url(#saldoPositivo)"/><path d={caminhoAreaSaldo(pontos, yZero, false)} fill="url(#saldoNegativo)"/>
       {linhasPositivas.map((d, i) => <path key={`lp-${i}`} d={d} fill="none" stroke="#1D4ED8" strokeWidth="1.55" strokeLinejoin="round" strokeLinecap="round"/>)}{linhasNegativas.map((d, i) => <path key={`ln-${i}`} d={d} fill="none" stroke="#B91C1C" strokeWidth="1.55" strokeLinejoin="round" strokeLinecap="round"/>)}
-      {pontos.map((p, i) => <g key={datas[i]} onMouseEnter={() => setIndiceAtivo(i)} tabIndex={0} className="gf-point-hit"><circle cx={p.x} cy={p.y} r={i === indiceAtivo ? 3.6 : 1.8} fill={p.valor < 0 ? '#B91C1C' : '#1D4ED8'} opacity={i === indiceAtivo ? 1 : .62}/><circle cx={p.x} cy={p.y} r="10" fill="transparent"/></g>)}
+      {pontos.map((p, i) => <g key={datas[i]} onMouseEnter={() => setIndiceAtivo(i)} onFocus={() => setIndiceAtivo(i)} tabIndex={0} className="gf-point-hit"><circle cx={p.x} cy={p.y} r={i === indiceAtivo ? 3.6 : 1.8} fill={p.valor < 0 ? '#B91C1C' : '#1D4ED8'} opacity={i === indiceAtivo ? 1 : .62}/><circle cx={p.x} cy={p.y} r="10" fill="transparent"/></g>)}
     </svg>
   </div>;
 }
 
 function GraficoAreaProduto({ datas, serie, moedaValores }: { datas: string[]; serie: Serie; moedaValores?: boolean }) {
-  const largura = 1240; const altura = 280; const margem = { topo: 30, direita: 22, baixo: 64, esquerda: 96 };
+  const [indiceAtivo, setIndiceAtivo] = useState(Math.max(0, serie.valores.length - 1));
+  useEffect(() => setIndiceAtivo(Math.max(0, serie.valores.length - 1)), [serie.valores.length]);
+  const largura = 1240; const altura = 300; const margem = { topo: 44, direita: 22, baixo: 64, esquerda: 96 };
   const w = largura - margem.esquerda - margem.direita; const h = altura - margem.topo - margem.baixo;
   const minimoSerie = Math.min(0, ...serie.valores); const maximoSerie = Math.max(0, ...serie.valores);
   const passo = moedaValores ? Math.max(500, Math.ceil(Math.max(Math.abs(minimoSerie), Math.abs(maximoSerie), 1) / 5 / 500) * 500) : 500;
@@ -144,14 +146,22 @@ function GraficoAreaProduto({ datas, serie, moedaValores }: { datas: string[]; s
   const area = pontos.length ? `${caminhoSuave(pontos)} L ${pontos[pontos.length - 1].x} ${yZero} L ${pontos[0].x} ${yZero} Z` : '';
   const ticks: number[] = []; for (let t = min; t <= max; t += passo) ticks.push(t);
   const gradienteId = `area-${serie.nome.replace(/[^a-z0-9]/gi, '')}`;
-  return <article className="gf-product-chart gf-product-chart-row"><div className="gf-product-chart-title"><strong style={{ color: serie.cor }}>{serie.nome}</strong><span>{moedaValores ? 'Resultado líquido diário' : 'Quantidade vendida por dia'}</span></div><svg viewBox={`0 0 ${largura} ${altura}`} role="img" aria-label={`${serie.nome} por dia`}>
-    <defs><linearGradient id={gradienteId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={serie.cor} stopOpacity=".27"/><stop offset="1" stopColor={serie.cor} stopOpacity=".025"/></linearGradient></defs>
-    <rect width={largura} height={altura} rx="10" fill="#fff"/>
-    {ticks.map((tick) => <g key={tick}><line x1={margem.esquerda} x2={largura - margem.direita} y1={y(tick)} y2={y(tick)} stroke={tick === 0 ? '#9aa6b2' : '#edf0f4'} strokeWidth={tick === 0 ? 1.25 : 1}/><text x={margem.esquerda - 10} y={y(tick) + 4} textAnchor="end" className="gf-axis-label">{moedaValores ? moeda(tick, 0) : `${tick.toLocaleString('pt-BR')} L`}</text></g>)}
-    {eixosTempo(datas, x, margem.topo, altura - margem.baixo)}
-    <path d={area} fill={`url(#${gradienteId})`}/><path d={caminhoSuave(pontos)} fill="none" stroke={serie.cor} strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round"/>
-    {pontos.map((p, i) => <circle key={datas[i]} cx={p.x} cy={p.y} r="1.35" fill={serie.cor} opacity=".62"><title>{`${dataBr(datas[i])}: ${moedaValores ? moeda(p.valor) : `${p.valor.toLocaleString('pt-BR')} L`}`}</title></circle>)}
-  </svg></article>;
+  const periodoCurto = datas.length <= 45;
+  const valorAtivo = serie.valores[indiceAtivo] ?? 0;
+  return <article className="gf-product-chart gf-product-chart-row">
+    <div className="gf-product-chart-title">
+      <div><strong style={{ color: serie.cor }}>{serie.nome}</strong><span>{moedaValores ? 'Resultado líquido diário' : 'Quantidade vendida por dia'}</span></div>
+      <div className="gf-product-active-value" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}><span>{datas[indiceAtivo] ? dataBr(datas[indiceAtivo]) : 'Sem dados'}</span><strong style={{ color: serie.cor, fontSize: 16 }}>{moedaValores ? moeda(valorAtivo) : `${valorAtivo.toLocaleString('pt-BR')} L`}</strong></div>
+    </div>
+    <svg viewBox={`0 0 ${largura} ${altura}`} role="img" aria-label={`${serie.nome} por dia`}>
+      <defs><linearGradient id={gradienteId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={serie.cor} stopOpacity=".27"/><stop offset="1" stopColor={serie.cor} stopOpacity=".025"/></linearGradient></defs>
+      <rect width={largura} height={altura} rx="10" fill="#fff"/>
+      {ticks.map((tick) => <g key={tick}><line x1={margem.esquerda} x2={largura - margem.direita} y1={y(tick)} y2={y(tick)} stroke={tick === 0 ? '#9aa6b2' : '#edf0f4'} strokeWidth={tick === 0 ? 1.25 : 1}/><text x={margem.esquerda - 10} y={y(tick) + 4} textAnchor="end" className="gf-axis-label">{moedaValores ? moeda(tick, 0) : `${tick.toLocaleString('pt-BR')} L`}</text></g>)}
+      {eixosTempo(datas, x, margem.topo, altura - margem.baixo, periodoCurto)}
+      <path d={area} fill={`url(#${gradienteId})`}/><path d={caminhoSuave(pontos)} fill="none" stroke={serie.cor} strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round"/>
+      {pontos.map((p, i) => <g key={datas[i]} onMouseEnter={() => setIndiceAtivo(i)} onFocus={() => setIndiceAtivo(i)} tabIndex={0} className="gf-point-hit"><circle cx={p.x} cy={p.y} r={i === indiceAtivo ? 3.4 : 1.65} fill={serie.cor} opacity={i === indiceAtivo ? 1 : .62}/><circle cx={p.x} cy={p.y} r="10" fill="transparent"/></g>)}
+    </svg>
+  </article>;
 }
 
 export default function GraficosFinanceiroAdminPage() {
