@@ -102,6 +102,7 @@ export default function AdminLayout() {
               end={item.end}
               className={({ isActive }) => `admin-nav-link${isActive ? ' active' : ''}`}
               title={collapsed ? item.label : undefined}
+              onClick={() => { setCollapsed(true); setMobileOpen(false); }}
             >
               <span className="admin-nav-link__icon"><Icon name={item.icon} /></span>
               <span className="admin-nav-link__label">{item.label}</span>

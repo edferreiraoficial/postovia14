@@ -36,6 +36,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 const inicioMes = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth(), 1)); };
 const fimMes = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth() + 1, 0)); };
 const diaSeguinte = (valor: string) => { const [a, m, d] = String(valor || '').slice(0, 10).split('-').map(Number); if (!a || !m || !d) return valor; return iso(new Date(a, m - 1, d + 1)); };
+const diaAnterior = (valor: string) => { const [a, m, d] = String(valor || '').slice(0, 10).split('-').map(Number); if (!a || !m || !d) return valor; return iso(new Date(a, m - 1, d - 1)); };
 const dataBr = (v: string) => { const [a, m, d] = String(v || '').slice(0, 10).split('-'); return a && m && d ? `${d}/${m}/${a}` : v; };
 const numero2 = (v: any) => { const n = Number(v || 0); return n === 0 ? '' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 const numero6 = (v: any) => { const n = Number(v || 0); return n === 0 ? '' : n.toLocaleString('pt-BR', { minimumFractionDigits: 6, maximumFractionDigits: 6 }); };
@@ -333,6 +334,28 @@ export default function FinanceiroGeralAdminPage() {
     setTimeout(() => carregar(), 0);
   };
 
+  const travarPeriodoPelaDataInicial = async () => {
+    if (!dataInicial) { setMensagem('Informe a data inicial antes de travar o período.'); return; }
+    const novaTrava = diaAnterior(dataInicial);
+    let senhaAdministrativa = '';
+    if (dataTravaConsolidacao && novaTrava < dataTravaConsolidacao) {
+      senhaAdministrativa = window.prompt(`A nova trava ${dataBr(novaTrava)} é anterior à trava atual ${dataBr(dataTravaConsolidacao)}. Informe a senha administrativa para autorizar:`) || '';
+      if (!senhaAdministrativa) return;
+    }
+    if (!window.confirm(`Deseja travar o Financeiro Geral até ${dataBr(novaTrava)}?`)) return;
+    setMensagem('');
+    try {
+      const resposta = await fetch(`${API_BASE}/configuracoes-financeiro`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresaId: 1, dataTravaConsolidacao: novaTrava, senhaAdministrativa }),
+      });
+      const dados = await resposta.json().catch(() => ({}));
+      if (!resposta.ok) throw new Error(dados.erro || 'Não foi possível alterar a trava do período.');
+      setDataTravaConsolidacao(novaTrava);
+      setMensagem(dados.mensagem || `Período travado até ${dataBr(novaTrava)}.`);
+    } catch (e: any) { setMensagem(e.message || 'Erro ao travar o período.'); }
+  };
+
   const formatarCelula = (linha: Linha, campo: string) => formatarNumeroCampo(campo, linha[campo]);
 
   const abrirNovoLancamento = () => {
@@ -591,6 +614,7 @@ export default function FinanceiroGeralAdminPage() {
           <label className="fg-valor">Valor exato<input type="number" step="0.01" value={valorExato} onChange={(e) => setValorExato(e.target.value)} placeholder="0,00" /></label>
           <label className="fg-valor">Valor mínimo<input type="number" step="0.01" value={valorMinimo} onChange={(e) => setValorMinimo(e.target.value)} placeholder="0,00" /></label>
           <label className="fg-valor">Valor máximo<input type="number" step="0.01" value={valorMaximo} onChange={(e) => setValorMaximo(e.target.value)} placeholder="0,00" /></label>
+          <div className="fg-travar-periodo"><span>Travar período</span><button type="button" className="fg-acao fg-travar-periodo-botao" onClick={travarPeriodoPelaDataInicial} title="Trava o período até um dia antes da data inicial">Travar</button></div>
           <button type="button" className="fg-acao fg-limpar-filtros" onClick={limparFiltrosBusca}>Limpar</button>
           <button className="admin-primary-button fg-acao fg-buscar" onClick={aplicarFiltros}>Buscar</button>
         </div>

@@ -1320,6 +1320,11 @@ app.put('/api/configuracoes-financeiro', async (req, res) => {
     const data = String(req.body?.dataTravaConsolidacao || '').trim()
     if (data && !/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new Error('Informe uma data válida.')
     await garantirConfiguracaoFinanceiro()
+    const travaAtual = await obterDataTravaConsolidacao(empresaId)
+    if (data && travaAtual && data < travaAtual) {
+      const senhaValida = await validarSenhaAdministrativa(req.body?.senhaAdministrativa)
+      if (!senhaValida) return res.status(403).json({ ok: false, erro: 'Senha administrativa inválida para retroceder a data de trava.' })
+    }
     await db.query(
       `INSERT INTO configuracoes_financeiro (empresa_id, data_trava_consolidacao, atualizado_por)
        VALUES (?, NULLIF(?, ''), ?)
@@ -2403,42 +2408,10 @@ app.get('/api/extratos-conta', async (req, res) => {
         e.id ASC
     `, [dataInicial, dataFinal, contaBancariaId])
 
-    // Assim como no Financeiro Geral, exibe antes do período filtrado o último
-    // fechamento da conta. A linha é apenas apresentada como "Saldo anterior";
-    // nenhum registro novo é criado ou alterado no banco de dados.
-    const [saldosAnteriores] = await db.query(`
-      SELECT
-        e.id,
-        DATE_FORMAT(e.data_lancamento, '%d/%m/%Y') AS data_lancamento,
-        DATE_FORMAT(e.data_lancamento, '%Y-%m-%d') AS data_iso,
-        'Saldo anterior' AS descricao_original,
-        NULL AS valor,
-        e.saldo,
-        'SALDO' AS natureza,
-        e.origem,
-        e.conta_bancaria_id,
-        cb.nome_conta,
-        cb.instituicao AS banco
-      FROM extratos_bancarios e
-      INNER JOIN contas_bancarias cb ON cb.id = e.conta_bancaria_id
-      WHERE e.data_lancamento < ?
-        AND e.conta_bancaria_id = ?
-        AND (
-          UPPER(COALESCE(e.natureza, '')) = 'SALDO'
-          OR UPPER(COALESCE(e.descricao_original, '')) LIKE 'SALDO DO DIA%'
-        )
-      ORDER BY e.data_lancamento DESC, e.id DESC
-      LIMIT 1
-    `, [dataInicial, contaBancariaId])
-
-    const dadosNormalizados = dadosPeriodo.map((item) => ({
+    const dados = dadosPeriodo.map((item) => ({
       ...item,
       saldo: Number(item.saldo || 0) === 0 ? null : item.saldo,
     }))
-    const saldoAnterior = saldosAnteriores[0]
-      ? { ...saldosAnteriores[0], saldo: Number(saldosAnteriores[0].saldo || 0) === 0 ? null : saldosAnteriores[0].saldo }
-      : null
-    const dados = saldoAnterior ? [saldoAnterior, ...dadosNormalizados] : dadosNormalizados
 
     res.json({ ok: true, dados })
   } catch (error) {
@@ -2452,171 +2425,6 @@ function numeroValido(valor, campo, { minimo = null } = {}) {
   if (!Number.isFinite(numero)) throw new Error(`${campo} inválido.`)
   if (minimo !== null && numero < minimo) throw new Error(`${campo} não pode ser menor que ${minimo}.`)
   return numero
-}
-
-function normalizarNomeContaSaldo(valor) {
-  return String(valor || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, ' ')
-    .trim()
-}
-
-function contaComSaldoAutomatico(conta) {
-  const texto = normalizarNomeContaSaldo([
-    conta?.nome_conta,
-    conta?.instituicao,
-    conta?.origem,
-  ].filter(Boolean).join(' '))
-
-  if (!texto) return false
-  return [
-    'SPOTBANK', 'SPOT BANK', 'SPOT', 'ITAU', 'SPOT LUCILA', 'LUCILA',
-    'CAIXA', 'ERALDO', 'EMPRESTIMO', 'EMPRESTIMOS', 'FORNECEDOR', 'FORNECEDORES',
-  ].some((termo) => texto.includes(termo))
-}
-
-function ehLinhaSaldoExtrato(row) {
-  const natureza = normalizarNomeContaSaldo(row?.natureza)
-  const descricao = normalizarNomeContaSaldo(row?.descricao_normalizada || row?.descricao_original || row?.tipo_lancamento)
-  return natureza === 'SALDO' || descricao.includes('SALDO DO DIA') || descricao.includes('SALDO ANTERIOR')
-}
-
-function ehSaldoDoDiaExtrato(row) {
-  const descricao = normalizarNomeContaSaldo(row?.descricao_normalizada || row?.descricao_original || row?.tipo_lancamento)
-  return descricao.includes('SALDO DO DIA') || (normalizarNomeContaSaldo(row?.natureza) === 'SALDO' && !descricao.includes('SALDO ANTERIOR'))
-}
-
-async function obterContaExtrato(conn, empresaId, contaBancariaId, origem = '') {
-  if (Number(contaBancariaId) > 0) {
-    const [[conta]] = await conn.query(
-      `SELECT id, nome_conta, instituicao FROM contas_bancarias WHERE id = ? AND empresa_id = ? LIMIT 1`,
-      [Number(contaBancariaId), empresaId]
-    )
-    if (conta) return { ...conta, origem }
-  }
-
-  const origemLimpa = String(origem || '').trim()
-  if (!origemLimpa) return null
-  const [[conta]] = await conn.query(
-    `SELECT id, nome_conta, instituicao FROM contas_bancarias
-     WHERE empresa_id = ? AND (UPPER(nome_conta) = UPPER(?) OR UPPER(instituicao) = UPPER(?))
-     ORDER BY id LIMIT 1`,
-    [empresaId, origemLimpa, origemLimpa]
-  )
-  return conta ? { ...conta, origem: origemLimpa } : null
-}
-
-async function recalcularSaldosExtratoAPartir(conn, { empresaId, contaBancariaId, origem, dataInicial }) {
-  const conta = await obterContaExtrato(conn, empresaId, contaBancariaId, origem)
-  if (!conta || !contaComSaldoAutomatico(conta)) return { atualizado: false, linhas: 0 }
-
-  const inicio = dataIsoValida(dataInicial, 'Data inicial')
-  const [[saldoAnterior]] = await conn.query(
-    `SELECT saldo FROM extratos_bancarios
-     WHERE empresa_id = ? AND conta_bancaria_id = ? AND data_lancamento < ?
-       AND (UPPER(COALESCE(natureza, '')) = 'SALDO'
-         OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%SALDO DO DIA%')
-     ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
-    [empresaId, conta.id, inicio]
-  )
-
-  let saldoAcumulado = Number(saldoAnterior?.saldo || 0)
-  const [linhas] = await conn.query(
-    `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
-            descricao_original, descricao_normalizada, tipo_lancamento,
-            valor, saldo, natureza
-     FROM extratos_bancarios
-     WHERE empresa_id = ? AND conta_bancaria_id = ? AND data_lancamento >= ?
-     ORDER BY data_lancamento ASC,
-              CASE
-                WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%SALDO ANTERIOR%' THEN 0
-                WHEN UPPER(COALESCE(natureza, '')) = 'SALDO'
-                  OR UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE '%SALDO DO DIA%' THEN 2
-                ELSE 1
-              END ASC,
-              id ASC`,
-    [empresaId, conta.id, inicio]
-  )
-
-  let atualizadas = 0
-  let criadas = 0
-  let dataAtual = null
-  let saldosDia = []
-  let houveMovimentoNoDia = false
-
-  const fecharDia = async () => {
-    if (!dataAtual) return
-
-    const saldoFechamento = Math.round((saldoAcumulado + Number.EPSILON) * 100) / 100
-
-    if (saldosDia.length) {
-      for (const linhaSaldo of saldosDia) {
-        await conn.query(
-          `UPDATE extratos_bancarios
-           SET descricao_original = 'Saldo do dia',
-               descricao_normalizada = 'SALDO DO DIA',
-               tipo_lancamento = 'Saldo do dia',
-               saldo = ?, valor = 0, natureza = 'SALDO', atualizado_em = NOW()
-           WHERE id = ?`,
-          [saldoFechamento, linhaSaldo.id]
-        )
-        atualizadas += 1
-      }
-      return
-    }
-
-    // Só cria fechamento para datas que realmente possuem lançamentos.
-    // Datas vazias ou contendo apenas linhas de saldo não recebem nova linha.
-    if (!houveMovimentoNoDia) return
-
-    const origemSaldo = String(conta.origem || origem || conta.instituicao || conta.nome_conta || '').trim()
-    await conn.query(
-      `INSERT INTO extratos_bancarios
-       (empresa_id, conta_bancaria_id, data_lancamento,
-        descricao_original, descricao_normalizada, tipo_lancamento,
-        valor, saldo, natureza, origem)
-       VALUES (?, ?, ?, 'Saldo do dia', 'SALDO DO DIA', 'Saldo do dia', 0, ?, 'SALDO', ?)`,
-      [empresaId, conta.id, dataAtual, saldoFechamento, origemSaldo]
-    )
-    criadas += 1
-  }
-
-  for (const row of linhas) {
-    const dataLinha = String(row.data_lancamento || '').slice(0, 10)
-    if (dataAtual !== null && dataLinha !== dataAtual) {
-      await fecharDia()
-      saldosDia = []
-      houveMovimentoNoDia = false
-    }
-    dataAtual = dataLinha
-
-    const descricaoSaldo = normalizarNomeContaSaldo(row?.descricao_normalizada || row?.descricao_original || row?.tipo_lancamento)
-    if (descricaoSaldo.includes('SALDO ANTERIOR')) {
-      if (row.saldo !== null && row.saldo !== undefined && row.saldo !== '') {
-        saldoAcumulado = Number(row.saldo)
-      }
-      continue
-    }
-    if (ehSaldoDoDiaExtrato(row)) {
-      saldosDia.push(row)
-      continue
-    }
-    if (ehLinhaSaldoExtrato(row)) continue
-
-    houveMovimentoNoDia = true
-    saldoAcumulado = Math.round((saldoAcumulado + Number(row.valor || 0) + Number.EPSILON) * 100) / 100
-  }
-  await fecharDia()
-
-  return {
-    atualizado: true,
-    linhas: atualizadas + criadas,
-    atualizadas,
-    criadas,
-    contaId: conta.id,
-  }
 }
 
 async function obterEmpresaIdPadrao(conn) {
@@ -2733,12 +2541,6 @@ app.post('/api/dados-gravados/:tipo', async (req, res) => {
       const [resultado] = await conn.query(`INSERT INTO extratos_bancarios (empresa_id, conta_bancaria_id, data_lancamento, descricao_original, descricao_normalizada, tipo_lancamento, valor, saldo, natureza, origem) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [empresaId, conta.id, data, descricao, descricao, descricao, valor, saldo, natureza, origem])
       id = resultado.insertId
-      await recalcularSaldosExtratoAPartir(conn, {
-        empresaId,
-        contaBancariaId: conta.id,
-        origem,
-        dataInicial: data,
-      })
     }
 
     await conn.commit()
@@ -2762,15 +2564,6 @@ app.put('/api/dados-gravados/:tipo/:id', async (req, res) => {
     const data = dataIsoValida(req.body?.data, 'Data')
     await conn.beginTransaction()
     const empresaId = await obterEmpresaIdPadrao(conn)
-    let extratoAnterior = null
-    if (tipo === 'spot' || tipo === 'itau' || tipo === 'extrato') {
-      const [[rowAnterior]] = await conn.query(
-        `SELECT id, conta_bancaria_id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento, origem
-         FROM extratos_bancarios WHERE id = ? AND empresa_id = ? LIMIT 1`,
-        [id, empresaId]
-      )
-      extratoAnterior = rowAnterior || null
-    }
 
     if (tipo === 'compras') {
       const produtoId = await obterOuCriarProdutoEdicao(conn, req.body.produto)
@@ -2801,8 +2594,8 @@ app.put('/api/dados-gravados/:tipo/:id', async (req, res) => {
     if (tipo === 'vendas-cartao') {
       const descricao = String(req.body.descricao_original || 'Crédito Vendas Cartão').trim()
       const vendaBruta = Math.abs(numeroValido(req.body.vendas_bruta, 'Venda bruta', { minimo: 0 }))
+      const vendaLiquida = Math.abs(numeroValido(req.body.venda_liquida, 'Venda líquida', { minimo: 0 }))
       const taxa = Math.abs(numeroValido(req.body.taxa, 'Taxas', { minimo: 0 }))
-      const vendaLiquida = Math.max(0, vendaBruta - taxa)
       const [resultado] = await conn.query(`UPDATE vendas_cartao SET empresa_id=?, data_lancamento=?,
         descricao_original=?, descricao_normalizada=?, vendas_bruta=?, venda_liquida=?, taxa=?, atualizado_em=NOW() WHERE id=?`,
         [empresaId, data, descricao, descricao.toUpperCase(), vendaBruta, vendaLiquida, taxa, id])
@@ -2830,26 +2623,6 @@ app.put('/api/dados-gravados/:tipo/:id', async (req, res) => {
       }
       const [resultado] = await conn.query(sql, params)
       if (!resultado.affectedRows) throw new Error('Lançamento bancário não encontrado.')
-
-      const contaAtualId = tipo === 'extrato' ? contaBancariaId : extratoAnterior?.conta_bancaria_id
-      const origemAtual = tipo === 'spot' ? 'SPOT' : tipo === 'itau' ? 'ITAU' : extratoAnterior?.origem
-      const dataRecalculoAtual = extratoAnterior?.data_lancamento && extratoAnterior.data_lancamento < data
-        ? extratoAnterior.data_lancamento
-        : data
-      await recalcularSaldosExtratoAPartir(conn, {
-        empresaId,
-        contaBancariaId: contaAtualId,
-        origem: origemAtual,
-        dataInicial: dataRecalculoAtual,
-      })
-      if (extratoAnterior?.conta_bancaria_id && Number(extratoAnterior.conta_bancaria_id) !== Number(contaAtualId)) {
-        await recalcularSaldosExtratoAPartir(conn, {
-          empresaId,
-          contaBancariaId: extratoAnterior.conta_bancaria_id,
-          origem: extratoAnterior.origem,
-          dataInicial: extratoAnterior.data_lancamento,
-        })
-      }
     }
 
     await conn.commit()
@@ -2863,59 +2636,25 @@ app.put('/api/dados-gravados/:tipo/:id', async (req, res) => {
 })
 
 app.delete('/api/dados-gravados/:tipo/:id', async (req, res) => {
-  const conn = await db.getConnection()
   try {
     const senhaInformada = String(req.body?.senha || '').trim()
     const senhaCorreta = String(process.env.SENHA_ADMIN || process.env.SENHA_LIMPAR_COMPETENCIA || 'posto14').trim()
     if (senhaInformada !== senhaCorreta) return res.status(401).json({ ok: false, erro: 'Senha inválida. Exclusão cancelada.' })
-
     const tipo = String(req.params.tipo || '').toLowerCase()
     const id = Number(req.params.id)
     if (!Number.isInteger(id) || id <= 0) throw new Error('Registro inválido.')
-
-    await conn.beginTransaction()
-    const empresaId = await obterEmpresaIdPadrao(conn)
     let sql, params
-    let extratoAnterior = null
-
     if (tipo === 'compras') { sql = 'DELETE FROM compras WHERE id = ?'; params = [id] }
     else if (tipo === 'vendas') { sql = 'DELETE FROM lmc_movimentos WHERE id = ?'; params = [id] }
     else if (tipo === 'vendas-cartao') { sql = 'DELETE FROM vendas_cartao WHERE id = ?'; params = [id] }
-    else if (tipo === 'spot' || tipo === 'itau' || tipo === 'extrato') {
-      const [[rowAnterior]] = await conn.query(
-        `SELECT id, conta_bancaria_id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento, origem
-         FROM extratos_bancarios WHERE id = ? AND empresa_id = ? LIMIT 1`,
-        [id, empresaId]
-      )
-      extratoAnterior = rowAnterior || null
-      if (tipo === 'spot' || tipo === 'itau') {
-        sql = 'DELETE FROM extratos_bancarios WHERE id = ? AND UPPER(origem) = ?'
-        params = [id, tipo.toUpperCase()]
-      } else {
-        sql = 'DELETE FROM extratos_bancarios WHERE id = ?'
-        params = [id]
-      }
-    } else throw new Error('Tipo de registro inválido.')
-
-    const [resultado] = await conn.query(sql, params)
+    else if (tipo === 'spot' || tipo === 'itau') { sql = 'DELETE FROM extratos_bancarios WHERE id = ? AND UPPER(origem) = ?'; params = [id, tipo.toUpperCase()] }
+    else if (tipo === 'extrato') { sql = 'DELETE FROM extratos_bancarios WHERE id = ?'; params = [id] }
+    else throw new Error('Tipo de registro inválido.')
+    const [resultado] = await db.query(sql, params)
     if (!resultado.affectedRows) throw new Error('Registro não encontrado ou já excluído.')
-
-    if (extratoAnterior) {
-      await recalcularSaldosExtratoAPartir(conn, {
-        empresaId,
-        contaBancariaId: extratoAnterior.conta_bancaria_id,
-        origem: extratoAnterior.origem,
-        dataInicial: extratoAnterior.data_lancamento,
-      })
-    }
-
-    await conn.commit()
-    res.json({ ok: true, mensagem: 'Registro excluído com sucesso. Saldos seguintes atualizados.' })
+    res.json({ ok: true, mensagem: 'Registro excluído com sucesso.' })
   } catch (error) {
-    await conn.rollback().catch(() => {})
     res.status(400).json({ ok: false, erro: error.message })
-  } finally {
-    conn.release()
   }
 })
 
