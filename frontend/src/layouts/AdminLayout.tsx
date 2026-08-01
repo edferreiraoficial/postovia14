@@ -11,6 +11,7 @@ type IconName =
   | 'sheet'
   | 'pdf'
   | 'finance'
+  | 'chart'
   | 'audit'
   | 'settings'
   | 'logout'
@@ -25,6 +26,7 @@ function Icon({ name }: { name: IconName }) {
     sheet: <><path d="M6 2h8l4 4v16H6z" /><path d="M14 2v5h5" /><path d="M9 12h6M9 16h6" /></>,
     pdf: <><path d="M6 2h8l4 4v16H6z" /><path d="M14 2v5h5" /><path d="M8.5 16h1.2c1.2 0 2-.7 2-1.8s-.8-1.8-2-1.8H8.5V18M13.5 12.4V18h1.2c1.7 0 2.8-1 2.8-2.8s-1.1-2.8-2.8-2.8z" /></>,
     finance: <><path d="M4 19V9M10 19V5M16 19v-7M22 19H2" /><path d="m4 7 6-4 6 5 5-5" /></>,
+    chart: <><path d="M4 19V5M4 19h16" /><path d="m7 15 4-5 3 2 5-7" /><path d="M7 19v-2M11 19v-5M15 19v-4M19 19v-9" /></>,
     audit: <><path d="M9 4h6M9 8h6M6 2h12v20H6z" /><path d="m9 15 2 2 4-5" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
     logout: <><path d="M10 5H5v14h5" /><path d="M13 8l4 4-4 4M17 12H9" /></>,
@@ -42,6 +44,7 @@ const menuItems: Array<{ to: string; label: string; icon: IconName; permission: 
   { to: '/admin', label: 'Dashboard', icon: 'dashboard', permission: 'dashboard', end: true },
   { to: '/admin/consultas-banco', label: 'Dados Gravados', icon: 'database', permission: 'dados_gravados' },
   { to: '/admin/financeiro-geral', label: 'Financeiro Geral', icon: 'finance', permission: 'dados_gravados' },
+  { to: '/admin/graficos-financeiros', label: 'Gráficos Financeiros', icon: 'chart', permission: 'dados_gravados' },
   { to: '/admin/estoque-banco', label: 'Importar Dados', icon: 'upload', permission: 'importar_pdf' },
   { to: '/admin/importar-excel', label: 'Importar Excel', icon: 'sheet', permission: 'importar_excel' },
   { to: '/admin/pdf-excel', label: 'PDF para Excel', icon: 'pdf', permission: 'pdf_excel' },
