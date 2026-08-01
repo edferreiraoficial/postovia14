@@ -82,6 +82,7 @@ function GraficoAreaSaldo({ datas, valores }: { datas: string[]; valores: number
   const x = (i: number) => margem.esquerda + (valores.length <= 1 ? w / 2 : (i / (valores.length - 1)) * w);
   const y = (v: number) => margem.topo + ((max - v) / (max - min)) * h;
   const pontos = valores.map((v, i) => ({ x: x(i), y: y(v), valor: v }));
+  const yZero = y(0);
   const linha = pontos.length ? `M ${pontos.map((p) => `${p.x} ${p.y}`).join(' L ')}` : '';
   const ticks = [-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs]; const valorAtivo = valores[indiceAtivo] ?? 0;
   return <div className="gf-chart-shell gf-chart-shell-wide">
