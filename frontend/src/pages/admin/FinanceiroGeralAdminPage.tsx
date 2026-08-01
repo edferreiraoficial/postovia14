@@ -614,8 +614,7 @@ export default function FinanceiroGeralAdminPage() {
           <label className="fg-valor">Valor exato<input type="number" step="0.01" value={valorExato} onChange={(e) => setValorExato(e.target.value)} placeholder="0,00" /></label>
           <label className="fg-valor">Valor mínimo<input type="number" step="0.01" value={valorMinimo} onChange={(e) => setValorMinimo(e.target.value)} placeholder="0,00" /></label>
           <label className="fg-valor">Valor máximo<input type="number" step="0.01" value={valorMaximo} onChange={(e) => setValorMaximo(e.target.value)} placeholder="0,00" /></label>
-          <div className="fg-travar-periodo"><span>Travar período</span><button type="button" className="fg-acao fg-travar-periodo-botao" onClick={travarPeriodoPelaDataInicial} title="Trava o período até um dia antes da data inicial">Travar</button></div>
-          <button type="button" className="fg-acao fg-limpar-filtros" onClick={limparFiltrosBusca}>Limpar</button>
+          <div className="fg-limpar-com-trava"><button type="button" className="fg-travar-periodo-texto" onClick={travarPeriodoPelaDataInicial} title="Trava o período até um dia antes da data inicial">Travar período</button><button type="button" className="fg-acao fg-limpar-filtros" onClick={limparFiltrosBusca}>Limpar</button></div>
           <button className="admin-primary-button fg-acao fg-buscar" onClick={aplicarFiltros}>Buscar</button>
         </div>
       </div>
