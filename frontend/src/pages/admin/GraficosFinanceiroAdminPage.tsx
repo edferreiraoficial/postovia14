@@ -18,7 +18,7 @@ const PRODUTOS = [
 type Linha = Record<string, any>;
 type Serie = { nome: string; valores: number[]; cor: string };
 type AbaPrincipal = 'saldo' | 'produtos';
-type AbaProduto = 'quantidade' | 'resultado';
+type AbaProduto = 'quantidade' | 'resultado' | 'ajusteQuantidade' | 'ajusteValores';
 
 const isoLocal = (data: Date) => `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`;
 const inicioAno = () => `${new Date().getFullYear()}-01-01`;
@@ -90,7 +90,7 @@ function caminhosLinhaSaldo(pontos: Array<{ x: number; y: number; valor: number 
   fechar(); return partes;
 }
 
-function eixosTempo(datas: string[], x: (i: number) => number, yTopo: number, yBase: number, mostrarTodosDias = false) {
+function eixosTempo(datas: string[], x: (i: number) => number, yTopo: number, yBase: number, mostrarDiaADia = false) {
   const meses: Array<{ inicio: number; fim: number; mes: number; ano: number }> = [];
   datas.forEach((data, i) => {
     const dt = new Date(`${data}T12:00:00`); const ultimo = meses[meses.length - 1];
@@ -99,12 +99,16 @@ function eixosTempo(datas: string[], x: (i: number) => number, yTopo: number, yB
   });
   return <>
     {datas.map((data, i) => Number(data.slice(8, 10)) === 1 ? <line key={`mes-${data}`} x1={x(i)} x2={x(i)} y1={yTopo} y2={yBase} stroke="#b8c0ca" strokeWidth="1.15" /> : null)}
-    {datas.map((data, i) => { const dia = Number(data.slice(8, 10)); const exibir = mostrarTodosDias || i === 0 || i === datas.length - 1 || dia === 1 || dia % 7 === 0; return exibir ? <text key={`dia-${data}`} x={x(i)} y={yBase + 20} textAnchor="middle" className="gf-axis-date">{dia}</text> : null; })}
+    {datas.map((data, i) => {
+      const dia = Number(data.slice(8, 10));
+      const exibir = mostrarDiaADia || i === 0 || i === datas.length - 1 || dia === 1 || dia % 7 === 0;
+      return exibir ? <text key={`dia-${data}`} x={x(i)} y={yBase + 20} textAnchor="middle" className="gf-axis-date" style={mostrarDiaADia ? { fontSize: 9 } : undefined}>{dia}</text> : null;
+    })}
     {meses.map((m) => <text key={`${m.ano}-${m.mes}`} x={(x(m.inicio) + x(m.fim)) / 2} y={yBase + 42} textAnchor="middle" className="gf-axis-month">{nomesMes[m.mes]}{m.ano !== new Date().getFullYear() ? `/${String(m.ano).slice(-2)}` : ''}</text>)}
   </>;
 }
 
-function GraficoAreaSaldo({ datas, valores }: { datas: string[]; valores: number[] }) {
+function GraficoAreaSaldo({ datas, valores, mostrarDiaADia }: { datas: string[]; valores: number[]; mostrarDiaADia: boolean }) {
   const [indiceAtivo, setIndiceAtivo] = useState(Math.max(0, valores.length - 1));
   useEffect(() => setIndiceAtivo(Math.max(0, valores.length - 1)), [valores.length]);
   const largura = 1320; const altura = 455; const margem = { topo: 28, direita: 22, baixo: 72, esquerda: 92 };
@@ -119,22 +123,23 @@ function GraficoAreaSaldo({ datas, valores }: { datas: string[]; valores: number
   const linhasNegativas = caminhosLinhaSaldo(pontos, yZero, false);
   return <div className="gf-chart-shell gf-chart-shell-wide">
     <div className="gf-chart-kpi"><span>{datas[indiceAtivo] ? dataBr(datas[indiceAtivo]) : 'Sem dados'}</span><strong className={valorAtivo < 0 ? 'is-negative' : 'is-positive'}>{moeda(valorAtivo)}</strong><small>Saldo total do dia</small></div>
-    <svg className="gf-chart" viewBox={`0 0 ${largura} ${altura}`} role="img" aria-label="Evolução do saldo total por dia">
+    <svg className="gf-chart" viewBox={`0 0 ${largura} ${altura}`} role="img" aria-label="Evolução do saldo total por dia" onMouseMove={(e) => { if (!valores.length) return; const r = e.currentTarget.getBoundingClientRect(); const px = ((e.clientX - r.left) / r.width) * largura; const i = Math.max(0, Math.min(valores.length - 1, Math.round(((px - margem.esquerda) / w) * Math.max(1, valores.length - 1)))); setIndiceAtivo(i); }} onMouseLeave={() => setIndiceAtivo(Math.max(0, valores.length - 1))}>
       <defs><linearGradient id="saldoPositivo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3B82F6" stopOpacity=".38"/><stop offset="1" stopColor="#3B82F6" stopOpacity=".04"/></linearGradient><linearGradient id="saldoNegativo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#EF4444" stopOpacity=".04"/><stop offset="1" stopColor="#EF4444" stopOpacity=".42"/></linearGradient></defs>
       <rect width={largura} height={altura} rx="12" fill="#fff" />
       {ticks.map((tick) => <g key={tick}><line x1={margem.esquerda} x2={largura - margem.direita} y1={y(tick)} y2={y(tick)} stroke={tick === 0 ? '#9aa6b2' : '#e8ecf1'} strokeWidth={tick === 0 ? 1.4 : 1}/><text x={margem.esquerda - 10} y={y(tick) + 4} textAnchor="end" className="gf-axis-label">{moeda(tick, 0)}</text></g>)}
-      {eixosTempo(datas, x, margem.topo, altura - margem.baixo, datas.length <= 45)}
+      {eixosTempo(datas, x, margem.topo, altura - margem.baixo, mostrarDiaADia)}
       <path d={caminhoAreaSaldo(pontos, yZero, true)} fill="url(#saldoPositivo)"/><path d={caminhoAreaSaldo(pontos, yZero, false)} fill="url(#saldoNegativo)"/>
+      {pontos[indiceAtivo] && <line x1={pontos[indiceAtivo].x} x2={pontos[indiceAtivo].x} y1={margem.topo} y2={altura - margem.baixo} stroke="#8b97a5" strokeWidth="1" strokeDasharray="4 4" opacity=".9" pointerEvents="none"/>}
       {linhasPositivas.map((d, i) => <path key={`lp-${i}`} d={d} fill="none" stroke="#1D4ED8" strokeWidth="1.55" strokeLinejoin="round" strokeLinecap="round"/>)}{linhasNegativas.map((d, i) => <path key={`ln-${i}`} d={d} fill="none" stroke="#B91C1C" strokeWidth="1.55" strokeLinejoin="round" strokeLinecap="round"/>)}
-      {pontos.map((p, i) => <g key={datas[i]} onMouseEnter={() => setIndiceAtivo(i)} onFocus={() => setIndiceAtivo(i)} tabIndex={0} className="gf-point-hit"><circle cx={p.x} cy={p.y} r={i === indiceAtivo ? 3.6 : 1.8} fill={p.valor < 0 ? '#B91C1C' : '#1D4ED8'} opacity={i === indiceAtivo ? 1 : .62}/><circle cx={p.x} cy={p.y} r="10" fill="transparent"/></g>)}
+      {pontos.map((p, i) => <g key={datas[i]} onMouseEnter={() => setIndiceAtivo(i)} tabIndex={0} className="gf-point-hit"><circle cx={p.x} cy={p.y} r={i === indiceAtivo ? 3.6 : 1.8} fill={p.valor < 0 ? '#B91C1C' : '#1D4ED8'} opacity={i === indiceAtivo ? 1 : .62}/><circle cx={p.x} cy={p.y} r="10" fill="transparent"/></g>)}
     </svg>
   </div>;
 }
 
-function GraficoAreaProduto({ datas, serie, moedaValores }: { datas: string[]; serie: Serie; moedaValores?: boolean }) {
+function GraficoAreaProduto({ datas, serie, moedaValores, mostrarDiaADia, subtitulo }: { datas: string[]; serie: Serie; moedaValores?: boolean; mostrarDiaADia: boolean; subtitulo: string }) {
   const [indiceAtivo, setIndiceAtivo] = useState(Math.max(0, serie.valores.length - 1));
   useEffect(() => setIndiceAtivo(Math.max(0, serie.valores.length - 1)), [serie.valores.length]);
-  const largura = 1240; const altura = 300; const margem = { topo: 44, direita: 22, baixo: 64, esquerda: 96 };
+  const largura = 1240; const altura = 280; const margem = { topo: 30, direita: 22, baixo: 64, esquerda: 96 };
   const w = largura - margem.esquerda - margem.direita; const h = altura - margem.topo - margem.baixo;
   const minimoSerie = Math.min(0, ...serie.valores); const maximoSerie = Math.max(0, ...serie.valores);
   const passo = moedaValores ? Math.max(500, Math.ceil(Math.max(Math.abs(minimoSerie), Math.abs(maximoSerie), 1) / 5 / 500) * 500) : 500;
@@ -146,20 +151,18 @@ function GraficoAreaProduto({ datas, serie, moedaValores }: { datas: string[]; s
   const area = pontos.length ? `${caminhoSuave(pontos)} L ${pontos[pontos.length - 1].x} ${yZero} L ${pontos[0].x} ${yZero} Z` : '';
   const ticks: number[] = []; for (let t = min; t <= max; t += passo) ticks.push(t);
   const gradienteId = `area-${serie.nome.replace(/[^a-z0-9]/gi, '')}`;
-  const periodoCurto = datas.length <= 45;
-  const valorAtivo = serie.valores[indiceAtivo] ?? 0;
+  const ativo = pontos[indiceAtivo]; const valorAtivo = serie.valores[indiceAtivo] ?? 0;
   return <article className="gf-product-chart gf-product-chart-row">
-    <div className="gf-product-chart-title">
-      <div><strong style={{ color: serie.cor }}>{serie.nome}</strong><span>{moedaValores ? 'Resultado líquido diário' : 'Quantidade vendida por dia'}</span></div>
-      <div className="gf-product-active-value" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}><span>{datas[indiceAtivo] ? dataBr(datas[indiceAtivo]) : 'Sem dados'}</span><strong style={{ color: serie.cor, fontSize: 16 }}>{moedaValores ? moeda(valorAtivo) : `${valorAtivo.toLocaleString('pt-BR')} L`}</strong></div>
-    </div>
-    <svg viewBox={`0 0 ${largura} ${altura}`} role="img" aria-label={`${serie.nome} por dia`}>
+    <div className="gf-product-chart-title" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}><strong style={{ color: serie.cor }}>{serie.nome}</strong><span style={{ textAlign: 'center' }}>{subtitulo}</span><span aria-hidden="true" /></div>
+    <div style={{ textAlign: 'center', minHeight: 22, fontSize: 12, color: '#667085', marginBottom: 2 }}>{datas[indiceAtivo] ? `${dataBr(datas[indiceAtivo])} — ${moedaValores ? moeda(valorAtivo) : `${valorAtivo.toLocaleString('pt-BR')} L`}` : ''}</div>
+    <svg viewBox={`0 0 ${largura} ${altura}`} role="img" aria-label={`${serie.nome} por dia`} onMouseMove={(e) => { if (!datas.length) return; const r = e.currentTarget.getBoundingClientRect(); const px = ((e.clientX - r.left) / r.width) * largura; const i = Math.max(0, Math.min(datas.length - 1, Math.round(((px - margem.esquerda) / w) * Math.max(1, datas.length - 1)))); setIndiceAtivo(i); }} onMouseLeave={() => setIndiceAtivo(Math.max(0, datas.length - 1))}>
       <defs><linearGradient id={gradienteId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={serie.cor} stopOpacity=".27"/><stop offset="1" stopColor={serie.cor} stopOpacity=".025"/></linearGradient></defs>
       <rect width={largura} height={altura} rx="10" fill="#fff"/>
       {ticks.map((tick) => <g key={tick}><line x1={margem.esquerda} x2={largura - margem.direita} y1={y(tick)} y2={y(tick)} stroke={tick === 0 ? '#9aa6b2' : '#edf0f4'} strokeWidth={tick === 0 ? 1.25 : 1}/><text x={margem.esquerda - 10} y={y(tick) + 4} textAnchor="end" className="gf-axis-label">{moedaValores ? moeda(tick, 0) : `${tick.toLocaleString('pt-BR')} L`}</text></g>)}
-      {eixosTempo(datas, x, margem.topo, altura - margem.baixo, periodoCurto)}
+      {eixosTempo(datas, x, margem.topo, altura - margem.baixo, mostrarDiaADia)}
       <path d={area} fill={`url(#${gradienteId})`}/><path d={caminhoSuave(pontos)} fill="none" stroke={serie.cor} strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round"/>
-      {pontos.map((p, i) => <g key={datas[i]} onMouseEnter={() => setIndiceAtivo(i)} onFocus={() => setIndiceAtivo(i)} tabIndex={0} className="gf-point-hit"><circle cx={p.x} cy={p.y} r={i === indiceAtivo ? 3.4 : 1.65} fill={serie.cor} opacity={i === indiceAtivo ? 1 : .62}/><circle cx={p.x} cy={p.y} r="10" fill="transparent"/></g>)}
+      {ativo && <line x1={ativo.x} x2={ativo.x} y1={margem.topo} y2={altura - margem.baixo} stroke="#8b97a5" strokeWidth="1" strokeDasharray="4 4" opacity=".9" pointerEvents="none"/>}
+      {pontos.map((p, i) => <g key={datas[i]} tabIndex={0} onFocus={() => setIndiceAtivo(i)}><circle cx={p.x} cy={p.y} r={i === indiceAtivo ? 3.2 : 1.65} fill={serie.cor} opacity={i === indiceAtivo ? 1 : .62}/><circle cx={p.x} cy={p.y} r="9" fill="transparent"/></g>)}
     </svg>
   </article>;
 }
@@ -184,17 +187,18 @@ export default function GraficosFinanceiroAdminPage() {
   };
   useEffect(() => { carregar(); }, []);
   const dados = useMemo(() => {
-    const porData = new Map<string, { saldo?: Linha; vendas: Linha[]; resultado?: Linha }>();
+    const porData = new Map<string, { saldo?: Linha; vendas: Linha[]; resultado?: Linha; ajuste?: Linha }>();
     for (const linha of linhas) {
       const data = String(linha.data_lancamento || '').slice(0, 10); if (!data) continue;
       const item = porData.get(data) || { vendas: [] }; const desc = descricao(linha);
       if (desc.startsWith('SALDO DO DIA')) item.saldo = linha;
       if (String(linha.tipo_lancamento || '').toUpperCase() === 'VENDA' || desc.startsWith('VENDA DE ')) item.vendas.push(linha);
       if (String(linha.tipo_lancamento || '').toUpperCase() === 'RESULTADO' || desc.includes('RESULTADO LIQUIDO DO PRODUTO')) item.resultado = linha;
+      if (desc.includes('AJUSTE DE SALDO E VALOR ESTOQUE DIARIO') || desc.includes('AJUSTE DE SALDO E VALOR ESTOQUE DIÁRIO')) item.ajuste = linha;
       porData.set(data, item);
     }
     const datasSaldo = [...porData.entries()].filter(([, v]) => v.saldo).map(([d]) => d).sort();
-    const datasProduto = [...porData.entries()].filter(([, v]) => v.vendas.length || v.resultado).map(([d]) => d).sort();
+    const datasProduto = [...porData.entries()].filter(([, v]) => v.vendas.length || v.resultado || v.ajuste).map(([d]) => d).sort();
     const saldo = datasSaldo.map((d) => numero(porData.get(d)?.saldo?.total));
     const nomesQuantidade: Record<string, string> = { GC: 'Quantidade total vendida de Gasolina C', EH: 'Quantidade total vendida de Etanol Hidratado', 'S-10': 'Quantidade total vendida de Diesel S-10', 'GC-A': 'Quantidade total vendida de Gasolina C Aditivada' };
     const nomesResultado: Record<string, string> = { GC: 'Resultado líquido de Gasolina C', EH: 'Resultado líquido de Etanol Hidratado', 'S-10': 'Resultado líquido de Diesel S-10', 'GC-A': 'Resultado líquido de Gasolina C Aditivada' };
@@ -202,8 +206,18 @@ export default function GraficosFinanceiroAdminPage() {
     const totalQuantidade: Serie = { nome: 'Quantidade total vendida de todos os produtos', cor: CORES.TOTAL, valores: datasProduto.map((_, i) => porProduto.reduce((s, serie) => s + numero(serie.valores[i]), 0)) };
     const resultadoProdutos: Serie[] = PRODUTOS.map((p) => ({ nome: nomesResultado[p.nome], cor: p.cor, valores: datasProduto.map((d) => numero(porData.get(d)?.resultado?.[`${p.key}_total`])) }));
     const resultadoTotal: Serie = { nome: 'Valor total', cor: CORES.TOTAL, valores: datasProduto.map((_, i) => resultadoProdutos.reduce((s, serie) => s + numero(serie.valores[i]), 0)) };
-    return { datasSaldo, saldo, datasProduto, quantidade: [totalQuantidade, ...porProduto], resultado: [resultadoTotal, ...resultadoProdutos] };
+    const nomesAjusteQuantidade: Record<string, string> = { GC: 'Quantidade de perda de Gasolina C', EH: 'Quantidade de perda de Etanol Hidratado', 'S-10': 'Quantidade de perda de Diesel S-10', 'GC-A': 'Quantidade de perda de Gasolina C Aditivada' };
+    const nomesAjusteValores: Record<string, string> = { GC: 'Valor de perda de Gasolina C', EH: 'Valor de perda de Etanol Hidratado', 'S-10': 'Valor de perda de Diesel S-10', 'GC-A': 'Valor de perda de Gasolina C Aditivada' };
+    const ajusteQuantidadeProdutos: Serie[] = PRODUTOS.map((p) => ({ nome: nomesAjusteQuantidade[p.nome], cor: p.cor, valores: datasProduto.map((d) => Math.abs(numero(porData.get(d)?.ajuste?.[`${p.key}_quant`]))) }));
+    const ajusteQuantidadeTotal: Serie = { nome: 'Quantidade de perda de todos os produtos', cor: CORES.TOTAL, valores: datasProduto.map((_, i) => ajusteQuantidadeProdutos.reduce((s, serie) => s + numero(serie.valores[i]), 0)) };
+    const ajusteValoresProdutos: Serie[] = PRODUTOS.map((p) => ({ nome: nomesAjusteValores[p.nome], cor: p.cor, valores: datasProduto.map((d) => numero(porData.get(d)?.ajuste?.[`${p.key}_total`])) }));
+    const ajusteValoresTotal: Serie = { nome: 'Valor de perda de todos os produtos', cor: CORES.TOTAL, valores: datasProduto.map((_, i) => ajusteValoresProdutos.reduce((s, serie) => s + numero(serie.valores[i]), 0)) };
+
+    return { datasSaldo, saldo, datasProduto, quantidade: [totalQuantidade, ...porProduto], resultado: [resultadoTotal, ...resultadoProdutos], ajusteQuantidade: [ajusteQuantidadeTotal, ...ajusteQuantidadeProdutos], ajusteValores: [ajusteValoresTotal, ...ajusteValoresProdutos] };
   }, [linhas]);
+
+  const diasSelecionados = Math.floor((new Date(`${dataFinal}T12:00:00`).getTime() - new Date(`${dataInicial}T12:00:00`).getTime()) / 86400000) + 1;
+  const mostrarDiaADia = diasSelecionados > 0 && diasSelecionados <= 91;
 
   return <section className="gf-page gf-page-expanded gf-page-no-frame">
     {erro && <div className="gf-alert">{erro}</div>}
@@ -214,10 +228,10 @@ export default function GraficosFinanceiroAdminPage() {
     </div>
     {carregando ? <div className="gf-loading"><span/>Processando dados do Financeiro Geral…</div> : aba === 'saldo' ? <>
       <div className="gf-panel-title gf-panel-title-compact"><h2>Evolução Financeira</h2><strong>{dados.datasSaldo.length} dias</strong></div>
-      {dados.datasSaldo.length ? <GraficoAreaSaldo datas={dados.datasSaldo} valores={dados.saldo}/> : <div className="gf-empty">Nenhum “Saldo do dia” encontrado no período.</div>}
+      {dados.datasSaldo.length ? <GraficoAreaSaldo datas={dados.datasSaldo} valores={dados.saldo} mostrarDiaADia={mostrarDiaADia}/> : <div className="gf-empty">Nenhum “Saldo do dia” encontrado no período.</div>}
     </> : <>
-      <div className="gf-products-heading"><h2>Vendas Diárias e Resultado Líquido Total e por Produto</h2><div className="gf-subtabs"><button className={abaProduto === 'quantidade' ? 'active' : ''} onClick={() => setAbaProduto('quantidade')}>Quantidade vendida</button><button className={abaProduto === 'resultado' ? 'active' : ''} onClick={() => setAbaProduto('resultado')}>Resultado líquido</button></div><strong>{dados.datasProduto.length} dias</strong></div>
-      {!dados.datasProduto.length ? <div className="gf-empty">Nenhuma venda ou resultado encontrado no período.</div> : <div className="gf-product-grid gf-product-grid-single">{(abaProduto === 'quantidade' ? dados.quantidade : dados.resultado).map((serie) => <GraficoAreaProduto key={serie.nome} datas={dados.datasProduto} serie={serie} moedaValores={abaProduto === 'resultado'}/>)}</div>}
+      <div className="gf-products-heading"><h2>Vendas Diárias e Resultado Líquido Total e por Produto</h2><div className="gf-subtabs"><button className={abaProduto === 'quantidade' ? 'active' : ''} onClick={() => setAbaProduto('quantidade')}>Quantidade vendida</button><button className={abaProduto === 'resultado' ? 'active' : ''} onClick={() => setAbaProduto('resultado')}>Resultado líquido</button><button className={abaProduto === 'ajusteQuantidade' ? 'active' : ''} onClick={() => setAbaProduto('ajusteQuantidade')}>Quantidade ajuste no estoque</button><button className={abaProduto === 'ajusteValores' ? 'active' : ''} onClick={() => setAbaProduto('ajusteValores')}>Valores ajustes do estoque</button></div><strong>{dados.datasProduto.length} dias</strong></div>
+      {!dados.datasProduto.length ? <div className="gf-empty">Nenhuma venda, resultado ou ajuste de estoque encontrado no período.</div> : <div className="gf-product-grid gf-product-grid-single">{(abaProduto === 'quantidade' ? dados.quantidade : abaProduto === 'resultado' ? dados.resultado : abaProduto === 'ajusteQuantidade' ? dados.ajusteQuantidade : dados.ajusteValores).map((serie) => <GraficoAreaProduto key={serie.nome} datas={dados.datasProduto} serie={serie} moedaValores={abaProduto === 'resultado' || abaProduto === 'ajusteValores'} mostrarDiaADia={mostrarDiaADia} subtitulo={abaProduto === 'quantidade' ? 'Quantidade vendida por dia' : abaProduto === 'resultado' ? 'Resultado líquido diário' : abaProduto === 'ajusteQuantidade' ? 'Quantidade ajustada no estoque por dia' : 'Valor ajustado no estoque por dia'}/>)}</div>}
     </>}
   </section>;
 }
