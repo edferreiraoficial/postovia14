@@ -4089,3 +4089,14 @@ body,
   .fg-detalhe-linha span { font-size: 13px; }
   .fg-detalhe-linha strong { font-size: 13px; }
 }
+
+/* Financeiro Geral — detalhe do Saldo do dia: visual compacto, sem divisórias */
+.fg-detalhe-dia-lista { gap: 0; }
+.fg-detalhe-linha { padding: 3px 4px; border-bottom: 0 !important; }
+.fg-detalhe-subtitulo { margin-top: 5px; padding: 4px 4px 3px; border-bottom: 0 !important; }
+.fg-detalhe-despesa { padding-left: 10px; }
+.fg-detalhe-total { margin-top: 5px; padding: 6px 4px 3px; border-top: 0 !important; }
+.fg-detalhe-linha strong,
+.fg-detalhe-total strong { color: #111827 !important; }
+.fg-detalhe-linha strong.fg-negativo,
+.fg-detalhe-total strong.fg-negativo { color: #dc2626 !important; }

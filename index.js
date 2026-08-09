@@ -1834,6 +1834,17 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
       [empresaId, data]
     )
 
+    // O total exibido no frame deve ser exatamente o mesmo da linha "Saldo do dia"
+    // clicada no Financeiro Geral. A composição abaixo serve para explicar o dia,
+    // mas não substitui o valor oficial já consolidado na linha de saldo.
+    const [[saldoDoDia]] = await db.query(
+      `SELECT total FROM financeiro_geral
+        WHERE empresa_id = ? AND data_lancamento = ? AND status = 'ATIVO'
+          AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO DO DIA%'
+        ORDER BY id DESC LIMIT 1`,
+      [empresaId, data]
+    )
+
     const [linhas] = await db.query(
       `SELECT id, descricao_original, descricao_normalizada, tipo_lancamento, origem,
               conta01, conta02, conta03, conta04, conta05, conta06, conta07, conta08, conta09, conta10,
@@ -1856,18 +1867,62 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     const taxasCartao = linhas.filter((r) => r.tipo_lancamento === 'TAXA_CARTAO' || desc(r).includes('DESCONTO TAXAS CARTAO')).reduce((a, r) => a + n(r.conta12), 0)
     const tarifaPix = linhas.filter((r) => desc(r).includes('TARIFA PIX RECEBIDO MAQUININHA') || desc(r).includes('TARIFA PIX RECEBIDO MAQUINHA') || desc(r).includes('TARIFA PIX RECEBIMENTO')).reduce((a, r) => a + somaContas(r), 0)
 
+    const contas = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
+    const centavosAbs = (v) => Math.round(Math.abs(n(v)) * 100)
+    const valoresConta = (r) => contas.map((c) => n(r[c])).filter((v) => Math.abs(v) >= 0.005)
+    const temTransferenciaNaMesmaLinha = (r) => {
+      const vals = valoresConta(r)
+      const positivos = vals.filter((v) => v > 0).reduce((a, v) => a + v, 0)
+      const negativos = vals.filter((v) => v < 0).reduce((a, v) => a + Math.abs(v), 0)
+      return positivos >= 0.005 && negativos >= 0.005 && Math.abs(positivos - negativos) <= 0.01
+    }
+
+    // Regra solicitada para a coluna Total: um valor negativo que possua uma
+    // contrapartida positiva de mesmo valor no mesmo dia representa transferência
+    // e não deve aparecer na relação de despesas. A comparação é feita em centavos
+    // e por quantidade de ocorrências, evitando que um único positivo elimine várias
+    // despesas negativas iguais.
+    const positivosDisponiveis = new Map()
+    for (const r of linhas) {
+      const valor = n(r.total)
+      if (valor <= 0.004) continue
+      const chave = centavosAbs(valor)
+      positivosDisponiveis.set(chave, (positivosDisponiveis.get(chave) || 0) + 1)
+    }
+    const idsNegativosComContrapartida = new Set()
+    for (const r of linhas) {
+      const valor = n(r.total)
+      if (valor >= -0.004) continue
+      const chave = centavosAbs(valor)
+      const disponiveis = positivosDisponiveis.get(chave) || 0
+      if (disponiveis > 0) {
+        idsNegativosComContrapartida.add(r.id)
+        positivosDisponiveis.set(chave, disponiveis - 1)
+      }
+    }
+    const ehMovimentoEntreContas = (r) => temTransferenciaNaMesmaLinha(r) || idsNegativosComContrapartida.has(r.id)
+
     const despesas = linhas.filter((r) => {
       const d = desc(r)
       if (n(r.total) >= -0.004) return false
       if (d.startsWith('SALDO')) return false
       if (r.tipo_lancamento === 'RESULTADO' || r.tipo_lancamento === 'AJUSTE' || r.tipo_lancamento === 'COMPRA' || r.tipo_lancamento === 'VENDA' || r.tipo_lancamento === 'SEPARACAO_VENDAS' || r.tipo_lancamento === 'TAXA_CARTAO') return false
       if (d.includes('RESULTADO LIQUIDO') || d.includes('AJUSTE DE SALDO E VALOR ESTOQUE') || d.includes('DESCONTO TAXAS CARTAO') || d.includes('TARIFA PIX RECEBIDO MAQUININHA') || d.includes('TARIFA PIX RECEBIDO MAQUINHA') || d.includes('TARIFA PIX RECEBIMENTO')) return false
+      // Transferências entre contas não representam despesa real do dia. Isso inclui:
+      // 1) lançamentos que movimentam o mesmo valor entre duas colunas na própria linha;
+      // 2) pares de lançamentos do mesmo dia com o mesmo valor absoluto, um negativo e outro positivo.
+      // Compras de produtos continuam excluídas acima pelo tipo COMPRA.
+      if (ehMovimentoEntreContas(r)) return false
       return true
     }).map((r) => ({ id: r.id, descricao: r.descricao_original || r.descricao_normalizada || 'Despesa', valor: n(r.total), origem: r.origem || '' }))
 
     const saldoAnteriorTotal = n(saldoAnterior?.total)
-    const totalCalculado = saldoAnteriorTotal + resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix + despesas.reduce((a, r) => a + n(r.valor), 0)
-    res.json({ ok: true, data, saldoAnterior: saldoAnteriorTotal, resultadoLiquido, ajusteEstoque, taxasCartao, tarifaPix, despesas, totalCalculado })
+    const totalComposicao = saldoAnteriorTotal + resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix + despesas.reduce((a, r) => a + n(r.valor), 0)
+    const saldoDoDiaTotal = saldoDoDia ? n(saldoDoDia.total) : totalComposicao
+    // totalCalculado é mantido por compatibilidade com o frontend, porém agora
+    // corresponde ao Total da linha Saldo do dia clicada.
+    const totalCalculado = saldoDoDiaTotal
+    res.json({ ok: true, data, saldoAnterior: saldoAnteriorTotal, resultadoLiquido, ajusteEstoque, taxasCartao, tarifaPix, despesas, totalCalculado, totalComposicao, saldoDoDia: saldoDoDiaTotal })
   } catch (error) {
     res.status(400).json({ ok: false, erro: error.message || 'Erro ao montar os dados do dia.' })
   }
