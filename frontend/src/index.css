@@ -4068,3 +4068,24 @@ body,
 .fg-travar-periodo-texto{padding:0;border:0;background:transparent;color:#334e68;font-size:11px;font-weight:800;text-align:center;cursor:pointer;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
 .fg-travar-periodo-texto:hover{color:#0f5ea8}
 @media(max-width:760px){.gf-page-no-frame{min-height:auto}.gf-product-chart-row{overflow-x:auto}.gf-product-chart-row svg{width:980px;max-width:none}.fg-limpar-com-trava{width:100%}}
+
+/* Detalhamento do Saldo do dia - Financeiro Geral */
+.fg-total-saldo-clicavel { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.fg-total-saldo-clicavel:hover { background: rgba(59, 130, 246, .09) !important; }
+.fg-modal-detalhe-dia { width: min(720px, calc(100vw - 32px)); max-height: min(82vh, 760px); overflow: auto; }
+.fg-detalhe-dia-lista { display: flex; flex-direction: column; gap: 0; padding: 4px 0 0; }
+.fg-detalhe-linha { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 11px 4px; border-bottom: 1px solid #e5e7eb; }
+.fg-detalhe-linha > span { min-width: 0; color: #1f2937; }
+.fg-detalhe-linha strong { white-space: nowrap; font-variant-numeric: tabular-nums; color: #0f172a; }
+.fg-detalhe-linha small { display: block; margin-top: 2px; color: #6b7280; font-size: 11px; }
+.fg-detalhe-subtitulo { margin-top: 12px; padding: 9px 4px 7px; font-weight: 700; color: #334155; border-bottom: 2px solid #cbd5e1; }
+.fg-detalhe-despesa { padding-left: 14px; }
+.fg-detalhe-vazio, .fg-detalhe-carregando { padding: 18px 4px; color: #64748b; }
+.fg-detalhe-total { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 10px; padding: 14px 4px 5px; border-top: 2px solid #64748b; font-weight: 800; font-size: 16px; }
+.fg-detalhe-total strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .fg-modal-detalhe-dia { width: calc(100vw - 16px); max-height: 88vh; }
+  .fg-detalhe-linha { gap: 10px; align-items: flex-start; }
+  .fg-detalhe-linha span { font-size: 13px; }
+  .fg-detalhe-linha strong { font-size: 13px; }
+}

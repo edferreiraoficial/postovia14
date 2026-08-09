@@ -75,6 +75,8 @@ export default function FinanceiroGeralAdminPage() {
   const [totalRegistros, setTotalRegistros] = useState(0);
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState('');
+  const [detalheDia, setDetalheDia] = useState<any | null>(null);
+  const [carregandoDetalheDia, setCarregandoDetalheDia] = useState(false);
   const [somenteMovimento, setSomenteMovimento] = useState(true);
   const [numeroEditando, setNumeroEditando] = useState<number | null>(null);
   const [dataInicialNumero, setDataInicialNumero] = useState('');
@@ -112,6 +114,25 @@ export default function FinanceiroGeralAdminPage() {
   }), [somenteMovimento, totais, linhas, campos]);
   const totalPaginas = Math.max(1, Math.ceil(totalRegistros / porPagina));
 
+
+  const abrirDetalheSaldoDia = async (linha: Linha) => {
+    const descricaoLinha = String(linha.descricao_normalizada || linha.descricao_original || '').toUpperCase();
+    if (!descricaoLinha.startsWith('SALDO DO DIA')) return;
+    const data = String(linha.data_lancamento || '').slice(0, 10);
+    if (!data) return;
+    setCarregandoDetalheDia(true);
+    setMensagem('');
+    try {
+      const res = await fetch(`${API_BASE}/financeiro-geral/detalhe-dia?empresaId=1&data=${encodeURIComponent(data)}`);
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(dados.erro || 'Erro ao carregar os dados do dia.');
+      setDetalheDia(dados);
+    } catch (e: any) {
+      setMensagem(e.message || 'Erro ao carregar os dados do dia.');
+    } finally {
+      setCarregandoDetalheDia(false);
+    }
+  };
 
   const parametros = (incluirPaginacao = true) => {
     const p = new URLSearchParams({ empresaId: '1', dataInicial, dataFinal });
@@ -646,10 +667,33 @@ export default function FinanceiroGeralAdminPage() {
         <td className="fg-descricao">{l.descricao_original || l.descricao_normalizada}</td>
         {podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={(e) => { e.stopPropagation(); abrirAjusteNumero(l); }}>{l.id}</td>}
         <td>{ehSaldo(l) ? '' : l.origem}</td>
-        {colunasVisiveis.map(c => <td key={c.key} className={`${Number(l[c.key] || 0) < 0 ? 'fg-negativo' : ''} ${c.key === 'total' ? 'fg-total' : ''}`.trim()}>{formatarCelula(l, c.key)}</td>)}
+        {colunasVisiveis.map(c => {
+          const ehTotalSaldoDia = c.key === 'total' && String(l.descricao_normalizada || l.descricao_original || '').toUpperCase().startsWith('SALDO DO DIA');
+          return <td key={c.key}
+            className={`${Number(l[c.key] || 0) < 0 ? 'fg-negativo' : ''} ${c.key === 'total' ? 'fg-total' : ''} ${ehTotalSaldoDia ? 'fg-total-saldo-clicavel' : ''}`.trim()}
+            title={ehTotalSaldoDia ? 'Clique para ver a composição do dia' : undefined}
+            onClick={ehTotalSaldoDia ? (e) => { e.stopPropagation(); abrirDetalheSaldoDia(l); } : undefined}>
+            {formatarCelula(l, c.key)}
+          </td>;
+        })}
       </tr>)}</tbody>
       <tfoot className="financeiro-geral-titulos-rodape"><tr><th></th><th></th>{podeNumeroLancamento && <th></th>}<th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
     </table></div>
+    {(detalheDia || carregandoDetalheDia) && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Resumo financeiro do dia">
+      <div className="fg-modal fg-modal-detalhe-dia">
+        <div className="fg-modal-header"><h2>Resumo do dia {detalheDia?.data ? dataBr(detalheDia.data) : ''}</h2><button type="button" onClick={() => setDetalheDia(null)} aria-label="Fechar">×</button></div>
+        {carregandoDetalheDia && !detalheDia ? <div className="fg-detalhe-carregando">Carregando...</div> : detalheDia && <div className="fg-detalhe-dia-lista">
+          <div className="fg-detalhe-linha"><span>Saldo total do dia anterior</span><strong className={Number(detalheDia.saldoAnterior || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.saldoAnterior || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
+          <div className="fg-detalhe-linha"><span>Resultado Líquido do Produto</span><strong className={Number(detalheDia.resultadoLiquido || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.resultadoLiquido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
+          <div className="fg-detalhe-linha"><span>Ajuste de Saldo Estoque do dia</span><strong className={Number(detalheDia.ajusteEstoque || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.ajusteEstoque || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
+          <div className="fg-detalhe-linha"><span>Despesa Taxas Cartão</span><strong className={Number(detalheDia.taxasCartao || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.taxasCartao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
+          <div className="fg-detalhe-linha"><span>Tarifa Pix Recebido Maquininha</span><strong className={Number(detalheDia.tarifaPix || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.tarifaPix || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
+          <div className="fg-detalhe-subtitulo">Despesas pagas no dia</div>
+          {(detalheDia.despesas || []).length === 0 ? <div className="fg-detalhe-vazio">Nenhuma outra despesa paga encontrada.</div> : (detalheDia.despesas || []).map((despesa: any) => <div className="fg-detalhe-linha fg-detalhe-despesa" key={despesa.id}><span>{despesa.descricao}{despesa.origem ? <small>{despesa.origem}</small> : null}</span><strong className="fg-negativo">{Number(despesa.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>)}
+          <div className="fg-detalhe-total"><span>Total</span><strong className={Number(detalheDia.totalCalculado || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.totalCalculado || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
+        </div>}
+      </div>
+    </div>}
     {numeroEditando !== null && podeNumeroLancamento && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Ajustar número do lançamento">
       <form className="fg-modal fg-modal-recriar" onSubmit={salvarAjusteNumero}>
         <div className="fg-modal-header"><h2>Ajustar Nº do Lançamento</h2><button type="button" onClick={() => setNumeroEditando(null)} aria-label="Fechar">×</button></div>
