@@ -682,16 +682,31 @@ export default function FinanceiroGeralAdminPage() {
     {(detalheDia || carregandoDetalheDia) && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Resumo financeiro do dia">
       <div className="fg-modal fg-modal-detalhe-dia">
         <div className="fg-modal-header"><h2>Resumo do dia {detalheDia?.data ? dataBr(detalheDia.data) : ''}</h2><button type="button" onClick={() => setDetalheDia(null)} aria-label="Fechar">×</button></div>
-        {carregandoDetalheDia && !detalheDia ? <div className="fg-detalhe-carregando">Carregando...</div> : detalheDia && <div className="fg-detalhe-dia-lista">
-          <div className="fg-detalhe-linha"><span>Saldo total do dia anterior</span><strong className={Number(detalheDia.saldoAnterior || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.saldoAnterior || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
-          <div className="fg-detalhe-linha"><span>Resultado Líquido do Produto</span><strong className={Number(detalheDia.resultadoLiquido || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.resultadoLiquido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
-          <div className="fg-detalhe-linha"><span>Ajuste de Saldo Estoque do dia</span><strong className={Number(detalheDia.ajusteEstoque || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.ajusteEstoque || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
-          <div className="fg-detalhe-linha"><span>Despesa Taxas Cartão</span><strong className={Number(detalheDia.taxasCartao || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.taxasCartao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
-          <div className="fg-detalhe-linha"><span>Tarifa Pix Recebido Maquininha</span><strong className={Number(detalheDia.tarifaPix || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.tarifaPix || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
-          <div className="fg-detalhe-subtitulo">Despesas pagas no dia</div>
-          {(detalheDia.despesas || []).length === 0 ? <div className="fg-detalhe-vazio">Nenhuma outra despesa paga encontrada.</div> : (detalheDia.despesas || []).map((despesa: any) => <div className="fg-detalhe-linha fg-detalhe-despesa" key={despesa.id}><span>{despesa.descricao}{despesa.origem ? <small>{despesa.origem}</small> : null}</span><strong className="fg-negativo">{Number(despesa.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>)}
-          <div className="fg-detalhe-total"><span>Total</span><strong className={Number(detalheDia.totalCalculado || 0) < 0 ? 'fg-negativo' : ''}>{Number(detalheDia.totalCalculado || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
-        </div>}
+        {carregandoDetalheDia && !detalheDia ? <div className="fg-detalhe-carregando">Carregando...</div> : detalheDia && (() => {
+          const moeda = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          const resultadoLiquidoDia = Number(detalheDia.resultadoLiquido || 0) + Number(detalheDia.ajusteEstoque || 0) + Number(detalheDia.taxasCartao || 0) + Number(detalheDia.tarifaPix || 0);
+          const totalDespesasDia = (detalheDia.despesas || []).reduce((acc: number, despesa: any) => acc + Number(despesa.valor || 0), 0);
+          const saldoFinalDia = Number(detalheDia.saldoDoDia ?? detalheDia.totalCalculado ?? 0);
+          const classeValor = (valor: any) => Number(valor || 0) < 0 ? 'fg-negativo' : '';
+          return <div className="fg-detalhe-dia-lista fg-detalhe-dia-grade">
+            <div className="fg-detalhe-grade-linha fg-detalhe-grade-saldo-anterior">
+              <span>Saldo total do dia anterior</span><span></span><strong className={classeValor(detalheDia.saldoAnterior)}>{moeda(detalheDia.saldoAnterior)}</strong>
+            </div>
+            <div className="fg-detalhe-separador" />
+            <div className="fg-detalhe-grade-linha"><span>Resultado Líquido do Produto</span><strong className={classeValor(detalheDia.resultadoLiquido)}>{moeda(detalheDia.resultadoLiquido)}</strong><span></span></div>
+            <div className="fg-detalhe-grade-linha"><span>Ajuste de Saldo Estoque do dia</span><strong className={classeValor(detalheDia.ajusteEstoque)}>{moeda(detalheDia.ajusteEstoque)}</strong><span></span></div>
+            <div className="fg-detalhe-grade-linha"><span>Despesa Taxas Cartão</span><strong className={classeValor(detalheDia.taxasCartao)}>{moeda(detalheDia.taxasCartao)}</strong><span></span></div>
+            <div className="fg-detalhe-grade-linha"><span>Tarifa Pix Recebido Maquininha</span><strong className={classeValor(detalheDia.tarifaPix)}>{moeda(detalheDia.tarifaPix)}</strong><span></span></div>
+            <div className="fg-detalhe-separador" />
+            <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Resultado Líquido do dia</span><span></span><strong className={classeValor(resultadoLiquidoDia)}>{moeda(resultadoLiquidoDia)}</strong></div>
+            <div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Lista das despesas</div>
+            <div className="fg-detalhe-separador" />
+            {(detalheDia.despesas || []).length === 0 ? <div className="fg-detalhe-vazio fg-detalhe-vazio-grade">Nenhuma outra despesa paga encontrada.</div> : (detalheDia.despesas || []).map((despesa: any) => <div className="fg-detalhe-grade-linha fg-detalhe-despesa" key={despesa.id}><span>{despesa.descricao}{despesa.origem ? <small>{despesa.origem}</small> : null}</span><strong className={classeValor(despesa.valor)}>{moeda(despesa.valor)}</strong><span></span></div>)}
+            <div className="fg-detalhe-separador" />
+            <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Total das despesas do dia</span><span></span><strong className={classeValor(totalDespesasDia)}>{moeda(totalDespesasDia)}</strong></div>
+            <div className="fg-detalhe-grade-linha fg-detalhe-grade-saldo-final"><span>Saldo Final do dia</span><span></span><strong className={classeValor(saldoFinalDia)}>{moeda(saldoFinalDia)}</strong></div>
+          </div>;
+        })()}
       </div>
     </div>}
     {numeroEditando !== null && podeNumeroLancamento && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Ajustar número do lançamento">

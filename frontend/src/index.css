@@ -4100,3 +4100,36 @@ body,
 .fg-detalhe-total strong { color: #111827 !important; }
 .fg-detalhe-linha strong.fg-negativo,
 .fg-detalhe-total strong.fg-negativo { color: #dc2626 !important; }
+
+/* Financeiro Geral — composição do saldo em três colunas */
+.fg-modal-detalhe-dia { max-width: 760px; }
+.fg-detalhe-dia-grade { display: flex; flex-direction: column; gap: 0; }
+.fg-detalhe-grade-linha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 170px;
+  align-items: center;
+  column-gap: 14px;
+  padding: 3px 4px;
+}
+.fg-detalhe-grade-linha > span:first-child { min-width: 0; color: #1f2937; }
+.fg-detalhe-grade-linha > strong {
+  justify-self: end;
+  white-space: nowrap;
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+}
+.fg-detalhe-grade-linha > strong.fg-negativo { color: #dc2626; }
+.fg-detalhe-grade-linha small { display: block; margin-top: 1px; color: #6b7280; font-size: 11px; line-height: 1.15; }
+.fg-detalhe-separador { border-top: 1px dashed #cbd5e1; margin: 4px 4px; }
+.fg-detalhe-grade-total { font-weight: 800; }
+.fg-detalhe-grade-total strong { font-size: 15px; }
+.fg-detalhe-grade-saldo-final { margin-top: 5px; padding-top: 7px; font-weight: 800; font-size: 16px; }
+.fg-detalhe-grade-saldo-final strong { font-size: 17px; }
+.fg-detalhe-subtitulo-grade { margin-top: 8px; padding: 4px 4px 2px; border: 0 !important; }
+.fg-detalhe-vazio-grade { padding: 7px 4px; }
+@media (max-width: 640px) {
+  .fg-detalhe-grade-linha { grid-template-columns: minmax(0, 1fr) 105px 120px; column-gap: 7px; padding: 3px 2px; }
+  .fg-detalhe-grade-linha > span:first-child, .fg-detalhe-grade-linha > strong { font-size: 12px; }
+  .fg-detalhe-grade-total strong { font-size: 13px; }
+  .fg-detalhe-grade-saldo-final, .fg-detalhe-grade-saldo-final strong { font-size: 14px; }
+}
