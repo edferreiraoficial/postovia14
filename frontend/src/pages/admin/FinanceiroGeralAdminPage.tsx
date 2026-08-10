@@ -77,6 +77,8 @@ export default function FinanceiroGeralAdminPage() {
   const [mensagem, setMensagem] = useState('');
   const [detalheDia, setDetalheDia] = useState<any | null>(null);
   const [carregandoDetalheDia, setCarregandoDetalheDia] = useState(false);
+  const [resumoPeriodo, setResumoPeriodo] = useState<any | null>(null);
+  const [carregandoResumoPeriodo, setCarregandoResumoPeriodo] = useState(false);
   const [somenteMovimento, setSomenteMovimento] = useState(true);
   const [numeroEditando, setNumeroEditando] = useState<number | null>(null);
   const [dataInicialNumero, setDataInicialNumero] = useState('');
@@ -132,6 +134,52 @@ export default function FinanceiroGeralAdminPage() {
     } finally {
       setCarregandoDetalheDia(false);
     }
+  };
+
+  const abrirResumoPeriodo = async () => {
+    if (!dataInicial || !dataFinal) { setMensagem('Informe a data inicial e a data final.'); return; }
+    setCarregandoResumoPeriodo(true);
+    setMensagem('');
+    try {
+      const p = new URLSearchParams({ empresaId: '1', dataInicial, dataFinal });
+      const res = await fetch(`${API_BASE}/financeiro-geral/resumo-periodo?${p.toString()}`);
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao montar o relatório do período.');
+      setResumoPeriodo(dados);
+    } catch (e: any) {
+      setMensagem(e.message || 'Erro ao montar o relatório do período.');
+    } finally {
+      setCarregandoResumoPeriodo(false);
+    }
+  };
+
+  const baixarExcelResumoPeriodo = async () => {
+    try {
+      const p = new URLSearchParams({ empresaId: '1', dataInicial, dataFinal });
+      const res = await fetch(`${API_BASE}/financeiro-geral/resumo-periodo/excel?${p.toString()}`);
+      if (!res.ok) {
+        const dados = await res.json().catch(() => ({}));
+        throw new Error(dados.erro || 'Erro ao gerar Excel do período.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resumo_financeiro_${dataInicial}_${dataFinal}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) { setMensagem(e.message || 'Erro ao gerar Excel do período.'); }
+  };
+
+  const gerarPdfResumoPeriodo = () => {
+    if (!resumoPeriodo) return;
+    const moedaPdf = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const classe = (valor: any) => Number(valor || 0) < 0 ? 'neg' : '';
+    const janela = window.open('', '_blank');
+    if (!janela) { setMensagem('Permita pop-ups para gerar o PDF.'); return; }
+    const despesas = (resumoPeriodo.despesas || []).map((d: any) => `<tr><td>${escapar(dataBr(d.data))}</td><td>${escapar(d.descricao)}</td><td class="n ${classe(d.valor)}">${escapar(moedaPdf(d.valor))}</td></tr>`).join('');
+    janela.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Relatório Financeiro do Período</title><style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111;font-size:11px}h1{text-align:center;font-size:18px;margin:0 0 4px}p.periodo{text-align:center;margin:0 0 18px;color:#555}.resumo{width:100%;border-collapse:collapse;margin-bottom:18px}.resumo td{padding:4px 2px}.resumo td:last-child{text-align:right;font-weight:600}.linha-total td{font-weight:700;border-top:1px solid #999;padding-top:7px}.despesas{width:100%;border-collapse:collapse}.despesas th{background:#eef2f6;text-align:left;padding:5px}.despesas td{padding:4px 5px}.despesas .n{text-align:right}.neg{color:#c62828}.saldo-final{font-size:13px;font-weight:700;border-top:2px solid #444}</style></head><body><h1>Relatório Financeiro do Período</h1><p class="periodo">${dataBr(resumoPeriodo.dataInicial)} a ${dataBr(resumoPeriodo.dataFinal)}</p><table class="resumo"><tr><td>Saldo total anterior ao período</td><td>${moedaPdf(resumoPeriodo.saldoAnterior)}</td></tr><tr><td>Resultado Líquido dos Produtos</td><td class="${classe(resumoPeriodo.resultadoLiquido)}">${moedaPdf(resumoPeriodo.resultadoLiquido)}</td></tr><tr><td>Ajuste de Saldo Estoque</td><td class="${classe(resumoPeriodo.ajusteEstoque)}">${moedaPdf(resumoPeriodo.ajusteEstoque)}</td></tr><tr><td>Despesa Taxas Cartão</td><td class="${classe(resumoPeriodo.taxasCartao)}">${moedaPdf(resumoPeriodo.taxasCartao)}</td></tr><tr><td>Tarifa Pix Recebido Maquininha</td><td class="${classe(resumoPeriodo.tarifaPix)}">${moedaPdf(resumoPeriodo.tarifaPix)}</td></tr><tr class="linha-total"><td>Resultado Líquido do período</td><td class="${classe(resumoPeriodo.resultadoLiquidoPeriodo)}">${moedaPdf(resumoPeriodo.resultadoLiquidoPeriodo)}</td></tr></table><h2>Despesas pagas no período</h2><table class="despesas"><thead><tr><th>Data</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead><tbody>${despesas || '<tr><td colspan="3">Nenhuma despesa encontrada.</td></tr>'}<tr class="linha-total"><td colspan="2">Total das despesas do período</td><td class="n ${classe(resumoPeriodo.totalDespesas)}">${moedaPdf(resumoPeriodo.totalDespesas)}</td></tr><tr class="saldo-final"><td colspan="2">Saldo Final do período</td><td class="n ${classe(resumoPeriodo.saldoFinal)}">${moedaPdf(resumoPeriodo.saldoFinal)}</td></tr></tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`);
+    janela.document.close();
   };
 
   const parametros = (incluirPaginacao = true) => {
@@ -620,6 +668,7 @@ export default function FinanceiroGeralAdminPage() {
       <div className="financeiro-geral-heading-texto"><h1>Financeiro Geral</h1><p>Visualize, edite e exporte os lançamentos consolidados.{dataTravaConsolidacao ? ` Alterações bloqueadas até ${dataBr(dataTravaConsolidacao)}.` : ''}</p></div>
       <div className="financeiro-geral-heading-exportacoes">
         <button className="admin-primary-button" onClick={baixarExcel}>Excel</button>
+        <button className="admin-primary-button" onClick={abrirResumoPeriodo}>Relatório do período</button>
         <button className="admin-primary-button" onClick={() => gerarPdf(false)}>PDF detalhado</button>
         <button className="admin-primary-button" onClick={() => gerarPdf(true)}>PDF resumido</button>
       </div>
@@ -679,6 +728,34 @@ export default function FinanceiroGeralAdminPage() {
       </tr>)}</tbody>
       <tfoot className="financeiro-geral-titulos-rodape"><tr><th></th><th></th>{podeNumeroLancamento && <th></th>}<th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
     </table></div>
+    {(resumoPeriodo || carregandoResumoPeriodo) && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Relatório financeiro do período">
+      <div className="fg-modal fg-modal-detalhe-dia fg-modal-resumo-periodo">
+        <div className="fg-modal-header"><h2>Relatório do período {resumoPeriodo?.dataInicial ? `${dataBr(resumoPeriodo.dataInicial)} a ${dataBr(resumoPeriodo.dataFinal)}` : ''}</h2><button type="button" onClick={() => setResumoPeriodo(null)} aria-label="Fechar">×</button></div>
+        {carregandoResumoPeriodo && !resumoPeriodo ? <div className="fg-detalhe-carregando">Carregando...</div> : resumoPeriodo && (() => {
+          const moeda = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          const classeValor = (valor: any) => Number(valor || 0) < 0 ? 'fg-negativo' : '';
+          return <>
+            <div className="fg-detalhe-dia-lista fg-detalhe-dia-grade fg-resumo-periodo-grade">
+              <div className="fg-detalhe-grade-linha fg-detalhe-grade-saldo-anterior"><span>Saldo total anterior ao período</span><span></span><strong className={classeValor(resumoPeriodo.saldoAnterior)}>{moeda(resumoPeriodo.saldoAnterior)}</strong></div>
+              <div className="fg-detalhe-separador" />
+              <div className="fg-detalhe-grade-linha"><span>Resultado Líquido dos Produtos</span><strong className={classeValor(resumoPeriodo.resultadoLiquido)}>{moeda(resumoPeriodo.resultadoLiquido)}</strong><span></span></div>
+              <div className="fg-detalhe-grade-linha"><span>Ajuste de Saldo Estoque</span><strong className={classeValor(resumoPeriodo.ajusteEstoque)}>{moeda(resumoPeriodo.ajusteEstoque)}</strong><span></span></div>
+              <div className="fg-detalhe-grade-linha"><span>Despesa Taxas Cartão</span><strong className={classeValor(resumoPeriodo.taxasCartao)}>{moeda(resumoPeriodo.taxasCartao)}</strong><span></span></div>
+              <div className="fg-detalhe-grade-linha"><span>Tarifa Pix Recebido Maquininha</span><strong className={classeValor(resumoPeriodo.tarifaPix)}>{moeda(resumoPeriodo.tarifaPix)}</strong><span></span></div>
+              <div className="fg-detalhe-separador" />
+              <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Resultado Líquido do período</span><span></span><strong className={classeValor(resumoPeriodo.resultadoLiquidoPeriodo)}>{moeda(resumoPeriodo.resultadoLiquidoPeriodo)}</strong></div>
+              <div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Despesas pagas no período</div>
+              <div className="fg-resumo-periodo-cabecalho"><span>Data</span><span>Descrição</span><span>Valor</span></div>
+              {(resumoPeriodo.despesas || []).length === 0 ? <div className="fg-detalhe-vazio fg-detalhe-vazio-grade">Nenhuma despesa paga encontrada no período.</div> : (resumoPeriodo.despesas || []).map((despesa: any) => <div className="fg-resumo-periodo-despesa" key={despesa.id}><span>{dataBr(despesa.data)}</span><span>{despesa.descricao}</span><strong className={classeValor(despesa.valor)}>{moeda(despesa.valor)}</strong></div>)}
+              <div className="fg-detalhe-separador" />
+              <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Total das despesas do período</span><span></span><strong className={classeValor(resumoPeriodo.totalDespesas)}>{moeda(resumoPeriodo.totalDespesas)}</strong></div>
+              <div className="fg-detalhe-grade-linha fg-detalhe-grade-saldo-final"><span>Saldo Final do período</span><span></span><strong className={classeValor(resumoPeriodo.saldoFinal)}>{moeda(resumoPeriodo.saldoFinal)}</strong></div>
+            </div>
+            <div className="fg-modal-actions fg-resumo-periodo-acoes"><button type="button" className="fg-modal-cancelar" onClick={() => setResumoPeriodo(null)}>Fechar</button><button type="button" className="admin-primary-button" onClick={baixarExcelResumoPeriodo}>Gerar Excel</button><button type="button" className="admin-primary-button" onClick={gerarPdfResumoPeriodo}>Gerar PDF</button></div>
+          </>;
+        })()}
+      </div>
+    </div>}
     {(detalheDia || carregandoDetalheDia) && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Resumo financeiro do dia">
       <div className="fg-modal fg-modal-detalhe-dia">
         <div className="fg-modal-header"><h2>Resumo do dia {detalheDia?.data ? dataBr(detalheDia.data) : ''}</h2><button type="button" onClick={() => setDetalheDia(null)} aria-label="Fechar">×</button></div>

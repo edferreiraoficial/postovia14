@@ -1819,6 +1819,212 @@ async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
 
 
 
+
+async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFinal) {
+  if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) throw new Error('Período inválido.')
+  if (dataInicial > dataFinal) throw new Error('A data inicial não pode ser posterior à data final.')
+
+  const [[saldoAnterior]] = await db.query(
+    `SELECT total FROM financeiro_geral
+      WHERE empresa_id = ? AND data_lancamento < ? AND status = 'ATIVO'
+        AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO DO DIA%'
+      ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
+    [empresaId, dataInicial]
+  )
+
+  const [[saldoFinal]] = await db.query(
+    `SELECT total, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento
+       FROM financeiro_geral
+      WHERE empresa_id = ? AND data_lancamento BETWEEN ? AND ? AND status = 'ATIVO'
+        AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO DO DIA%'
+      ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
+    [empresaId, dataInicial, dataFinal]
+  )
+
+  const [linhas] = await db.query(
+    `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
+            descricao_original, descricao_normalizada, tipo_lancamento, origem,
+            conta01, conta02, conta03, conta04, conta05, conta06, conta07, conta08, conta09, conta10,
+            conta11, conta12, conta13, conta14, conta15, conta16, conta17, conta18, conta19, conta20,
+            conta21, conta22, conta23, conta24, conta25, conta26, conta27, conta28, conta29, conta30,
+            prod1_total, prod2_total, prod3_total, prod4_total, total
+       FROM financeiro_geral
+      WHERE empresa_id = ? AND data_lancamento BETWEEN ? AND ? AND status = 'ATIVO'
+      ORDER BY data_lancamento ASC, id ASC`,
+    [empresaId, dataInicial, dataFinal]
+  )
+
+  const n = (v) => Number(v || 0)
+  const desc = (r) => String(r.descricao_normalizada || r.descricao_original || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
+  const somaProdutos = (r) => n(r.prod1_total) + n(r.prod2_total) + n(r.prod3_total) + n(r.prod4_total)
+  const contas = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
+  const somaContas = (r) => contas.reduce((a, c) => a + n(r[c]), 0)
+  const centavosAbs = (v) => Math.round(Math.abs(n(v)) * 100)
+  const valoresConta = (r) => contas.map((c) => n(r[c])).filter((v) => Math.abs(v) >= 0.005)
+  const temTransferenciaNaMesmaLinha = (r) => {
+    const vals = valoresConta(r)
+    const positivos = vals.filter((v) => v > 0).reduce((a, v) => a + v, 0)
+    const negativos = vals.filter((v) => v < 0).reduce((a, v) => a + Math.abs(v), 0)
+    return positivos >= 0.005 && negativos >= 0.005 && Math.abs(positivos - negativos) <= 0.01
+  }
+
+  const resultadoLiquido = linhas.filter((r) => r.tipo_lancamento === 'RESULTADO' || desc(r).includes('RESULTADO LIQUIDO')).reduce((a, r) => a + somaProdutos(r), 0)
+  const ajusteEstoque = linhas.filter((r) => r.tipo_lancamento === 'AJUSTE' || desc(r).includes('AJUSTE DE SALDO E VALOR ESTOQUE')).reduce((a, r) => a + somaProdutos(r), 0)
+  const taxasCartao = linhas.filter((r) => r.tipo_lancamento === 'TAXA_CARTAO' || desc(r).includes('DESCONTO TAXAS CARTAO')).reduce((a, r) => a + n(r.conta12), 0)
+  const tarifaPix = linhas.filter((r) => desc(r).includes('TARIFA PIX RECEBIDO MAQUININHA') || desc(r).includes('TARIFA PIX RECEBIDO MAQUINHA') || desc(r).includes('TARIFA PIX RECEBIMENTO')).reduce((a, r) => a + somaContas(r), 0)
+
+  // As transferências são identificadas dentro de cada dia. Um valor positivo
+  // pode anular apenas uma ocorrência negativa de mesmo valor absoluto naquele dia.
+  const idsNegativosComContrapartida = new Set()
+  const porData = new Map()
+  for (const r of linhas) {
+    const data = String(r.data_lancamento || '')
+    if (!porData.has(data)) porData.set(data, [])
+    porData.get(data).push(r)
+  }
+  for (const [, linhasDia] of porData) {
+    const positivosDisponiveis = new Map()
+    for (const r of linhasDia) {
+      const valor = n(r.total)
+      if (valor <= 0.004) continue
+      const chave = centavosAbs(valor)
+      positivosDisponiveis.set(chave, (positivosDisponiveis.get(chave) || 0) + 1)
+    }
+    for (const r of linhasDia) {
+      const valor = n(r.total)
+      if (valor >= -0.004) continue
+      const chave = centavosAbs(valor)
+      const disponiveis = positivosDisponiveis.get(chave) || 0
+      if (disponiveis > 0) {
+        idsNegativosComContrapartida.add(r.id)
+        positivosDisponiveis.set(chave, disponiveis - 1)
+      }
+    }
+  }
+
+  const despesas = linhas.filter((r) => {
+    const d = desc(r)
+    if (n(r.total) >= -0.004) return false
+    if (d.startsWith('SALDO')) return false
+    if (r.tipo_lancamento === 'RESULTADO' || r.tipo_lancamento === 'AJUSTE' || r.tipo_lancamento === 'COMPRA' || r.tipo_lancamento === 'VENDA' || r.tipo_lancamento === 'SEPARACAO_VENDAS' || r.tipo_lancamento === 'TAXA_CARTAO') return false
+    if (d.includes('RESULTADO LIQUIDO') || d.includes('AJUSTE DE SALDO E VALOR ESTOQUE') || d.includes('DESCONTO TAXAS CARTAO') || d.includes('TARIFA PIX RECEBIDO MAQUININHA') || d.includes('TARIFA PIX RECEBIDO MAQUINHA') || d.includes('TARIFA PIX RECEBIMENTO')) return false
+    if (temTransferenciaNaMesmaLinha(r) || idsNegativosComContrapartida.has(r.id)) return false
+    return true
+  }).map((r) => ({
+    id: r.id,
+    data: String(r.data_lancamento || '').slice(0, 10),
+    descricao: r.descricao_original || r.descricao_normalizada || 'Despesa',
+    valor: n(r.total),
+  }))
+
+  const saldoAnteriorTotal = n(saldoAnterior?.total)
+  const totalDespesas = despesas.reduce((a, r) => a + n(r.valor), 0)
+  const resultadoLiquidoPeriodo = resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix
+  const totalComposicao = saldoAnteriorTotal + resultadoLiquidoPeriodo + totalDespesas
+  const saldoFinalTotal = saldoFinal ? n(saldoFinal.total) : totalComposicao
+
+  return {
+    ok: true,
+    dataInicial,
+    dataFinal,
+    saldoAnterior: saldoAnteriorTotal,
+    resultadoLiquido,
+    ajusteEstoque,
+    taxasCartao,
+    tarifaPix,
+    resultadoLiquidoPeriodo,
+    despesas,
+    totalDespesas,
+    totalComposicao,
+    saldoFinal: saldoFinalTotal,
+    dataSaldoFinal: saldoFinal?.data_lancamento || null,
+  }
+}
+
+app.get('/api/financeiro-geral/resumo-periodo', async (req, res) => {
+  try {
+    const empresaId = Number(req.query.empresaId || 1)
+    const dataInicial = String(req.query.dataInicial || '').trim()
+    const dataFinal = String(req.query.dataFinal || '').trim()
+    const dados = await montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFinal)
+    res.json(dados)
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao montar o relatório do período.' })
+  }
+})
+
+app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
+  try {
+    const empresaId = Number(req.query.empresaId || 1)
+    const dataInicial = String(req.query.dataInicial || '').trim()
+    const dataFinal = String(req.query.dataFinal || '').trim()
+    const dados = await montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFinal)
+
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Resumo do período')
+    ws.columns = [
+      { header: 'Data', key: 'data', width: 14 },
+      { header: 'Descrição', key: 'descricao', width: 52 },
+      { header: 'Valor', key: 'valor', width: 18 },
+    ]
+    ws.mergeCells('A1:C1')
+    ws.getCell('A1').value = 'Relatório Financeiro do Período'
+    ws.getCell('A1').font = { bold: true, size: 16 }
+    ws.getCell('A1').alignment = { horizontal: 'center' }
+    ws.mergeCells('A2:C2')
+    ws.getCell('A2').value = `${dataInicial.split('-').reverse().join('/')} a ${dataFinal.split('-').reverse().join('/')}`
+    ws.getCell('A2').alignment = { horizontal: 'center' }
+
+    const moedaFmt = 'R$ #,##0.00;[Red]-R$ #,##0.00'
+    const adicionarResumo = (linha, descricao, valor) => {
+      ws.getCell(`B${linha}`).value = descricao
+      ws.getCell(`C${linha}`).value = Number(valor || 0)
+      ws.getCell(`C${linha}`).numFmt = moedaFmt
+    }
+    adicionarResumo(4, 'Saldo total anterior ao período', dados.saldoAnterior)
+    adicionarResumo(6, 'Resultado Líquido dos Produtos', dados.resultadoLiquido)
+    adicionarResumo(7, 'Ajuste de Saldo Estoque', dados.ajusteEstoque)
+    adicionarResumo(8, 'Despesa Taxas Cartão', dados.taxasCartao)
+    adicionarResumo(9, 'Tarifa Pix Recebido Maquininha', dados.tarifaPix)
+    adicionarResumo(11, 'Resultado Líquido do período', dados.resultadoLiquidoPeriodo)
+
+    ws.getCell('A13').value = 'Data'
+    ws.getCell('B13').value = 'Despesas pagas no período'
+    ws.getCell('C13').value = 'Valor'
+    for (const c of ['A13', 'B13', 'C13']) ws.getCell(c).font = { bold: true }
+    let linha = 14
+    for (const despesa of dados.despesas) {
+      ws.getCell(`A${linha}`).value = despesa.data ? despesa.data.split('-').reverse().join('/') : ''
+      ws.getCell(`B${linha}`).value = despesa.descricao
+      ws.getCell(`C${linha}`).value = Number(despesa.valor || 0)
+      ws.getCell(`C${linha}`).numFmt = moedaFmt
+      linha += 1
+    }
+    linha += 1
+    adicionarResumo(linha, 'Total das despesas do período', dados.totalDespesas)
+    ws.getCell(`B${linha}`).font = { bold: true }
+    ws.getCell(`C${linha}`).font = { bold: true }
+    linha += 2
+    adicionarResumo(linha, 'Saldo Final do período', dados.saldoFinal)
+    ws.getCell(`B${linha}`).font = { bold: true }
+    ws.getCell(`C${linha}`).font = { bold: true }
+
+    ws.eachRow((row) => {
+      row.alignment = { vertical: 'middle' }
+    })
+    ws.views = [{ showGridLines: false }]
+
+    const buffer = await wb.xlsx.writeBuffer()
+    const nome = `resumo_financeiro_${dataInicial}_${dataFinal}.xlsx`
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
+    res.send(Buffer.from(buffer))
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao gerar Excel do período.' })
+  }
+})
+
 app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
   try {
     const empresaId = Number(req.query.empresaId || 1)

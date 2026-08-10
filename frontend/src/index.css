@@ -4133,3 +4133,20 @@ body,
   .fg-detalhe-grade-total strong { font-size: 13px; }
   .fg-detalhe-grade-saldo-final, .fg-detalhe-grade-saldo-final strong { font-size: 14px; }
 }
+
+/* Relatório financeiro do período */
+.fg-modal-resumo-periodo { width: min(820px, calc(100vw - 28px)); max-height: 88vh; overflow: auto; }
+.fg-resumo-periodo-cabecalho,
+.fg-resumo-periodo-despesa { display: grid; grid-template-columns: 110px minmax(0, 1fr) 150px; gap: 10px; align-items: center; }
+.fg-resumo-periodo-cabecalho { margin-top: 2px; padding: 5px 4px; font-weight: 700; color: #44515f; background: #eef2f6; }
+.fg-resumo-periodo-cabecalho span:last-child { text-align: right; }
+.fg-resumo-periodo-despesa { padding: 3px 4px; }
+.fg-resumo-periodo-despesa > span:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
+.fg-resumo-periodo-despesa strong { text-align: right; white-space: nowrap; }
+.fg-resumo-periodo-acoes { position: sticky; bottom: 0; background: #fff; padding-top: 10px; margin-top: 8px; }
+@media (max-width: 640px) {
+  .fg-modal-resumo-periodo { width: calc(100vw - 14px); max-height: 94vh; }
+  .fg-resumo-periodo-cabecalho,
+  .fg-resumo-periodo-despesa { grid-template-columns: 82px minmax(0, 1fr) 112px; gap: 6px; font-size: 12px; }
+  .fg-resumo-periodo-acoes { display: grid; grid-template-columns: 1fr; }
+}
