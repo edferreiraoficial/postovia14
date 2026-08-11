@@ -4134,19 +4134,80 @@ body,
   .fg-detalhe-grade-saldo-final, .fg-detalhe-grade-saldo-final strong { font-size: 14px; }
 }
 
-/* Relatório financeiro do período */
-.fg-modal-resumo-periodo { width: min(820px, calc(100vw - 28px)); max-height: 88vh; overflow: auto; }
-.fg-resumo-periodo-cabecalho,
-.fg-resumo-periodo-despesa { display: grid; grid-template-columns: 110px minmax(0, 1fr) 150px; gap: 10px; align-items: center; }
-.fg-resumo-periodo-cabecalho { margin-top: 2px; padding: 5px 4px; font-weight: 700; color: #44515f; background: #eef2f6; }
-.fg-resumo-periodo-cabecalho span:last-child { text-align: right; }
-.fg-resumo-periodo-despesa { padding: 3px 4px; }
-.fg-resumo-periodo-despesa > span:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
-.fg-resumo-periodo-despesa strong { text-align: right; white-space: nowrap; }
-.fg-resumo-periodo-acoes { position: sticky; bottom: 0; background: #fff; padding-top: 10px; margin-top: 8px; }
-@media (max-width: 640px) {
-  .fg-modal-resumo-periodo { width: calc(100vw - 14px); max-height: 94vh; }
-  .fg-resumo-periodo-cabecalho,
-  .fg-resumo-periodo-despesa { grid-template-columns: 82px minmax(0, 1fr) 112px; gap: 6px; font-size: 12px; }
-  .fg-resumo-periodo-acoes { display: grid; grid-template-columns: 1fr; }
+
+/* Financeiro Geral v66 — Nº Lanc reduzido + coluna T (tipo_lancamento_id) congelada */
+.financeiro-geral-tabela col.fg-col-numero{
+  width:56px!important;
+  min-width:56px!important;
+  max-width:56px!important;
+}
+.financeiro-geral-tabela col.fg-col-tipo-id{
+  width:42px!important;
+  min-width:42px!important;
+  max-width:42px!important;
+}
+.financeiro-geral-tabela .fg-fixa-data{
+  position:sticky!important;
+  left:0!important;
+  z-index:110!important;
+  background:#fff!important;
+}
+.financeiro-geral-tabela .fg-fixa-descricao{
+  position:sticky!important;
+  left:88px!important;
+  z-index:109!important;
+  background:#fff!important;
+}
+.financeiro-geral-tabela .fg-fixa-numero{
+  position:sticky!important;
+  left:calc(88px + 48ch)!important;
+  width:56px!important;
+  min-width:56px!important;
+  max-width:56px!important;
+  z-index:108!important;
+  background:#fff!important;
+  text-align:center!important;
+}
+.financeiro-geral-tabela .fg-fixa-tipo{
+  position:sticky!important;
+  width:42px!important;
+  min-width:42px!important;
+  max-width:42px!important;
+  z-index:107!important;
+  background:#fff!important;
+  text-align:center!important;
+}
+.financeiro-geral-tabela .fg-fixa-tipo.fg-com-numero{
+  left:calc(88px + 48ch + 56px)!important;
+  box-shadow:1px 0 0 #a9b8c8!important;
+}
+.financeiro-geral-tabela .fg-fixa-tipo.fg-sem-numero{
+  left:calc(88px + 48ch)!important;
+  box-shadow:1px 0 0 #a9b8c8!important;
+}
+.financeiro-geral-tabela thead .fg-fixa-data,
+.financeiro-geral-tabela thead .fg-fixa-descricao,
+.financeiro-geral-tabela thead .fg-fixa-numero,
+.financeiro-geral-tabela thead .fg-fixa-tipo,
+.financeiro-geral-tabela tfoot .fg-fixa-data,
+.financeiro-geral-tabela tfoot .fg-fixa-descricao,
+.financeiro-geral-tabela tfoot .fg-fixa-numero,
+.financeiro-geral-tabela tfoot .fg-fixa-tipo,
+.financeiro-geral-cabecalho-flutuante .fg-fixa-data,
+.financeiro-geral-cabecalho-flutuante .fg-fixa-descricao,
+.financeiro-geral-cabecalho-flutuante .fg-fixa-numero,
+.financeiro-geral-cabecalho-flutuante .fg-fixa-tipo{
+  background:#ccd7e3!important;
+}
+.financeiro-geral-tabela .fg-linha-saldo .fg-fixa-data,
+.financeiro-geral-tabela .fg-linha-saldo .fg-fixa-descricao,
+.financeiro-geral-tabela .fg-linha-saldo .fg-fixa-numero,
+.financeiro-geral-tabela .fg-linha-saldo .fg-fixa-tipo{
+  background:#ccd7e3!important;
+}
+.financeiro-geral-cabecalho-flutuante .fg-fixa-data,
+.financeiro-geral-cabecalho-flutuante .fg-fixa-descricao,
+.financeiro-geral-cabecalho-flutuante .fg-fixa-numero,
+.financeiro-geral-cabecalho-flutuante .fg-fixa-tipo{
+  position:sticky!important;
 }
