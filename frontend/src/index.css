@@ -4241,3 +4241,52 @@ body,
 .financeiro-geral-tabela .fg-linha-saldo .fg-fixa-tipo-id{
   background:#ccd7e3!important;
 }
+
+/* Financeiro Geral v93 — correção definitiva do congelamento Nº Lanc/T */
+.financeiro-geral-tabela-wrap.fg-com-numero tbody td.fg-fixa-data,
+.financeiro-geral-tabela-wrap.fg-com-numero tbody td.fg-fixa-descricao,
+.financeiro-geral-tabela-wrap.fg-com-numero tbody td.fg-fixa-numero,
+.financeiro-geral-tabela-wrap.fg-com-numero tbody td.fg-fixa-tipo-id,
+.financeiro-geral-tabela-wrap.fg-sem-numero tbody td.fg-fixa-data,
+.financeiro-geral-tabela-wrap.fg-sem-numero tbody td.fg-fixa-descricao,
+.financeiro-geral-tabela-wrap.fg-sem-numero tbody td.fg-fixa-tipo-id {
+  position: sticky !important;
+}
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-data { left: 0 !important; z-index: 24 !important; }
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-descricao { left: 88px !important; z-index: 23 !important; }
+.financeiro-geral-tabela-wrap.fg-com-numero tbody td.fg-fixa-numero { left: calc(88px + 48ch) !important; z-index: 22 !important; }
+.financeiro-geral-tabela-wrap.fg-com-numero tbody td.fg-fixa-tipo-id { left: calc(88px + 48ch + 54px) !important; z-index: 21 !important; box-shadow: 1px 0 0 #a9b8c8 !important; }
+.financeiro-geral-tabela-wrap.fg-sem-numero tbody td.fg-fixa-tipo-id { left: calc(88px + 48ch) !important; z-index: 22 !important; box-shadow: 1px 0 0 #a9b8c8 !important; }
+
+/* Corpo congelado permanece com a mesma cor das linhas; cabeçalhos usam o cinza padrão da planilha. */
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-data,
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-descricao,
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-numero,
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-tipo-id { background: #fff !important; }
+.financeiro-geral-tabela-wrap tbody tr:hover td.fg-fixa-data,
+.financeiro-geral-tabela-wrap tbody tr:hover td.fg-fixa-descricao,
+.financeiro-geral-tabela-wrap tbody tr:hover td.fg-fixa-numero,
+.financeiro-geral-tabela-wrap tbody tr:hover td.fg-fixa-tipo-id { background: #f8fafc !important; }
+.financeiro-geral-tabela-wrap tbody tr.fg-linha-saldo td.fg-fixa-data,
+.financeiro-geral-tabela-wrap tbody tr.fg-linha-saldo td.fg-fixa-descricao,
+.financeiro-geral-tabela-wrap tbody tr.fg-linha-saldo td.fg-fixa-numero,
+.financeiro-geral-tabela-wrap tbody tr.fg-linha-saldo td.fg-fixa-tipo-id { background: #ccd7e3 !important; }
+
+.financeiro-geral-tabela-wrap thead th.fg-fixa-data,
+.financeiro-geral-tabela-wrap thead th.fg-fixa-descricao,
+.financeiro-geral-tabela-wrap thead th.fg-fixa-numero,
+.financeiro-geral-tabela-wrap thead th.fg-fixa-tipo-id,
+.financeiro-geral-cabecalho-flutuante thead th.fg-fixa-data,
+.financeiro-geral-cabecalho-flutuante thead th.fg-fixa-descricao,
+.financeiro-geral-cabecalho-flutuante thead th.fg-fixa-numero,
+.financeiro-geral-cabecalho-flutuante thead th.fg-fixa-tipo-id {
+  background: #edf2f8 !important;
+  color: #243246 !important;
+}
+.financeiro-geral-tabela-wrap tfoot th.fg-fixa-data,
+.financeiro-geral-tabela-wrap tfoot th.fg-fixa-descricao,
+.financeiro-geral-tabela-wrap tfoot th.fg-fixa-numero,
+.financeiro-geral-tabela-wrap tfoot th.fg-fixa-tipo-id {
+  background: #e6edf6 !important;
+  color: #243246 !important;
+}
