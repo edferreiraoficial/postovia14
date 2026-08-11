@@ -4290,3 +4290,23 @@ body,
   background: #e6edf6 !important;
   color: #243246 !important;
 }
+
+
+/* Financeiro Geral v94 — offsets fixos e cabeçalhos Nº Lanc/T iguais ao padrão cinza */
+.financeiro-geral-tabela col.fg-col-data{width:88px!important;min-width:88px!important;max-width:88px!important}
+.financeiro-geral-tabela col.fg-col-descricao{width:300px!important;min-width:300px!important;max-width:300px!important}
+.financeiro-geral-tabela col.fg-col-numero{width:54px!important;min-width:54px!important;max-width:54px!important}
+.financeiro-geral-tabela col.fg-col-tipo-id{width:30px!important;min-width:30px!important;max-width:30px!important}
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-data,
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-descricao,
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-numero,
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-tipo-id{position:sticky!important}
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-data{left:0!important}
+.financeiro-geral-tabela-wrap tbody td.fg-fixa-descricao{left:88px!important}
+.financeiro-geral-tabela-wrap.fg-com-numero tbody td.fg-fixa-numero{left:388px!important}
+.financeiro-geral-tabela-wrap.fg-com-numero tbody td.fg-fixa-tipo-id{left:442px!important}
+.financeiro-geral-tabela-wrap.fg-sem-numero tbody td.fg-fixa-tipo-id{left:388px!important}
+.financeiro-geral-tabela-wrap thead th.fg-fixa-numero,
+.financeiro-geral-tabela-wrap thead th.fg-fixa-tipo-id,
+.financeiro-geral-cabecalho-flutuante thead th.fg-fixa-numero,
+.financeiro-geral-cabecalho-flutuante thead th.fg-fixa-tipo-id{background:#ccd7e3!important;color:#243246!important}
