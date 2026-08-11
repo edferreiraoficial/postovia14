@@ -708,13 +708,14 @@ export default function FinanceiroGeralAdminPage() {
         </div>
       </div>
     </div>
-    <div ref={cabecalhoFlutuanteRef} className="financeiro-geral-cabecalho-flutuante" aria-hidden="true"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" />{podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup><thead><tr><th>Data</th><th>Descrição</th>{podeNumeroLancamento && <th>Nº Lanc</th>}<th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead></table></div>
-    <div ref={tabelaWrapRef} className="admin-card financeiro-geral-tabela-wrap"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" />{podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup>
-      <thead><tr><th>Data</th><th>Descrição</th>{podeNumeroLancamento && <th>Nº Lanc</th>}<th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead>
-      <tbody>{carregando ? <tr><td colSpan={3 + colunasVisiveis.length + (podeNumeroLancamento ? 1 : 0)}>Carregando...</td></tr> : linhas.map(l => <tr key={l.id} className={`${ehSaldo(l) ? 'fg-linha-saldo' : ''} ${!ehSaldo(l) ? 'fg-linha-editavel' : ''}`.trim()} onDoubleClick={() => abrirLancamentoParaEdicao(l)}>
-        <td>{dataBr(l.data_lancamento)}</td>
-        <td className="fg-descricao">{l.descricao_original || l.descricao_normalizada}</td>
-        {podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={(e) => { e.stopPropagation(); abrirAjusteNumero(l); }}>{l.id}</td>}
+    <div ref={cabecalhoFlutuanteRef} className={`financeiro-geral-cabecalho-flutuante ${podeNumeroLancamento ? 'fg-com-numero' : 'fg-sem-numero'}`} aria-hidden="true"><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" />{podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-tipo-id" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup><thead><tr><th className="fg-fixa-data">Data</th><th className="fg-fixa-descricao">Descrição</th>{podeNumeroLancamento && <th className="fg-fixa-numero">Nº Lanc</th>}<th className="fg-fixa-tipo-id">T</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead></table></div>
+    <div ref={tabelaWrapRef} className={`admin-card financeiro-geral-tabela-wrap ${podeNumeroLancamento ? 'fg-com-numero' : 'fg-sem-numero'}`}><table className="financeiro-geral-tabela"><colgroup><col className="fg-col-data" /><col className="fg-col-descricao" />{podeNumeroLancamento && <col className="fg-col-numero" />}<col className="fg-col-tipo-id" /><col className="fg-col-origem" />{colunasVisiveis.map(c => <col key={c.key} className={classeLarguraCampo(c)} />)}</colgroup>
+      <thead><tr><th className="fg-fixa-data">Data</th><th className="fg-fixa-descricao">Descrição</th>{podeNumeroLancamento && <th className="fg-fixa-numero">Nº Lanc</th>}<th className="fg-fixa-tipo-id">T</th><th>Origem</th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></thead>
+      <tbody>{carregando ? <tr><td colSpan={4 + colunasVisiveis.length + (podeNumeroLancamento ? 1 : 0)}>Carregando...</td></tr> : linhas.map(l => <tr key={l.id} className={`${ehSaldo(l) ? 'fg-linha-saldo' : ''} ${!ehSaldo(l) ? 'fg-linha-editavel' : ''}`.trim()} onDoubleClick={() => abrirLancamentoParaEdicao(l)}>
+        <td className="fg-fixa-data">{dataBr(l.data_lancamento)}</td>
+        <td className="fg-descricao fg-fixa-descricao">{l.descricao_original || l.descricao_normalizada}</td>
+        {podeNumeroLancamento && <td className="fg-numero-lancamento fg-fixa-numero" title="Duplo clique para ajustar" onDoubleClick={(e) => { e.stopPropagation(); abrirAjusteNumero(l); }}>{l.id}</td>}
+        <td className="fg-tipo-id fg-fixa-tipo-id">{l.tipo_lancamento_id ?? ''}</td>
         <td>{ehSaldo(l) ? '' : l.origem}</td>
         {colunasVisiveis.map(c => {
           const ehTotalSaldoDia = c.key === 'total' && String(l.descricao_normalizada || l.descricao_original || '').toUpperCase().startsWith('SALDO DO DIA');
@@ -726,7 +727,7 @@ export default function FinanceiroGeralAdminPage() {
           </td>;
         })}
       </tr>)}</tbody>
-      <tfoot className="financeiro-geral-titulos-rodape"><tr><th></th><th></th>{podeNumeroLancamento && <th></th>}<th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
+      <tfoot className="financeiro-geral-titulos-rodape"><tr><th className="fg-fixa-data"></th><th className="fg-fixa-descricao"></th>{podeNumeroLancamento && <th className="fg-fixa-numero"></th>}<th className="fg-fixa-tipo-id"></th><th></th>{colunasVisiveis.map(c => <th key={c.key} className={c.key === 'total' ? 'fg-total' : ''}>{c.label}</th>)}</tr></tfoot>
     </table></div>
     {(resumoPeriodo || carregandoResumoPeriodo) && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label="Relatório financeiro do período">
       <div className="fg-modal fg-modal-detalhe-dia fg-modal-resumo-periodo">

@@ -1724,7 +1724,7 @@ async function colunasFinanceiroSolicitadas(req, empresaId) {
 async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
   const filtro = filtroFinanceiroGeral(f)
   const numericas = FINANCEIRO_GERAL_COLUNAS.map(([c]) => c)
-  let sql = `SELECT id, data_lancamento, descricao_original, descricao_normalizada, tipo_lancamento,
+  let sql = `SELECT id, data_lancamento, descricao_original, descricao_normalizada, tipo_lancamento, tipo_lancamento_id,
                     CASE WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO%' THEN '' ELSE origem END AS origem,
                     ${numericas.join(', ')}
              FROM financeiro_geral WHERE ${filtro.sql}
@@ -2151,7 +2151,7 @@ app.get('/api/financeiro-geral/lancamentos', async (req, res) => {
       `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
               'Saldo anterior' AS descricao_original,
               'SALDO ANTERIOR' AS descricao_normalizada,
-              'SALDO' AS tipo_lancamento, '' AS origem,
+              'SALDO' AS tipo_lancamento, tipo_lancamento_id, '' AS origem,
               ${numericas.join(', ')}
          FROM financeiro_geral
         WHERE empresa_id = ?
