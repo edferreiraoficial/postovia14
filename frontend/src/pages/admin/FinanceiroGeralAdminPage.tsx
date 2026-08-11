@@ -307,18 +307,24 @@ export default function FinanceiroGeralAdminPage() {
           acumulado += largura;
         });
 
-        const indiceTotal = 3 + colunasVisiveis.findIndex((campo) => campo.key === 'total');
+        // Índices reais após a inclusão da coluna T:
+        // com Nº Lanc: Data(0), Descrição(1), Nº Lanc(2), T(3), Origem(4), campos...
+        // sem Nº Lanc: Data(0), Descrição(1), T(2), Origem(3), campos...
+        const indiceTipo = podeNumeroLancamento ? 3 : 2;
+        const indiceInicioCampos = podeNumeroLancamento ? 5 : 4;
+        const indiceTotal = indiceInicioCampos + colunasVisiveis.findIndex((campo) => campo.key === 'total');
         const scrollX = tabela.scrollLeft;
 
-        // O elemento table inteiro é deslocado para acompanhar o scroll. Estas
-        // compensações mantêm Data e Descrição paradas no lado esquerdo.
-        [0, 1].forEach((indice) => {
+        // O cabeçalho flutuante desloca a tabela inteira para acompanhar o scroll.
+        // Compensamos TODAS as colunas congeladas para mantê-las paradas à esquerda.
+        const indicesFixos = podeNumeroLancamento ? [0, 1, 2, indiceTipo] : [0, 1, indiceTipo];
+        indicesFixos.forEach((indice) => {
           const th = destino[indice] as HTMLTableCellElement | undefined;
           if (th) th.style.transform = `translate3d(${scrollX}px,0,0)`;
         });
 
         // Total é a última coluna fixa à direita. Não existe mais coluna Ações.
-        const total = indiceTotal >= 3 ? destino[indiceTotal] as HTMLTableCellElement | undefined : undefined;
+        const total = indiceTotal >= indiceInicioCampos ? destino[indiceTotal] as HTMLTableCellElement | undefined : undefined;
         if (total) {
           const larguraTotal = larguras[indiceTotal] || 90;
           const deltaTotal = wrapRect.width - larguraTotal - deslocamentos[indiceTotal] + scrollX;
