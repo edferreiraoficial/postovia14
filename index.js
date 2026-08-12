@@ -16,7 +16,7 @@ import { importarPdfsBanco } from './backend/importarPdfsBanco.js'
 import { importarExcelBanco } from './backend/importarExcelBanco.js'
 import { processarPlanilhas } from './backend/processar.js'
 import { gerarExcelExtratoBancario } from './backend/pdfExtratoExcel.js'
-import { migrarContasFinanceiras } from './backend/migrarContasFinanceiras.js'
+import { migrarContasFinanceiras, garantirMapeamentosContasFinanceiras } from './backend/migrarContasFinanceiras.js'
 import { consolidarFinanceiroGeral, recalcularFinanceiroGeralAPartirDe } from './backend/consolidarFinanceiroGeral.js'
 
 dotenv.config()
@@ -1587,14 +1587,22 @@ app.get('/api/financeiro-geral/resumo', async (req, res) => {
 })
 
 
+const FINANCEIRO_GERAL_CONTAS_ORDEM = [
+  'conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13',
+  'conta04', 'conta05', 'conta06', 'conta07', 'conta08', 'conta09', 'conta10',
+  'conta14', 'conta15', 'conta16', 'conta17', 'conta18', 'conta19', 'conta20',
+  'conta21', 'conta22', 'conta23', 'conta24', 'conta25', 'conta26', 'conta27', 'conta28', 'conta29', 'conta30',
+]
+const FINANCEIRO_GERAL_LABELS_CONTAS = {
+  conta01: 'SPOT', conta02: 'Itaú', conta03: 'SPOT Lucila', conta11: 'Caixa', conta12: 'Cartão', conta13: 'Vendas',
+  conta21: 'Investidor Eraldo', conta23: 'Empréstimos', conta24: 'Fornecedores',
+}
 const FINANCEIRO_GERAL_COLUNAS = [
-  ['conta01', 'SPOT'], ['conta02', 'Itaú'], ['conta03', 'SPOT Lucila'],
-  ['conta11', 'Caixa'], ['conta12', 'Cartão'], ['conta13', 'Vendas'],
+  ...FINANCEIRO_GERAL_CONTAS_ORDEM.map((campo) => [campo, FINANCEIRO_GERAL_LABELS_CONTAS[campo] || campo]),
   ['prod1_quant', 'GC Quant'], ['prod1_valor', 'GC Valor'], ['prod1_total', 'GC Total'],
   ['prod2_quant', 'EH Quant'], ['prod2_valor', 'EH Valor'], ['prod2_total', 'EH Total'],
   ['prod3_quant', 'S10 Quant'], ['prod3_valor', 'S10 Valor'], ['prod3_total', 'S10 Total'],
   ['prod4_quant', 'GC-A Quant'], ['prod4_valor', 'GC-A Valor'], ['prod4_total', 'GC-A Total'],
-  ['conta21', 'Investidor Eraldo'], ['conta23', 'Empréstimos'], ['conta24', 'Fornecedores'],
   ['total', 'Total'],
 ]
 const FINANCEIRO_GERAL_CHAVES = new Set(FINANCEIRO_GERAL_COLUNAS.map(([chave]) => chave))
@@ -1616,6 +1624,12 @@ function normalizarNomeFinanceiro(valor) {
 }
 
 async function colunasFinanceiroGeralAtivas(empresaId) {
+  const conn = await db.getConnection()
+  try {
+    await garantirMapeamentosContasFinanceiras(conn, empresaId)
+  } finally {
+    conn.release()
+  }
   const nomesPorCampo = new Map()
   try {
     const [mapeamentos] = await db.query(
@@ -3351,8 +3365,63 @@ app.post('/api/empresas', podeGerenciarCadastros, async (req, res) => {
 })
 app.put('/api/empresas/:id', podeGerenciarCadastros, async (req,res)=>{try{const id=Number(req.params.id),nome=String(req.body?.nome||'').trim(),cnpj=String(req.body?.cnpj||'').trim()||null,ativo=Number(req.body?.ativo!==false);if(!id||!nome)throw new Error('Dados da empresa incompletos.');await db.query('UPDATE empresas SET nome=?, cnpj=?, ativo=?, atualizado_em=NOW() WHERE id=?',[nome,cnpj,ativo,id]);res.json({ok:true})}catch(error){res.status(400).json({ok:false,erro:error.message})}})
 
-app.post('/api/contas-financeiras', podeGerenciarCadastros, async (req,res)=>{try{const empresaId=Number(req.body?.empresa_id),nome=String(req.body?.nome_conta||'').trim(),instituicao=String(req.body?.instituicao||'').trim()||null,tipo=String(req.body?.tipo||'BANCARIA').toUpperCase(),agencia=String(req.body?.agencia||'').trim()||null,numero=String(req.body?.numero_conta||'').trim()||null,obs=String(req.body?.observacoes||'').trim()||null,ativo=Number(req.body?.ativo!==false);if(!empresaId||!nome)throw new Error('Informe empresa e nome da conta.');const [r]=await db.query('INSERT INTO contas_bancarias (empresa_id,instituicao,tipo,nome_conta,agencia,numero_conta,observacoes,ativo) VALUES (?,?,?,?,?,?,?,?)',[empresaId,instituicao,tipo,nome,agencia,numero,obs,ativo]);res.status(201).json({ok:true,id:r.insertId})}catch(error){res.status(error?.code==='ER_DUP_ENTRY'?409:400).json({ok:false,erro:error.message})}})
-app.put('/api/contas-financeiras/:id', podeGerenciarCadastros, async (req,res)=>{try{const id=Number(req.params.id),empresaId=Number(req.body?.empresa_id),nome=String(req.body?.nome_conta||'').trim(),instituicao=String(req.body?.instituicao||'').trim()||null,tipo=String(req.body?.tipo||'BANCARIA').toUpperCase(),agencia=String(req.body?.agencia||'').trim()||null,numero=String(req.body?.numero_conta||'').trim()||null,obs=String(req.body?.observacoes||'').trim()||null,ativo=Number(req.body?.ativo!==false);if(!id||!empresaId||!nome)throw new Error('Dados da conta incompletos.');await db.query('UPDATE contas_bancarias SET empresa_id=?,instituicao=?,tipo=?,nome_conta=?,agencia=?,numero_conta=?,observacoes=?,ativo=?,atualizado_em=NOW() WHERE id=?',[empresaId,instituicao,tipo,nome,agencia,numero,obs,ativo,id]);res.json({ok:true})}catch(error){res.status(400).json({ok:false,erro:error.message})}})
+app.post('/api/contas-financeiras', podeGerenciarCadastros, async (req, res) => {
+  const conn = await db.getConnection()
+  try {
+    const empresaId = Number(req.body?.empresa_id)
+    const nome = String(req.body?.nome_conta || '').trim()
+    const instituicao = String(req.body?.instituicao || '').trim() || null
+    const tipo = String(req.body?.tipo || 'BANCARIA').toUpperCase()
+    const agencia = String(req.body?.agencia || '').trim() || null
+    const numero = String(req.body?.numero_conta || '').trim() || null
+    const obs = String(req.body?.observacoes || '').trim() || null
+    const ativo = Number(req.body?.ativo !== false)
+    if (!empresaId || !nome) throw new Error('Informe empresa e nome da conta.')
+
+    await conn.beginTransaction()
+    const [r] = await conn.query(
+      'INSERT INTO contas_bancarias (empresa_id,instituicao,tipo,nome_conta,agencia,numero_conta,observacoes,ativo) VALUES (?,?,?,?,?,?,?,?)',
+      [empresaId, instituicao, tipo, nome, agencia, numero, obs, ativo]
+    )
+    if (ativo) await garantirMapeamentosContasFinanceiras(conn, empresaId)
+    await conn.commit()
+    res.status(201).json({ ok: true, id: r.insertId })
+  } catch (error) {
+    try { await conn.rollback() } catch (_) {}
+    res.status(error?.code === 'ER_DUP_ENTRY' ? 409 : 400).json({ ok: false, erro: error.message })
+  } finally {
+    conn.release()
+  }
+})
+app.put('/api/contas-financeiras/:id', podeGerenciarCadastros, async (req, res) => {
+  const conn = await db.getConnection()
+  try {
+    const id = Number(req.params.id)
+    const empresaId = Number(req.body?.empresa_id)
+    const nome = String(req.body?.nome_conta || '').trim()
+    const instituicao = String(req.body?.instituicao || '').trim() || null
+    const tipo = String(req.body?.tipo || 'BANCARIA').toUpperCase()
+    const agencia = String(req.body?.agencia || '').trim() || null
+    const numero = String(req.body?.numero_conta || '').trim() || null
+    const obs = String(req.body?.observacoes || '').trim() || null
+    const ativo = Number(req.body?.ativo !== false)
+    if (!id || !empresaId || !nome) throw new Error('Dados da conta incompletos.')
+
+    await conn.beginTransaction()
+    await conn.query(
+      'UPDATE contas_bancarias SET empresa_id=?,instituicao=?,tipo=?,nome_conta=?,agencia=?,numero_conta=?,observacoes=?,ativo=?,atualizado_em=NOW() WHERE id=?',
+      [empresaId, instituicao, tipo, nome, agencia, numero, obs, ativo, id]
+    )
+    if (ativo) await garantirMapeamentosContasFinanceiras(conn, empresaId)
+    await conn.commit()
+    res.json({ ok: true })
+  } catch (error) {
+    try { await conn.rollback() } catch (_) {}
+    res.status(400).json({ ok: false, erro: error.message })
+  } finally {
+    conn.release()
+  }
+})
 
 app.post('/api/produtos', podeGerenciarCadastros, async (req,res)=>{try{const nome=String(req.body?.nome||'').trim(),tipo=String(req.body?.tipo||'COMBUSTIVEL').trim().toUpperCase(),unidade=String(req.body?.unidade||'L').trim().toUpperCase(),ativo=Number(req.body?.ativo!==false);if(!nome)throw new Error('Informe o nome do produto.');const [r]=await db.query('INSERT INTO produtos (nome,tipo,unidade,ativo) VALUES (?,?,?,?)',[nome,tipo,unidade,ativo]);res.status(201).json({ok:true,id:r.insertId})}catch(error){res.status(error?.code==='ER_DUP_ENTRY'?409:400).json({ok:false,erro:error.message})}})
 app.put('/api/produtos/:id', podeGerenciarCadastros, async (req,res)=>{try{const id=Number(req.params.id),nome=String(req.body?.nome||'').trim(),tipo=String(req.body?.tipo||'COMBUSTIVEL').trim().toUpperCase(),unidade=String(req.body?.unidade||'L').trim().toUpperCase(),ativo=Number(req.body?.ativo!==false);if(!id||!nome)throw new Error('Dados do produto incompletos.');await db.query('UPDATE produtos SET nome=?,tipo=?,unidade=?,ativo=?,atualizado_em=NOW() WHERE id=?',[nome,tipo,unidade,ativo,id]);res.json({ok:true})}catch(error){res.status(400).json({ok:false,erro:error.message})}})

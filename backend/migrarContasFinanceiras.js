@@ -1,5 +1,96 @@
 import { db } from './db.js'
 
+const CAMPOS_CONTAS_FINANCEIRO = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
+const CAMPOS_RESERVADOS_FIXOS = new Set(['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24'])
+const ALIASES_CONTAS_FINANCEIRO = [
+  { campo: 'conta03', termos: ['SPOT LUCILA', 'LUCILA'] },
+  { campo: 'conta02', termos: ['ITAU', 'ITAÚ'] },
+  { campo: 'conta11', termos: ['CAIXA'] },
+  { campo: 'conta12', termos: ['CARTAO', 'CARTÃO'] },
+  { campo: 'conta21', termos: ['ERALDO'] },
+  { campo: 'conta23', termos: ['EMPRESTIMO', 'EMPRÉSTIMO'] },
+  { campo: 'conta24', termos: ['FORNECEDOR'] },
+  { campo: 'conta01', termos: ['SPOT'] },
+]
+
+function normalizarNomeFinanceiro(valor) {
+  return String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
+}
+
+function campoPreferidoConta(conta) {
+  const texto = normalizarNomeFinanceiro([conta.nome_conta, conta.instituicao, conta.tipo].filter(Boolean).join(' '))
+  return ALIASES_CONTAS_FINANCEIRO.find((item) => item.termos.some((termo) => texto.includes(normalizarNomeFinanceiro(termo))))?.campo || null
+}
+
+async function garantirTabelaMapeamentos(conn) {
+  if (await tabelaExiste(conn, 'financeiro_geral_mapeamentos')) return true
+  await executarEtapa(conn, 'criar financeiro_geral_mapeamentos', () => conn.query(`
+    CREATE TABLE IF NOT EXISTS financeiro_geral_mapeamentos (
+      id INT NOT NULL AUTO_INCREMENT,
+      empresa_id INT NOT NULL,
+      tipo VARCHAR(20) NOT NULL DEFAULT 'CONTA',
+      conta_financeira_id INT NULL,
+      campo_destino VARCHAR(40) NOT NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      atualizado_em TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_fg_map_empresa_conta (empresa_id, tipo, conta_financeira_id),
+      UNIQUE KEY uq_fg_map_empresa_campo (empresa_id, tipo, campo_destino),
+      KEY idx_fg_map_conta (conta_financeira_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `))
+  return await tabelaExiste(conn, 'financeiro_geral_mapeamentos')
+}
+
+export async function garantirMapeamentosContasFinanceiras(conn, empresaId) {
+  if (!(await garantirTabelaMapeamentos(conn))) return
+
+  const [existentes] = await conn.query(
+    `SELECT conta_financeira_id, campo_destino
+       FROM financeiro_geral_mapeamentos
+      WHERE empresa_id = ? AND tipo = 'CONTA'`,
+    [empresaId]
+  )
+  const campoPorConta = new Map()
+  const camposOcupados = new Set(['conta13'])
+  for (const item of existentes) {
+    if (item.conta_financeira_id != null) campoPorConta.set(Number(item.conta_financeira_id), String(item.campo_destino))
+    camposOcupados.add(String(item.campo_destino))
+  }
+
+  const [contas] = await conn.query(
+    `SELECT id, nome_conta, instituicao, tipo
+       FROM contas_bancarias
+      WHERE empresa_id = ? AND ativo = 1
+      ORDER BY criado_em ASC, id ASC`,
+    [empresaId]
+  )
+
+  for (const conta of contas) {
+    const contaId = Number(conta.id)
+    if (campoPorConta.has(contaId)) {
+      await conn.query(`UPDATE financeiro_geral_mapeamentos SET ativo = 1 WHERE empresa_id = ? AND tipo = 'CONTA' AND conta_financeira_id = ?`, [empresaId, contaId])
+      continue
+    }
+
+    const preferido = campoPreferidoConta(conta)
+    let campo = preferido && !camposOcupados.has(preferido) ? preferido : null
+    if (!campo) campo = CAMPOS_CONTAS_FINANCEIRO.find((item) => !camposOcupados.has(item) && !CAMPOS_RESERVADOS_FIXOS.has(item)) || null
+    if (!campo) throw new Error('Não há mais colunas livres no Financeiro Geral para vincular novas contas.')
+
+    await conn.query(
+      `INSERT INTO financeiro_geral_mapeamentos (empresa_id, tipo, conta_financeira_id, campo_destino, ativo)
+       VALUES (?, 'CONTA', ?, ?, 1)
+       ON DUPLICATE KEY UPDATE ativo = 1`,
+      [empresaId, contaId, campo]
+    )
+    campoPorConta.set(contaId, campo)
+    camposOcupados.add(campo)
+  }
+}
+
+
 async function colunaExiste(conn, tabela, coluna) {
   const [rows] = await conn.query(
     `SELECT COUNT(*) AS total FROM information_schema.COLUMNS
@@ -96,6 +187,10 @@ export async function migrarContasFinanceiras() {
                         ativo = COALESCE(ativo, 1)`)
       )
     }
+
+
+    const [empresasContas] = await conn.query(`SELECT DISTINCT empresa_id FROM contas_bancarias WHERE ativo = 1`)
+    for (const item of empresasContas) await garantirMapeamentosContasFinanceiras(conn, Number(item.empresa_id))
   } finally {
     conn.release()
   }
