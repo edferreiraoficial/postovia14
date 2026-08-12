@@ -134,6 +134,34 @@ async function colunaExiste(conn, tabela, coluna) {
   return Number(row?.total || 0) > 0
 }
 
+
+async function carregarRegrasTipoLancamento(conn) {
+  if (!(await tabelaExiste(conn, 'regras_tipo_lancamento'))) return []
+  const [rows] = await conn.query(
+    `SELECT id, tipo_lancamento_id, texto_procurado, texto_excluir, prioridade
+       FROM regras_tipo_lancamento
+      WHERE ativo = 1
+      ORDER BY prioridade ASC, id ASC`
+  )
+  return rows.map((row) => ({
+    id: Number(row.id),
+    tipoLancamentoId: row.tipo_lancamento_id == null ? null : Number(row.tipo_lancamento_id),
+    procurar: normalizarTexto(row.texto_procurado),
+    excluir: normalizarTexto(row.texto_excluir),
+  })).filter((row) => row.tipoLancamentoId != null && row.procurar)
+}
+
+function obterTipoLancamentoId(descricaoOriginal, regras = []) {
+  const descricao = normalizarTexto(descricaoOriginal)
+  if (!descricao) return null
+  for (const regra of regras) {
+    if (!descricao.includes(regra.procurar)) continue
+    if (regra.excluir && descricao.includes(regra.excluir)) continue
+    return regra.tipoLancamentoId
+  }
+  return null
+}
+
 async function carregarMapeamentos(conn, empresaId) {
   const mapeamentos = new Map()
   if (await tabelaExiste(conn, 'financeiro_geral_mapeamentos')) {
@@ -307,7 +335,7 @@ function calcularTotal(valores) {
 
 async function gravarLinha(conn, {
   empresa, data, descricao, tipo, origem, tabelaOrigem, registroOrigemId = null,
-  chave, usuarioId, valores = {},
+  chave, usuarioId, valores = {}, regrasTipoLancamento = [],
 }) {
   const permitidos = new Set([
     ...CAMPOS_CONTAS,
@@ -317,6 +345,7 @@ async function gravarLinha(conn, {
   const total = calcularTotal(dados)
   const descricaoOriginal = String(descricao || '').slice(0, 500) || null
   const descricaoNormalizada = descricaoOriginal ? normalizarTexto(descricaoOriginal).slice(0, 500) : null
+  const tipoLancamentoId = obterTipoLancamentoId(descricaoOriginal, regrasTipoLancamento)
   const campos = Object.keys(dados)
   const [existentes] = await conn.query('SELECT id FROM financeiro_geral WHERE chave_integracao = ? LIMIT 1', [chave])
 
@@ -327,14 +356,14 @@ async function gravarLinha(conn, {
     ].filter((c) => !campos.includes(c))
     const sets = [
       'data_lancamento = ?', 'descricao_original = ?', 'descricao_normalizada = ?', 'tipo_lancamento = ?',
-      'origem = ?', 'tabela_origem = ?', 'registro_origem_id = ?', 'usuario_id = ?', 'status = \'ATIVO\'',
+      'origem = ?', 'tabela_origem = ?', 'tipo_lancamento_id = ?', 'registro_origem_id = ?', 'usuario_id = ?', 'status = \'ATIVO\'',
       ...zerar.map((c) => `${c} = 0.000000`),
       ...campos.map((c) => `${c} = ?`),
       'total = ?', 'atualizado_em = NOW()',
     ]
     await conn.query(
       `UPDATE financeiro_geral SET ${sets.join(', ')} WHERE id = ?`,
-      [data, descricaoOriginal, descricaoNormalizada, tipo, origem, tabelaOrigem, registroOrigemId,
+      [data, descricaoOriginal, descricaoNormalizada, tipo, origem, tabelaOrigem, tipoLancamentoId, registroOrigemId,
         usuarioId || null, ...campos.map((c) => dados[c]), total, existentes[0].id]
     )
     return 'atualizado'
@@ -345,10 +374,10 @@ async function gravarLinha(conn, {
   await conn.query(
     `INSERT INTO financeiro_geral
      (empresa_id, data_lancamento, descricao_original, descricao_normalizada, tipo_lancamento,
-      total, origem, tabela_origem, registro_origem_id, chave_integracao, usuario_id, status${colunas})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO'${placeholders})`,
+      total, origem, tabela_origem, tipo_lancamento_id, registro_origem_id, chave_integracao, usuario_id, status${colunas})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO'${placeholders})`,
     [empresa, data, descricaoOriginal, descricaoNormalizada, tipo, total, origem, tabelaOrigem,
-      registroOrigemId, chave, usuarioId || null, ...campos.map((c) => dados[c])]
+      tipoLancamentoId, registroOrigemId, chave, usuarioId || null, ...campos.map((c) => dados[c])]
   )
   return 'inserido'
 }
@@ -369,17 +398,21 @@ export async function consolidarFinanceiroGeral({
     if (inicio > fim) throw new Error('A data inicial não pode ser posterior à data final.')
 
     await conn.beginTransaction()
+    const regrasTipoLancamento = await carregarRegrasTipoLancamento(conn)
     // Proteção final da trava: nenhuma inclusão ou atualização gerada pela consolidação
     // pode atingir data anterior à data mínima liberada, mesmo em rotinas auxiliares.
     const gravarLinhaSegura = async (dadosLinha) => {
       const dataLinha = String(dadosLinha?.data || '').slice(0, 10)
       if (dataMinimaPermitida && dataLinha && dataLinha < dataMinimaPermitida) return 'ignorado'
-      return gravarLinha(conn, dadosLinha)
+      return gravarLinha(conn, { ...dadosLinha, regrasTipoLancamento })
     }
-    for (const campo of ['tabela_origem', 'registro_origem_id', 'chave_integracao']) {
+    for (const campo of ['tabela_origem', 'tipo_lancamento_id', 'registro_origem_id', 'chave_integracao']) {
       if (!(await colunaExiste(conn, 'financeiro_geral', campo))) {
         throw new Error(`A coluna financeiro_geral.${campo} não foi encontrada.`)
       }
+    }
+    if (!(await tabelaExiste(conn, 'regras_tipo_lancamento'))) {
+      throw new Error('A tabela regras_tipo_lancamento não foi encontrada.')
     }
 
     // Localiza uma abertura já existente na primeira data do período. Linhas antigas
@@ -638,11 +671,12 @@ export async function consolidarFinanceiroGeral({
         valores[`${p}_total`] = e.quantidade * e.medio
       }
       if (saldoInicialExistente) {
+        const tipoSaldoAnteriorId = obterTipoLancamentoId('Saldo anterior', regrasTipoLancamento)
         await conn.query(
           `UPDATE financeiro_geral SET descricao_original = 'Saldo anterior',
              descricao_normalizada = 'SALDO ANTERIOR', tipo_lancamento = 'SALDO',
-             origem = 'SISTEMA', atualizado_em = NOW() WHERE id = ?`,
-          [saldoInicialExistente.id]
+             tipo_lancamento_id = ?, origem = 'SISTEMA', atualizado_em = NOW() WHERE id = ?`,
+          [tipoSaldoAnteriorId, saldoInicialExistente.id]
         )
         await atualizarCamposLinha(conn, saldoInicialExistente.id, valores)
       } else {
@@ -935,11 +969,12 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
     const empresa = Number(empresaId)
     const inicio = dataIsoValida(dataInicial, 'Data inicial do recálculo')
     await conn.beginTransaction()
+    const regrasTipoLancamento = await carregarRegrasTipoLancamento(conn)
 
     // O recálculo é uma rotina independente da consolidação. Por isso precisa de
     // sua própria função de gravação no mesmo escopo, evitando ReferenceError ao
     // salvar uma linha e recalcular os saldos seguintes.
-    const gravarLinhaSegura = async (dadosLinha) => gravarLinha(conn, dadosLinha)
+    const gravarLinhaSegura = async (dadosLinha) => gravarLinha(conn, { ...dadosLinha, regrasTipoLancamento })
 
     const [[limite]] = await conn.query(
       `SELECT DATE_FORMAT(MAX(data_lancamento), '%Y-%m-%d') AS data_final
