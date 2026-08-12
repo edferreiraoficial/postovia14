@@ -202,19 +202,10 @@ export default function FinanceiroGeralAdminPage() {
       if (!res.ok) throw new Error(dados.erro || 'Erro ao carregar lançamentos.');
       setLinhas(dados.lancamentos || []); setTotais(dados.totais || {}); setUltimoSaldo(dados.ultimoSaldo || {});
       if (Array.isArray(dados.colunas) && dados.colunas.length) {
-        // Cartão é uma coluna estrutural e deve existir mesmo que a API não a devolva
-        // por ausência momentânea de movimento ou de mapeamento.
+        // Usa exatamente as colunas e os títulos devolvidos pelo backend,
+        // cuja fonte oficial é financeiro_geral_mapeamentos.descricao.
         const recebidas = dados.colunas as CampoFinanceiro[];
-        const cartaoPadrao = CAMPOS_PADRAO.find((campo) => campo.key === 'conta12')!;
-        const semCartao = recebidas.filter((campo) => campo.key !== 'conta12');
-        const indiceCaixa = semCartao.findIndex((campo) => campo.key === 'conta11');
-        const indiceVendas = semCartao.findIndex((campo) => campo.key === 'conta13');
-        const posicaoCartao = indiceCaixa >= 0
-          ? indiceCaixa + 1
-          : (indiceVendas >= 0 ? indiceVendas : Math.max(0, semCartao.findIndex((campo) => campo.key === 'total')));
-        const comCartao = [...semCartao];
-        comCartao.splice(posicaoCartao, 0, cartaoPadrao);
-        setCampos(comCartao);
+        setCampos(recebidas);
       }
       setTotalRegistros(Number(dados.paginacao?.total || 0));
     } catch (e: any) { setMensagem(e.message || 'Erro ao carregar lançamentos.'); }
