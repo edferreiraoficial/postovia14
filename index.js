@@ -1654,10 +1654,10 @@ async function colunasFinanceiroGeralAtivas(empresaId) {
           for (const sufixo of ['quant', 'valor', 'total']) {
             const key = `${destino}_${sufixo}`
             if (chavesIncluidas.has(key)) continue
-            const padrao = PRODUTOS_FINANCEIRO_PADRAO.find(([campo]) => campo === key)?.[1]
+            const nomeProduto = descricao || destino.toUpperCase()
             colunas.push({
               key,
-              label: padrao || `${descricao || destino} ${sufixo === 'quant' ? 'Quant' : sufixo === 'valor' ? 'Valor' : 'Total'}`,
+              label: `${nomeProduto} ${sufixo === 'quant' ? 'Quant' : sufixo === 'valor' ? 'Valor' : 'Total'}`,
               largura: sufixo === 'total' ? 'valor12' : 'valor9',
             })
             chavesIncluidas.add(key)
