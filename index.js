@@ -1633,27 +1633,21 @@ async function colunasFinanceiroGeralAtivas(empresaId) {
   const nomesPorCampo = new Map()
   try {
     const [mapeamentos] = await db.query(
-      `SELECT m.campo_destino, cb.nome_conta
+      `SELECT m.campo_destino, cb.id AS conta_id, cb.nome_conta
          FROM financeiro_geral_mapeamentos m
          INNER JOIN contas_bancarias cb ON cb.id = m.conta_financeira_id
         WHERE m.empresa_id = ? AND m.tipo = 'CONTA' AND m.ativo = 1
           AND cb.ativo = 1 AND m.campo_destino REGEXP '^conta[0-9]{2}$'`,
       [empresaId]
     )
-    for (const item of mapeamentos) nomesPorCampo.set(String(item.campo_destino), String(item.nome_conta || item.campo_destino))
+    for (const item of mapeamentos) {
+      const campo = String(item.campo_destino)
+      // Quando mais de uma conta equivalente aponta para a mesma coluna estrutural,
+      // mantém um único cabeçalho. O primeiro nome cadastrado é suficiente como rótulo.
+      if (!nomesPorCampo.has(campo)) nomesPorCampo.set(campo, String(item.nome_conta || campo))
+    }
   } catch (_) {
     // Instalações antigas podem ainda não possuir a tabela de mapeamentos.
-  }
-
-  const [contas] = await db.query(
-    `SELECT nome_conta, instituicao, tipo FROM contas_bancarias
-      WHERE empresa_id = ? AND ativo = 1 ORDER BY criado_em ASC, id ASC`,
-    [empresaId]
-  )
-  for (const conta of contas) {
-    const texto = normalizarNomeFinanceiro([conta.nome_conta, conta.instituicao, conta.tipo].filter(Boolean).join(' '))
-    const alias = ALIASES_CONTAS_FINANCEIRO.find((item) => item.termos.some((termo) => texto.includes(normalizarNomeFinanceiro(termo))))
-    if (alias && !nomesPorCampo.has(alias.campo)) nomesPorCampo.set(alias.campo, String(conta.nome_conta || conta.instituicao || alias.campo))
   }
 
   // Vendas (conta13) é uma coluna operacional do Financeiro Geral, não uma
