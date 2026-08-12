@@ -1597,70 +1597,88 @@ const FINANCEIRO_GERAL_LABELS_CONTAS = {
   conta01: 'SPOT', conta02: 'Itaú', conta03: 'SPOT Lucila', conta11: 'Caixa', conta12: 'Cartão', conta13: 'Vendas',
   conta21: 'Investidor Eraldo', conta23: 'Empréstimos', conta24: 'Fornecedores',
 }
-const FINANCEIRO_GERAL_COLUNAS = [
-  ...FINANCEIRO_GERAL_CONTAS_ORDEM.map((campo) => [campo, FINANCEIRO_GERAL_LABELS_CONTAS[campo] || campo]),
+const CAMPOS_CONTAS_FINANCEIRO = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
+const ROTULOS_CONTAS_PADRAO = new Map([
+  ['conta01', 'SPOT'], ['conta02', 'Itaú'], ['conta03', 'SPOT Lucila'],
+  ['conta11', 'Caixa'], ['conta12', 'Cartão'], ['conta13', 'Vendas Total'],
+  ['conta21', 'Investidor Eraldo'], ['conta23', 'Empréstimos'], ['conta24', 'Fornecedores'],
+])
+const PRODUTOS_FINANCEIRO_PADRAO = [
   ['prod1_quant', 'GC Quant'], ['prod1_valor', 'GC Valor'], ['prod1_total', 'GC Total'],
   ['prod2_quant', 'EH Quant'], ['prod2_valor', 'EH Valor'], ['prod2_total', 'EH Total'],
   ['prod3_quant', 'S10 Quant'], ['prod3_valor', 'S10 Valor'], ['prod3_total', 'S10 Total'],
   ['prod4_quant', 'GC-A Quant'], ['prod4_valor', 'GC-A Valor'], ['prod4_total', 'GC-A Total'],
+]
+const FINANCEIRO_GERAL_COLUNAS = [
+  ...CAMPOS_CONTAS_FINANCEIRO.map((campo) => [campo, ROTULOS_CONTAS_PADRAO.get(campo) || campo.toUpperCase()]),
+  ...PRODUTOS_FINANCEIRO_PADRAO,
   ['total', 'Total'],
 ]
 const FINANCEIRO_GERAL_CHAVES = new Set(FINANCEIRO_GERAL_COLUNAS.map(([chave]) => chave))
 
-const ALIASES_CONTAS_FINANCEIRO = [
-  { campo: 'conta03', termos: ['SPOT LUCILA', 'LUCILA'] },
-  { campo: 'conta02', termos: ['ITAU', 'ITAÚ'] },
-  { campo: 'conta11', termos: ['CAIXA'] },
-  { campo: 'conta12', termos: ['CARTAO', 'CARTÃO'] },
-  { campo: 'conta13', termos: ['VENDAS'] },
-  { campo: 'conta21', termos: ['ERALDO'] },
-  { campo: 'conta23', termos: ['EMPRESTIMO', 'EMPRÉSTIMO'] },
-  { campo: 'conta24', termos: ['FORNECEDOR'] },
-  { campo: 'conta01', termos: ['SPOT'] },
-]
-
-function normalizarNomeFinanceiro(valor) {
-  return String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
-}
-
 async function colunasFinanceiroGeralAtivas(empresaId) {
-  const conn = await db.getConnection()
-  try {
-    await garantirMapeamentosContasFinanceiras(conn, empresaId)
-  } finally {
-    conn.release()
-  }
-  const nomesPorCampo = new Map()
+  // A tabela financeiro_geral_mapeamentos é a fonte oficial da estrutura visual.
+  // Não exige conta_financeira_id: mapeamentos estruturais antigos podem ter esse
+  // campo NULL e, mesmo assim, precisam continuar aparecendo no Financeiro Geral.
   try {
     const [mapeamentos] = await db.query(
-      `SELECT m.campo_destino, cb.id AS conta_id, cb.nome_conta
-         FROM financeiro_geral_mapeamentos m
-         INNER JOIN contas_bancarias cb ON cb.id = m.conta_financeira_id
-        WHERE m.empresa_id = ? AND m.tipo = 'CONTA' AND m.ativo = 1
-          AND cb.ativo = 1 AND m.campo_destino REGEXP '^conta[0-9]{2}$'`,
+      `SELECT id, tipo, campo_destino, conta_financeira_id, produto_id, descricao
+         FROM financeiro_geral_mapeamentos
+        WHERE empresa_id = ? AND ativo = 1
+        ORDER BY id ASC`,
       [empresaId]
     )
-    for (const item of mapeamentos) {
-      const campo = String(item.campo_destino)
-      // Quando mais de uma conta equivalente aponta para a mesma coluna estrutural,
-      // mantém um único cabeçalho. O primeiro nome cadastrado é suficiente como rótulo.
-      if (!nomesPorCampo.has(campo)) nomesPorCampo.set(campo, String(item.nome_conta || campo))
+
+    if (mapeamentos.length) {
+      const colunas = []
+      const chavesIncluidas = new Set()
+
+      for (const item of mapeamentos) {
+        const tipo = String(item.tipo || '').toUpperCase()
+        const destino = String(item.campo_destino || '').trim()
+        const descricao = String(item.descricao || '').trim()
+
+        if (tipo === 'CONTA' && /^conta\d{2}$/.test(destino) && CAMPOS_CONTAS_FINANCEIRO.includes(destino)) {
+          if (!chavesIncluidas.has(destino)) {
+            colunas.push({
+              key: destino,
+              label: descricao || ROTULOS_CONTAS_PADRAO.get(destino) || destino.toUpperCase(),
+              largura: 'valor12',
+            })
+            chavesIncluidas.add(destino)
+          }
+          continue
+        }
+
+        if (tipo === 'PRODUTO' && /^prod[1-4]$/.test(destino)) {
+          for (const sufixo of ['quant', 'valor', 'total']) {
+            const key = `${destino}_${sufixo}`
+            if (chavesIncluidas.has(key)) continue
+            const padrao = PRODUTOS_FINANCEIRO_PADRAO.find(([campo]) => campo === key)?.[1]
+            colunas.push({
+              key,
+              label: padrao || `${descricao || destino} ${sufixo === 'quant' ? 'Quant' : sufixo === 'valor' ? 'Valor' : 'Total'}`,
+              largura: sufixo === 'total' ? 'valor12' : 'valor9',
+            })
+            chavesIncluidas.add(key)
+          }
+        }
+      }
+
+      colunas.push({ key: 'total', label: 'Total', largura: 'valor12' })
+      return colunas
     }
-  } catch (_) {
-    // Instalações antigas podem ainda não possuir a tabela de mapeamentos.
+  } catch (error) {
+    console.warn('Não foi possível carregar financeiro_geral_mapeamentos; usando estrutura padrão:', error.message)
   }
 
-  // Vendas (conta13) é uma coluna operacional do Financeiro Geral, não uma
-  // conta financeira cadastrável. Portanto, deve permanecer visível mesmo sem
-  // registro na tabela financeiro_geral_mapeamentos.
-  const CAMPOS_OPERACIONAIS_FIXOS = new Set(['conta13'])
-  const contasAtivas = FINANCEIRO_GERAL_COLUNAS
-    .filter(([campo]) => campo.startsWith('conta') && (nomesPorCampo.has(campo) || CAMPOS_OPERACIONAIS_FIXOS.has(campo)))
-    .map(([key, labelPadrao]) => ({ key, label: nomesPorCampo.get(key) || labelPadrao, largura: 'valor12' }))
-  const produtos = FINANCEIRO_GERAL_COLUNAS
-    .filter(([campo]) => campo.startsWith('prod'))
-    .map(([key, label]) => ({ key, label, largura: key.endsWith('_total') ? 'valor12' : 'valor9' }))
-  return [...contasAtivas, ...produtos, { key: 'total', label: 'Total', largura: 'valor12' }]
+  // Compatibilidade com instalações antigas sem a tabela de mapeamentos.
+  return [
+    ...['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24']
+      .map((key) => ({ key, label: ROTULOS_CONTAS_PADRAO.get(key) || key.toUpperCase(), largura: 'valor12' })),
+    ...PRODUTOS_FINANCEIRO_PADRAO.map(([key, label]) => ({ key, label, largura: key.endsWith('_total') ? 'valor12' : 'valor9' })),
+    { key: 'total', label: 'Total', largura: 'valor12' },
+  ]
 }
 
 function parametrosFinanceiroGeral(req) {

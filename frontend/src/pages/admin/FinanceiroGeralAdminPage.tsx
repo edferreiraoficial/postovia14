@@ -79,7 +79,7 @@ export default function FinanceiroGeralAdminPage() {
   const [carregandoDetalheDia, setCarregandoDetalheDia] = useState(false);
   const [resumoPeriodo, setResumoPeriodo] = useState<any | null>(null);
   const [carregandoResumoPeriodo, setCarregandoResumoPeriodo] = useState(false);
-  const [somenteMovimento, setSomenteMovimento] = useState(true);
+  const [somenteMovimento, setSomenteMovimento] = useState(false);
   const [numeroEditando, setNumeroEditando] = useState<number | null>(null);
   const [dataInicialNumero, setDataInicialNumero] = useState('');
   const [modoRenumeracao, setModoRenumeracao] = useState<'ajuste' | 'inicial'>('ajuste');

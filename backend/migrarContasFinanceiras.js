@@ -1,7 +1,7 @@
 import { db } from './db.js'
 
 const CAMPOS_CONTAS_FINANCEIRO = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
-const CAMPOS_RESERVADOS_FIXOS = new Set(['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24'])
+const CAMPOS_ESTRUTURAIS_RESERVADOS = new Set(['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24'])
 const ALIASES_CONTAS_FINANCEIRO = [
   { campo: 'conta03', termos: ['SPOT LUCILA', 'LUCILA'] },
   { campo: 'conta02', termos: ['ITAU', 'ITAÚ'] },
@@ -17,152 +17,10 @@ function normalizarNomeFinanceiro(valor) {
   return String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
 }
 
-function campoPreferidoConta(conta) {
+function campoEstruturalPorNome(conta) {
   const texto = normalizarNomeFinanceiro([conta.nome_conta, conta.instituicao, conta.tipo].filter(Boolean).join(' '))
   return ALIASES_CONTAS_FINANCEIRO.find((item) => item.termos.some((termo) => texto.includes(normalizarNomeFinanceiro(termo))))?.campo || null
 }
-
-async function garantirTabelaMapeamentos(conn) {
-  if (await tabelaExiste(conn, 'financeiro_geral_mapeamentos')) return true
-
-  await executarEtapa(conn, 'criar financeiro_geral_mapeamentos', () => conn.query(`
-    CREATE TABLE IF NOT EXISTS financeiro_geral_mapeamentos (
-      id INT NOT NULL AUTO_INCREMENT,
-      empresa_id INT NOT NULL,
-      tipo VARCHAR(20) NOT NULL DEFAULT 'CONTA',
-      conta_financeira_id INT NULL,
-      campo_destino VARCHAR(40) NOT NULL,
-      ativo TINYINT(1) NOT NULL DEFAULT 1,
-      criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      atualizado_em TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      UNIQUE KEY uq_fg_map_empresa_conta (empresa_id, tipo, conta_financeira_id),
-      UNIQUE KEY uk_empresa_campo (empresa_id, campo_destino),
-      KEY idx_fg_map_conta (conta_financeira_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `))
-  return await tabelaExiste(conn, 'financeiro_geral_mapeamentos')
-}
-
-export async function garantirMapeamentosContasFinanceiras(conn, empresaId) {
-  if (!(await garantirTabelaMapeamentos(conn))) return
-
-  const [contas] = await conn.query(
-    `SELECT id, nome_conta, instituicao, tipo
-       FROM contas_bancarias
-      WHERE empresa_id = ? AND ativo = 1
-      ORDER BY criado_em ASC, id ASC`,
-    [empresaId]
-  )
-
-  const [existentes] = await conn.query(
-    `SELECT id, conta_financeira_id, campo_destino, ativo
-       FROM financeiro_geral_mapeamentos
-      WHERE empresa_id = ? AND tipo = 'CONTA'
-      ORDER BY id ASC`,
-    [empresaId]
-  )
-
-  const mapeamentoPorConta = new Map()
-  const mapeamentoPorCampo = new Map()
-  for (const item of existentes) {
-    if (item.conta_financeira_id != null) mapeamentoPorConta.set(Number(item.conta_financeira_id), item)
-    const campo = String(item.campo_destino || '')
-    if (campo && !mapeamentoPorCampo.has(campo)) mapeamentoPorCampo.set(campo, item)
-  }
-
-  // Cada campo físico do Financeiro Geral possui apenas UM registro de mapeamento
-  // no banco (há instalações com a constraint uk_empresa_campo). Quando duas contas
-  // representam a mesma coluna estrutural, somente uma delas fica mapeada fisicamente;
-  // as demais são reconhecidas pelo nome durante a consolidação e usam a mesma coluna.
-  // Isso evita ER_DUP_ENTRY e também impede cabeçalhos duplicados.
-  for (const conta of contas) {
-    const contaId = Number(conta.id)
-    const preferido = campoPreferidoConta(conta)
-    if (!preferido) continue
-
-    const atual = mapeamentoPorConta.get(contaId)
-    const donoPreferido = mapeamentoPorCampo.get(preferido)
-
-    if (donoPreferido && Number(donoPreferido.conta_financeira_id) !== contaId) {
-      // Já existe uma conta canônica ocupando o campo estrutural. Se esta conta
-      // equivalente ganhou uma contaXX dinâmica em versão anterior, remove apenas
-      // o mapeamento incorreto. A conta e seus lançamentos NÃO são excluídos.
-      if (atual && String(atual.campo_destino) !== preferido) {
-        await conn.query(`DELETE FROM financeiro_geral_mapeamentos WHERE id = ?`, [atual.id])
-        mapeamentoPorConta.delete(contaId)
-        mapeamentoPorCampo.delete(String(atual.campo_destino))
-      }
-      continue
-    }
-
-    if (atual) {
-      if (String(atual.campo_destino) !== preferido || Number(atual.ativo) !== 1) {
-        await conn.query(
-          `UPDATE financeiro_geral_mapeamentos
-              SET campo_destino = ?, ativo = 1
-            WHERE id = ?`,
-          [preferido, atual.id]
-        )
-        mapeamentoPorCampo.delete(String(atual.campo_destino))
-        atual.campo_destino = preferido
-        atual.ativo = 1
-        mapeamentoPorCampo.set(preferido, atual)
-      }
-    } else {
-      const [resultado] = await conn.query(
-        `INSERT INTO financeiro_geral_mapeamentos (empresa_id, tipo, conta_financeira_id, campo_destino, ativo)
-         VALUES (?, 'CONTA', ?, ?, 1)`,
-        [empresaId, contaId, preferido]
-      )
-      const criado = { id: resultado.insertId, conta_financeira_id: contaId, campo_destino: preferido, ativo: 1 }
-      mapeamentoPorConta.set(contaId, criado)
-      mapeamentoPorCampo.set(preferido, criado)
-    }
-  }
-
-  // Recarrega os campos efetivamente ocupados depois da limpeza acima.
-  const [aposEstruturais] = await conn.query(
-    `SELECT id, conta_financeira_id, campo_destino, ativo
-       FROM financeiro_geral_mapeamentos
-      WHERE empresa_id = ? AND tipo = 'CONTA'`,
-    [empresaId]
-  )
-  mapeamentoPorConta.clear()
-  const camposOcupados = new Set(['conta13'])
-  for (const item of aposEstruturais) {
-    if (item.conta_financeira_id != null) mapeamentoPorConta.set(Number(item.conta_financeira_id), item)
-    if (Number(item.ativo) === 1 && item.campo_destino) camposOcupados.add(String(item.campo_destino))
-  }
-
-  // Somente contas realmente novas, sem equivalência estrutural, recebem contaXX.
-  for (const conta of contas) {
-    const contaId = Number(conta.id)
-    if (campoPreferidoConta(conta)) continue
-
-    const atual = mapeamentoPorConta.get(contaId)
-    if (atual) {
-      if (Number(atual.ativo) !== 1) {
-        await conn.query(`UPDATE financeiro_geral_mapeamentos SET ativo = 1 WHERE id = ?`, [atual.id])
-      }
-      continue
-    }
-
-    const campo = CAMPOS_CONTAS_FINANCEIRO.find(
-      (item) => !camposOcupados.has(item) && !CAMPOS_RESERVADOS_FIXOS.has(item)
-    ) || null
-    if (!campo) throw new Error('Não há mais colunas livres no Financeiro Geral para vincular novas contas.')
-
-    const [resultado] = await conn.query(
-      `INSERT INTO financeiro_geral_mapeamentos (empresa_id, tipo, conta_financeira_id, campo_destino, ativo)
-       VALUES (?, 'CONTA', ?, ?, 1)`,
-      [empresaId, contaId, campo]
-    )
-    mapeamentoPorConta.set(contaId, { id: resultado.insertId, conta_financeira_id: contaId, campo_destino: campo, ativo: 1 })
-    camposOcupados.add(campo)
-  }
-}
-
 
 async function colunaExiste(conn, tabela, coluna) {
   const [rows] = await conn.query(
@@ -186,9 +44,118 @@ async function executarEtapa(conn, descricao, fn) {
   try {
     await fn()
   } catch (error) {
-    // A migração não pode impedir o servidor de iniciar. Em hospedagens com
-    // permissões limitadas, registra o ponto pendente e mantém a aplicação online.
     console.warn(`[migração contas financeiras] ${descricao}:`, error.message)
+  }
+}
+
+async function garantirTabelaMapeamentos(conn) {
+  if (await tabelaExiste(conn, 'financeiro_geral_mapeamentos')) return true
+  await executarEtapa(conn, 'criar financeiro_geral_mapeamentos', () => conn.query(`
+    CREATE TABLE IF NOT EXISTS financeiro_geral_mapeamentos (
+      id INT NOT NULL AUTO_INCREMENT,
+      empresa_id INT NOT NULL,
+      tipo VARCHAR(20) NOT NULL DEFAULT 'CONTA',
+      campo_destino VARCHAR(40) NOT NULL,
+      conta_financeira_id INT NULL,
+      produto_id INT NULL,
+      descricao VARCHAR(150) NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      atualizado_em TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uk_empresa_campo (empresa_id, campo_destino),
+      KEY idx_fg_map_conta (conta_financeira_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `))
+  return await tabelaExiste(conn, 'financeiro_geral_mapeamentos')
+}
+
+export async function garantirMapeamentosContasFinanceiras(conn, empresaId) {
+  if (!(await garantirTabelaMapeamentos(conn))) return
+
+  const [mapeamentos] = await conn.query(
+    `SELECT id, campo_destino, conta_financeira_id, descricao, ativo
+       FROM financeiro_geral_mapeamentos
+      WHERE empresa_id = ? AND tipo = 'CONTA'
+      ORDER BY id ASC`,
+    [empresaId]
+  )
+  const [contas] = await conn.query(
+    `SELECT id, nome_conta, instituicao, tipo, ativo
+       FROM contas_bancarias
+      WHERE empresa_id = ? AND ativo = 1
+      ORDER BY id ASC`,
+    [empresaId]
+  )
+
+  const camposOcupados = new Set(mapeamentos.map((item) => String(item.campo_destino || '')).filter(Boolean))
+  const contaJaMapeada = new Map(
+    mapeamentos
+      .filter((item) => item.conta_financeira_id != null)
+      .map((item) => [Number(item.conta_financeira_id), item])
+  )
+
+  // Primeiro reaproveita mapeamentos estruturais já existentes cujo texto coincide
+  // exatamente com o nome da conta. Isso corrige, por exemplo, ADEN -> conta04 sem
+  // criar outra coluna e sem alterar a estrutura oficial existente.
+  for (const item of mapeamentos) {
+    if (item.conta_financeira_id != null) continue
+    const descricao = normalizarNomeFinanceiro(item.descricao)
+    if (!descricao) continue
+    const correspondentes = contas.filter((conta) => normalizarNomeFinanceiro(conta.nome_conta) === descricao)
+    if (correspondentes.length !== 1) continue
+    const conta = correspondentes[0]
+    if (contaJaMapeada.has(Number(conta.id))) continue
+    try {
+      await conn.query(
+        `UPDATE financeiro_geral_mapeamentos
+            SET conta_financeira_id = ?, atualizado_em = NOW()
+          WHERE id = ? AND conta_financeira_id IS NULL`,
+        [Number(conta.id), Number(item.id)]
+      )
+      item.conta_financeira_id = Number(conta.id)
+      contaJaMapeada.set(Number(conta.id), item)
+    } catch (error) {
+      // Se houver uma restrição antiga para a conta, preserva o mapeamento visual e
+      // deixa a consolidação usar os aliases já existentes.
+      console.warn(`[mapeamento financeiro] não foi possível vincular ${conta.nome_conta} a ${item.campo_destino}:`, error.message)
+    }
+  }
+
+  // Nunca move, remove ou substitui os registros já existentes em
+  // financeiro_geral_mapeamentos. Contas estruturais conhecidas usam os campos
+  // históricos por alias. Somente uma conta realmente nova recebe um campo livre.
+  for (const conta of contas) {
+    const contaId = Number(conta.id)
+    if (contaJaMapeada.has(contaId)) continue
+    if (campoEstruturalPorNome(conta)) continue
+
+    // Se já existir uma coluna visual com a mesma descrição, ela é a coluna correta.
+    const descricaoConta = normalizarNomeFinanceiro(conta.nome_conta)
+    const mapeamentoMesmoNome = mapeamentos.find((item) => normalizarNomeFinanceiro(item.descricao) === descricaoConta)
+    if (mapeamentoMesmoNome) continue
+
+    const campoLivre = CAMPOS_CONTAS_FINANCEIRO.find(
+      (campo) => !camposOcupados.has(campo) && !CAMPOS_ESTRUTURAIS_RESERVADOS.has(campo)
+    )
+    if (!campoLivre) throw new Error('Não há mais colunas livres no Financeiro Geral para vincular novas contas.')
+
+    const [resultado] = await conn.query(
+      `INSERT INTO financeiro_geral_mapeamentos
+        (empresa_id, tipo, campo_destino, conta_financeira_id, produto_id, descricao, ativo)
+       VALUES (?, 'CONTA', ?, ?, NULL, ?, 1)`,
+      [empresaId, campoLivre, contaId, String(conta.nome_conta || campoLivre)]
+    )
+    const criado = {
+      id: resultado.insertId,
+      campo_destino: campoLivre,
+      conta_financeira_id: contaId,
+      descricao: String(conta.nome_conta || campoLivre),
+      ativo: 1,
+    }
+    mapeamentos.push(criado)
+    contaJaMapeada.set(contaId, criado)
+    camposOcupados.add(campoLivre)
   }
 }
 
@@ -241,9 +208,6 @@ export async function migrarContasFinanceiras() {
       }
     }
 
-    // Mantém bancos/banco_id apenas como compatibilidade interna. Eles deixam de
-    // aparecer e de ser administrados na interface, evitando operações destrutivas
-    // que anteriormente podiam derrubar o Node com erro 503.
     if (await tabelaExiste(conn, 'bancos') && await colunaExiste(conn, 'contas_bancarias', 'banco_id') && await colunaExiste(conn, 'contas_bancarias', 'instituicao')) {
       await executarEtapa(conn, 'copiar nomes dos bancos para a conta financeira', () =>
         conn.query(`UPDATE contas_bancarias cb
@@ -261,9 +225,14 @@ export async function migrarContasFinanceiras() {
       )
     }
 
-
+    // Apenas completa vínculos seguros e cria coluna para conta realmente nova.
+    // Nunca apaga, renomeia ou realoca as colunas estruturais já cadastradas.
     const [empresasContas] = await conn.query(`SELECT DISTINCT empresa_id FROM contas_bancarias WHERE ativo = 1`)
-    for (const item of empresasContas) await garantirMapeamentosContasFinanceiras(conn, Number(item.empresa_id))
+    for (const item of empresasContas) {
+      await executarEtapa(conn, `garantir mapeamentos da empresa ${item.empresa_id}`, () =>
+        garantirMapeamentosContasFinanceiras(conn, Number(item.empresa_id))
+      )
+    }
   } finally {
     conn.release()
   }
