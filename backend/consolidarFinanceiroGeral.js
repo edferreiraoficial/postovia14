@@ -357,7 +357,6 @@ async function gravarLinha(conn, {
     ...CAMPOS_PRODUTOS.flatMap((p) => [`${p}_quant`, `${p}_valor`, `${p}_total`]),
   ])
   const dados = Object.fromEntries(Object.entries(valores).filter(([k]) => permitidos.has(k)).map(([k, v]) => [k, arred6(v)]))
-  const total = calcularTotal(dados)
   const descricaoOriginal = String(descricao || '').slice(0, 500) || null
   const descricaoNormalizada = descricaoOriginal ? normalizarTexto(descricaoOriginal).slice(0, 500) : null
   // IMPORTANTE: T=0 (SALDO) e um valor valido. Nao usar `||` aqui,
@@ -372,13 +371,31 @@ async function gravarLinha(conn, {
   // O fallback por sinal e a ULTIMA alternativa absoluta:
   // sistema -> regra -> preservado -> existente -> fallback.
   // Positivo sem qualquer classificacao = T19; negativo = T20; zero fica vazio.
-  const tipoFallbackId = total > 0.000004 ? 19 : (total < -0.000004 ? 20 : null)
+  // O fallback usa o movimento original, antes de eventuais contrapartidas automáticas.
+  const totalOriginal = calcularTotal(dados)
+  const tipoFallbackId = totalOriginal > 0.000004 ? 19 : (totalOriginal < -0.000004 ? 20 : null)
   const tipoLancamentoId = tipoSistemaId
     ?? tipoRegraId
     ?? tipoPreservadoId
     ?? tipoExistenteId
     ?? tipoFallbackId
     ?? null
+
+  // T=5 - recebimento de venda a prazo:
+  // quando houver entrada positiva em banco ou Caixa, mantém a entrada na conta
+  // de recebimento e lança a mesma quantia com sinal negativo em VENDAS A PRAZO
+  // (conta12). As colunas conta12/conta13/conta14 são operacionais e não entram
+  // na identificação do banco/caixa que recebeu o valor.
+  if (Number(tipoLancamentoId) === 5) {
+    const camposRecebimento = Array.from(CAMPOS_CONTAS).filter((campo) => !['conta12', 'conta13', 'conta14'].includes(campo))
+    const recebidoBancoCaixa = arred6(camposRecebimento.reduce((soma, campo) => {
+      const valorCampo = numero(dados[campo])
+      return valorCampo > 0 ? soma + valorCampo : soma
+    }, 0))
+    if (recebidoBancoCaixa > 0.000004) dados.conta12 = -Math.abs(recebidoBancoCaixa)
+  }
+
+  const total = calcularTotal(dados)
 
   if (existentes[0]) {
     const zerar = [
