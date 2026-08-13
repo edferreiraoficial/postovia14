@@ -190,6 +190,14 @@ export async function migrarContasFinanceiras() {
       })
     }
 
+    if (await tabelaExiste(conn, 'permissoes') && !(await colunaExiste(conn, 'permissoes', 'mapeamentos_financeiro'))) {
+      await executarEtapa(conn, 'adicionar permissoes.mapeamentos_financeiro', async () => {
+        const depois = await colunaExiste(conn, 'permissoes', 'numero_lancamento') ? 'numero_lancamento' : 'imprimir'
+        await conn.query(`ALTER TABLE permissoes ADD COLUMN mapeamentos_financeiro TINYINT(1) NOT NULL DEFAULT 0 AFTER ${depois}`)
+        await conn.query(`UPDATE permissoes p INNER JOIN usuarios u ON u.id=p.usuario_id SET p.mapeamentos_financeiro=1 WHERE UPPER(u.perfil)='ADMIN'`)
+      })
+    }
+
     if (!(await tabelaExiste(conn, 'contas_bancarias'))) return
 
     const adicoes = [

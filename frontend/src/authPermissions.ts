@@ -12,7 +12,8 @@ export type PermissionKey =
   | 'editar'
   | 'excluir'
   | 'imprimir'
-  | 'numero_lancamento';
+  | 'numero_lancamento'
+  | 'mapeamentos_financeiro';
 
 export type PermissionUser = {
   perfil?: string | null;

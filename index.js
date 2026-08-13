@@ -112,7 +112,7 @@ app.post('/api/auth/login', async (req, res) => {
     const [permissoes] = await db.query(
       `SELECT dashboard, dados_gravados, importar_pdf, importar_excel,
               pdf_excel, lancamentos, auditoria, cadastros, configuracoes,
-              incluir, editar, excluir, imprimir, numero_lancamento
+              incluir, editar, excluir, imprimir, numero_lancamento, mapeamentos_financeiro
        FROM permissoes
        WHERE usuario_id = ?
        LIMIT 1`,
@@ -147,7 +147,7 @@ app.get('/api/auth/me', autenticarRequisicao, async (req, res) => {
     const [permissoes] = await db.query(
       `SELECT dashboard, dados_gravados, importar_pdf, importar_excel,
               pdf_excel, lancamentos, auditoria, cadastros, configuracoes,
-              incluir, editar, excluir, imprimir, numero_lancamento
+              incluir, editar, excluir, imprimir, numero_lancamento, mapeamentos_financeiro
        FROM permissoes
        WHERE usuario_id = ?
        LIMIT 1`,
@@ -169,7 +169,7 @@ app.use('/api', autenticarRequisicao)
 const CAMPOS_PERMISSAO = [
   'dashboard', 'dados_gravados', 'importar_pdf', 'importar_excel',
   'pdf_excel', 'lancamentos', 'auditoria', 'cadastros', 'configuracoes',
-  'incluir', 'editar', 'excluir', 'imprimir', 'numero_lancamento',
+  'incluir', 'editar', 'excluir', 'imprimir', 'numero_lancamento', 'mapeamentos_financeiro',
 ]
 
 async function podeGerenciarUsuarios(req, res, next) {
@@ -209,7 +209,7 @@ async function salvarPermissoes(connection, usuarioId, permissoes) {
       `UPDATE permissoes SET
         dashboard = ?, dados_gravados = ?, importar_pdf = ?, importar_excel = ?,
         pdf_excel = ?, lancamentos = ?, auditoria = ?, cadastros = ?, configuracoes = ?,
-        incluir = ?, editar = ?, excluir = ?, imprimir = ?, numero_lancamento = ?
+        incluir = ?, editar = ?, excluir = ?, imprimir = ?, numero_lancamento = ?, mapeamentos_financeiro = ?
        WHERE usuario_id = ?`,
       [...CAMPOS_PERMISSAO.map((campo) => dados[campo]), usuarioId]
     )
@@ -218,8 +218,8 @@ async function salvarPermissoes(connection, usuarioId, permissoes) {
       `INSERT INTO permissoes
         (usuario_id, dashboard, dados_gravados, importar_pdf, importar_excel,
          pdf_excel, lancamentos, auditoria, cadastros, configuracoes,
-         incluir, editar, excluir, imprimir, numero_lancamento)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         incluir, editar, excluir, imprimir, numero_lancamento, mapeamentos_financeiro)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [usuarioId, ...CAMPOS_PERMISSAO.map((campo) => dados[campo])]
     )
   }
@@ -232,7 +232,7 @@ app.get('/api/usuarios', podeGerenciarUsuarios, async (req, res) => {
               u.ultimo_login, u.criado_em, u.atualizado_em,
               p.dashboard, p.dados_gravados, p.importar_pdf, p.importar_excel,
               p.pdf_excel, p.lancamentos, p.auditoria, p.cadastros, p.configuracoes,
-              p.incluir, p.editar, p.excluir, p.imprimir, p.numero_lancamento
+              p.incluir, p.editar, p.excluir, p.imprimir, p.numero_lancamento, p.mapeamentos_financeiro
        FROM usuarios u
        LEFT JOIN permissoes p ON p.usuario_id = u.id
        ORDER BY u.criado_em ASC, u.id ASC`
@@ -264,7 +264,7 @@ app.post('/api/usuarios', podeGerenciarUsuarios, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?)`,
       [nome, usuario, email, hash, perfil, ativo]
     )
-    await salvarPermissoes(connection, result.insertId, perfil === 'ADMIN' ? { ...(req.body?.permissoes || {}), numero_lancamento: true } : (req.body?.permissoes || {}))
+    await salvarPermissoes(connection, result.insertId, perfil === 'ADMIN' ? { ...(req.body?.permissoes || {}), numero_lancamento: true, mapeamentos_financeiro: true } : (req.body?.permissoes || {}))
     await connection.commit()
     res.status(201).json({ ok: true, id: result.insertId })
   } catch (error) {
@@ -303,7 +303,7 @@ app.put('/api/usuarios/:id', podeGerenciarUsuarios, async (req, res) => {
        WHERE id = ?`,
       [nome, usuario, email, perfil, ativo, id]
     )
-    await salvarPermissoes(connection, id, perfil === 'ADMIN' ? { ...(req.body?.permissoes || {}), numero_lancamento: true } : (req.body?.permissoes || {}))
+    await salvarPermissoes(connection, id, perfil === 'ADMIN' ? { ...(req.body?.permissoes || {}), numero_lancamento: true, mapeamentos_financeiro: true } : (req.body?.permissoes || {}))
     await connection.commit()
     res.json({ ok: true })
   } catch (error) {
@@ -338,7 +338,7 @@ async function obterPermissoesUsuario(usuarioId) {
   const [rows] = await db.query(
     `SELECT dashboard, dados_gravados, importar_pdf, importar_excel,
             pdf_excel, lancamentos, auditoria, cadastros, configuracoes,
-            incluir, editar, excluir, imprimir, numero_lancamento
+            incluir, editar, excluir, imprimir, numero_lancamento, mapeamentos_financeiro
      FROM permissoes
      WHERE usuario_id = ?
      LIMIT 1`,
@@ -1089,6 +1089,26 @@ async function garantirPermissaoNumeroLancamento() {
     INNER JOIN usuarios u ON u.id = p.usuario_id
     SET p.numero_lancamento = 1
     WHERE UPPER(u.perfil) = 'ADMIN' AND p.numero_lancamento <> 1
+  `)
+}
+
+async function garantirPermissaoMapeamentosFinanceiro() {
+  const [colunas] = await db.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'permissoes'
+      AND COLUMN_NAME = 'mapeamentos_financeiro'
+    LIMIT 1
+  `)
+  if (!colunas.length) {
+    await db.query(`ALTER TABLE permissoes ADD COLUMN mapeamentos_financeiro TINYINT(1) NOT NULL DEFAULT 0 AFTER numero_lancamento`)
+  }
+  await db.query(`
+    UPDATE permissoes p
+    INNER JOIN usuarios u ON u.id = p.usuario_id
+    SET p.mapeamentos_financeiro = 1
+    WHERE UPPER(u.perfil) = 'ADMIN' AND p.mapeamentos_financeiro <> 1
   `)
 }
 
@@ -3317,6 +3337,97 @@ app.delete('/api/periodo/limpar', async (req, res) => {
   }
 })
 
+async function podeGerenciarMapeamentosFinanceiro(req, res, next) {
+  try {
+    if (String(req.usuario?.perfil || '').toUpperCase() === 'ADMIN') return next()
+    const [rows] = await db.query('SELECT mapeamentos_financeiro FROM permissoes WHERE usuario_id=? LIMIT 1', [req.usuario.id])
+    if (Number(rows[0]?.mapeamentos_financeiro) === 1) return next()
+    return res.status(403).json({ ok: false, erro: 'Você não possui permissão para alterar os mapeamentos do Financeiro Geral.' })
+  } catch (error) {
+    return res.status(500).json({ ok: false, erro: error.message || 'Erro ao validar a permissão de mapeamentos.' })
+  }
+}
+
+app.get('/api/mapeamentos-financeiro', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+  try {
+    const empresaId = Number(req.query.empresaId || 1)
+    if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
+    const [mapeamentos] = await db.query(`
+      SELECT m.id, m.empresa_id, e.nome AS empresa, m.tipo, m.campo_destino,
+             m.conta_financeira_id, cb.nome_conta AS conta_financeira,
+             m.produto_id, p.nome AS produto, m.descricao, m.ativo,
+             m.criado_em, m.atualizado_em
+        FROM financeiro_geral_mapeamentos m
+        INNER JOIN empresas e ON e.id = m.empresa_id
+        LEFT JOIN contas_bancarias cb ON cb.id = m.conta_financeira_id
+        LEFT JOIN produtos p ON p.id = m.produto_id
+       WHERE m.empresa_id = ?
+       ORDER BY m.id ASC
+    `, [empresaId])
+    res.json({ ok: true, mapeamentos })
+  } catch (error) {
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao carregar mapeamentos.' })
+  }
+})
+
+app.put('/api/mapeamentos-financeiro/:id', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+  const connection = await db.getConnection()
+  try {
+    const id = Number(req.params.id)
+    const descricao = String(req.body?.descricao || '').trim()
+    const ativo = Number(req.body?.ativo !== false)
+    if (!Number.isInteger(id) || id <= 0) throw new Error('Mapeamento inválido.')
+    if (!descricao) throw new Error('Informe o título/descrição do mapeamento.')
+
+    await connection.beginTransaction()
+    const [rows] = await connection.query(
+      'SELECT id, empresa_id, tipo, campo_destino FROM financeiro_geral_mapeamentos WHERE id=? LIMIT 1 FOR UPDATE',
+      [id]
+    )
+    const atual = rows[0]
+    if (!atual) throw new Error('Mapeamento não encontrado.')
+
+    const tipo = String(atual.tipo || '').toUpperCase()
+    let contaFinanceiraId = null
+    let produtoId = null
+
+    if (tipo === 'CONTA') {
+      const informado = Number(req.body?.conta_financeira_id || 0)
+      if (informado > 0) {
+        const [contas] = await connection.query(
+          'SELECT id FROM contas_bancarias WHERE id=? AND empresa_id=? LIMIT 1',
+          [informado, atual.empresa_id]
+        )
+        if (!contas[0]) throw new Error('A conta financeira selecionada não pertence à empresa do mapeamento.')
+        contaFinanceiraId = informado
+      }
+    } else if (tipo === 'PRODUTO') {
+      const informado = Number(req.body?.produto_id || 0)
+      if (informado > 0) {
+        const [produtos] = await connection.query('SELECT id FROM produtos WHERE id=? LIMIT 1', [informado])
+        if (!produtos[0]) throw new Error('Produto selecionado não encontrado.')
+        produtoId = informado
+      }
+    } else {
+      throw new Error('Tipo de mapeamento não suportado.')
+    }
+
+    await connection.query(
+      `UPDATE financeiro_geral_mapeamentos
+          SET descricao=?, conta_financeira_id=?, produto_id=?, ativo=?, atualizado_em=NOW()
+        WHERE id=?`,
+      [descricao, contaFinanceiraId, produtoId, ativo, id]
+    )
+    await connection.commit()
+    res.json({ ok: true, mensagem: `Mapeamento ${atual.campo_destino} atualizado com sucesso.` })
+  } catch (error) {
+    try { await connection.rollback() } catch (_) {}
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao atualizar mapeamento.' })
+  } finally {
+    connection.release()
+  }
+})
+
 async function podeGerenciarCadastros(req, res, next) {
   try {
     if (String(req.usuario?.perfil || '').toUpperCase() === 'ADMIN') return next()
@@ -3415,8 +3526,9 @@ app.get('*', (req, res) => {
 async function iniciarServidor() {
   try {
     await garantirPermissaoNumeroLancamento()
+    await garantirPermissaoMapeamentosFinanceiro()
   } catch (error) {
-    console.error('Erro na migração da permissão Número de Lançamento:', error)
+    console.error('Erro na migração das permissões administrativas:', error)
     process.exitCode = 1
     return
   }

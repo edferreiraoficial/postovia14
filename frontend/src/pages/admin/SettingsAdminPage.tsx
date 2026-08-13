@@ -18,6 +18,7 @@ const PERMISSOES = [
   ['excluir', 'Excluir'],
   ['imprimir', 'Imprimir'],
   ['numero_lancamento', 'Número de Lançamento'],
+  ['mapeamentos_financeiro', 'Mapeamentos Financeiro Geral'],
 ] as const
 
 type PermissaoKey = typeof PERMISSOES[number][0]
