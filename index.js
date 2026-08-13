@@ -18,7 +18,7 @@ import { processarPlanilhas } from './backend/processar.js'
 import { gerarExcelExtratoBancario } from './backend/pdfExtratoExcel.js'
 import { migrarContasFinanceiras, garantirMapeamentosContasFinanceiras } from './backend/migrarContasFinanceiras.js'
 import { consolidarFinanceiroGeral, recalcularFinanceiroGeralAPartirDe } from './backend/consolidarFinanceiroGeral.js'
-import { garantirEstruturaTiposLancamento, carregarConfiguracaoTipos, carregarTiposSistema } from './backend/tiposLancamento.js'
+import { garantirEstruturaTiposLancamento, carregarConfiguracaoTipos, carregarTiposSistema, carregarRegrasTipoLancamento, obterTipoLancamentoId, codigoTipoNormalizado } from './backend/tiposLancamento.js'
 
 dotenv.config()
 
@@ -1508,6 +1508,127 @@ app.post('/api/financeiro-geral/consolidar', async (req, res) => {
   }
 })
 
+
+app.post('/api/financeiro-geral/atualizar-tipos-lancamento', async (req, res) => {
+  const conn = await db.getConnection()
+  try {
+    const empresaId = Number(req.body?.empresa_id || req.body?.empresaId || 1)
+    const dataInicial = String(req.body?.dataInicial || '').trim()
+    const dataFinal = String(req.body?.dataFinal || '').trim()
+    if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) throw new Error('Informe um período válido.')
+    if (dataInicial > dataFinal) throw new Error('A data inicial não pode ser posterior à data final.')
+
+    const dataTrava = await obterDataTravaConsolidacao(empresaId)
+    const primeiroDiaLiberado = dataTrava ? proximaDataLocal(dataTrava) : dataInicial
+    const dataInicialEfetiva = dataTrava && dataInicial <= dataTrava ? primeiroDiaLiberado : dataInicial
+    if (dataInicialEfetiva > dataFinal) {
+      return res.json({ ok: true, atualizados: 0, mensagem: `Nenhum T atualizado. O período até ${dataTrava.split('-').reverse().join('/')} está travado.` })
+    }
+
+    await garantirEstruturaTiposLancamento(conn)
+    await conn.beginTransaction()
+    const regras = await carregarRegrasTipoLancamento(conn)
+    const tiposSistema = await carregarTiposSistema(conn, empresaId)
+    const tipoTransferenciaId = tiposSistema.get('TRANSFERENCIA') ?? null
+
+    const camposContas = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
+    const [linhas] = await conn.query(
+      `SELECT id, DATE_FORMAT(data_lancamento,'%Y-%m-%d') AS data_lancamento,
+              descricao_original, descricao_normalizada, tipo_lancamento, tipo_lancamento_id, total,
+              ${camposContas.join(', ')}
+         FROM financeiro_geral
+        WHERE empresa_id=? AND data_lancamento BETWEEN ? AND ? AND status='ATIVO'
+        ORDER BY data_lancamento ASC, id ASC`,
+      [empresaId, dataInicialEfetiva, dataFinal]
+    )
+
+    const classificacao = new Map()
+    const porDia = new Map()
+    for (const linha of linhas) {
+      const descricao = linha.descricao_original || linha.descricao_normalizada || ''
+      const tipoSistemaId = tiposSistema.get(codigoTipoNormalizado(linha.tipo_lancamento)) ?? null
+      const tipoRegraId = obterTipoLancamentoId(descricao, regras)
+      const tipoInicial = tipoSistemaId ?? tipoRegraId ?? null
+      classificacao.set(Number(linha.id), tipoInicial)
+      const dia = String(linha.data_lancamento || '').slice(0, 10)
+      if (!porDia.has(dia)) porDia.set(dia, [])
+      porDia.get(dia).push(linha)
+    }
+
+    // Transferências automáticas têm prioridade sobre o fallback 19/20.
+    // Só são avaliadas entre linhas ainda sem classificação por sistema ou regra.
+    if (tipoTransferenciaId != null) {
+      const centavos = (v) => Math.round(Math.abs(Number(v || 0)) * 100)
+      for (const linhasDia of porDia.values()) {
+        const candidatos = linhasDia.filter((r) => classificacao.get(Number(r.id)) == null)
+        const idsTransferencia = new Set()
+        for (const r of candidatos) {
+          const valores = camposContas.map((c) => Number(r[c] || 0)).filter((v) => Math.abs(v) >= 0.005)
+          const pos = valores.filter((v) => v > 0).reduce((a, v) => a + v, 0)
+          const neg = valores.filter((v) => v < 0).reduce((a, v) => a + Math.abs(v), 0)
+          if (pos >= 0.005 && neg >= 0.005 && Math.abs(pos - neg) <= 0.01) idsTransferencia.add(Number(r.id))
+        }
+        const positivos = new Map()
+        for (const r of candidatos) {
+          const valor = Number(r.total || 0)
+          if (valor <= 0.004) continue
+          const chave = centavos(valor)
+          if (!positivos.has(chave)) positivos.set(chave, [])
+          positivos.get(chave).push(r)
+        }
+        for (const r of candidatos) {
+          const valor = Number(r.total || 0)
+          if (valor >= -0.004) continue
+          const fila = positivos.get(centavos(valor)) || []
+          const positivo = fila.shift()
+          if (positivo) {
+            idsTransferencia.add(Number(r.id))
+            idsTransferencia.add(Number(positivo.id))
+          }
+        }
+        for (const id of idsTransferencia) classificacao.set(id, tipoTransferenciaId)
+      }
+    }
+
+    let atualizados = 0
+    let semAlteracao = 0
+    for (const linha of linhas) {
+      const id = Number(linha.id)
+      let novoTipo = classificacao.get(id) ?? null
+      if (novoTipo == null) {
+        const total = Number(linha.total || 0)
+        novoTipo = total > 0.000004 ? 19 : (total < -0.000004 ? 20 : null)
+      }
+      const atual = linha.tipo_lancamento_id == null ? null : Number(linha.tipo_lancamento_id)
+      if (atual === novoTipo) {
+        semAlteracao += 1
+        continue
+      }
+      await conn.query(`UPDATE financeiro_geral SET tipo_lancamento_id=?, atualizado_em=NOW() WHERE id=?`, [novoTipo, id])
+      atualizados += 1
+    }
+
+    await conn.commit()
+    const avisoTrava = dataInicialEfetiva !== dataInicial
+      ? ` O período até ${dataTrava.split('-').reverse().join('/')} foi preservado.`
+      : ''
+    res.json({
+      ok: true,
+      atualizados,
+      semAlteracao,
+      total: linhas.length,
+      dataInicialEfetiva,
+      mensagem: `Tipos de lançamento (T) atualizados em ${atualizados} registro(s). Nenhum outro campo foi alterado.${avisoTrava}`,
+    })
+  } catch (error) {
+    await conn.rollback().catch(() => {})
+    console.error('ERRO /api/financeiro-geral/atualizar-tipos-lancamento:', error)
+    res.status(400).json({ ok: false, erro: error.message || 'Erro ao atualizar os tipos de lançamento.' })
+  } finally {
+    conn.release()
+  }
+})
 
 app.post('/api/financeiro-geral/reconsolidar-zero', async (req, res) => {
   try {

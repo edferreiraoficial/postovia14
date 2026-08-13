@@ -1,0 +1,59 @@
+--- a/frontend/src/pages/admin/FinanceiroGeralAdminPage.tsx
++++ b/frontend/src/pages/admin/FinanceiroGeralAdminPage.tsx
+@@ -564,23 +564,32 @@
+     const periodoFinal = recriarDataFinal;
+     if (!periodoInicial || !periodoFinal) { setMensagem('Informe o período inicial e final para recriar.'); return; }
+     if (periodoInicial > periodoFinal) { setMensagem('A data inicial não pode ser posterior à data final.'); return; }
+-    const campoSelecionado = recriarColuna === 'TODAS' ? null : campos.find((c) => c.key === recriarColuna);
+-    const nomeColuna = campoSelecionado?.label || 'Todas as colunas';
++    const somenteTipoLancamento = recriarColuna === 'TIPO_LANCAMENTO';
++    const campoSelecionado = recriarColuna === 'TODAS' || somenteTipoLancamento ? null : campos.find((c) => c.key === recriarColuna);
++    const nomeColuna = somenteTipoLancamento ? 'Somente Tipo de Lançamento (T)' : (campoSelecionado?.label || 'Todas as colunas');
+     const confirmar = window.confirm(
+-      `ATENÇÃO: a recriação será executada para ${nomeColuna}.\n\n` +
+-      `Período: ${dataBr(periodoInicial)} a ${dataBr(periodoFinal)}.\n\nDeseja continuar?`
++      somenteTipoLancamento
++        ? `ATENÇÃO: somente a coluna T será reclassificada pelas regras atuais. Nenhum valor, saldo, descrição, data ou outra coluna será alterado.\n\nPeríodo: ${dataBr(periodoInicial)} a ${dataBr(periodoFinal)}.\n\nDeseja continuar?`
++        : `ATENÇÃO: a recriação será executada para ${nomeColuna}.\n\n` +
++          `Período: ${dataBr(periodoInicial)} a ${dataBr(periodoFinal)}.\n\nDeseja continuar?`
+     );
+     if (!confirmar) return;
+ 
+     setCarregando(true);
+-    setMensagem(`Recriando ${nomeColuna} no período selecionado...`);
++    setMensagem(somenteTipoLancamento ? 'Atualizando somente os tipos de lançamento (T)...' : `Recriando ${nomeColuna} no período selecionado...`);
+     try {
+-      const res = await fetch(`${API_BASE}/financeiro-geral/reconsolidar-zero`, {
++      const endpoint = somenteTipoLancamento
++        ? `${API_BASE}/financeiro-geral/atualizar-tipos-lancamento`
++        : `${API_BASE}/financeiro-geral/reconsolidar-zero`;
++      const body = somenteTipoLancamento
++        ? { empresa_id: 1, dataInicial: periodoInicial, dataFinal: periodoFinal }
++        : { empresa_id: 1, dataInicial: periodoInicial, dataFinal: periodoFinal, coluna: recriarColuna };
++      const res = await fetch(endpoint, {
+         method: 'POST', headers: { 'Content-Type': 'application/json' },
+-        body: JSON.stringify({ empresa_id: 1, dataInicial: periodoInicial, dataFinal: periodoFinal, coluna: recriarColuna }),
++        body: JSON.stringify(body),
+       });
+       const dados = await res.json().catch(() => ({}));
+-      if (!res.ok || !dados.ok) throw new Error(dados.erro || 'Erro ao recriar os lançamentos.');
++      if (!res.ok || !dados.ok) throw new Error(dados.erro || (somenteTipoLancamento ? 'Erro ao atualizar os tipos de lançamento.' : 'Erro ao recriar os lançamentos.'));
+       setDataInicial(periodoInicial);
+       setDataFinal(periodoFinal);
+       setPagina(1);
+@@ -788,12 +797,12 @@
+       <div className="fg-modal fg-modal-recriar">
+         <div className="fg-modal-header"><h2>Recriar Financeiro Geral</h2><button type="button" onClick={() => setRecriarAberto(false)} aria-label="Fechar">×</button></div>
+         <div className="fg-modal-grid fg-modal-grid-recriar">
+-          <label>Coluna a recriar<select value={recriarColuna} onChange={(e) => setRecriarColuna(e.target.value)}><option value="TODAS">Todas as colunas</option>{campos.filter((c) => c.key !== 'total').map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select></label>
++          <label>Coluna a recriar<select value={recriarColuna} onChange={(e) => setRecriarColuna(e.target.value)}><option value="TODAS">Todas as colunas</option><option value="TIPO_LANCAMENTO">Somente Tipo de Lançamento (T)</option>{campos.filter((c) => c.key !== 'total').map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select></label>
+           <label>Data inicial<input type="date" value={recriarDataInicial} min={dataTravaConsolidacao ? diaSeguinte(dataTravaConsolidacao) : undefined} onChange={(e) => setRecriarDataInicial(e.target.value)} /></label>
+           <label>Data final<input type="date" value={recriarDataFinal} onChange={(e) => setRecriarDataFinal(e.target.value)} /></label>
+         </div>
+-        <p className="fg-recriar-aviso">Ao escolher uma coluna, somente os valores dessa coluna serão zerados e reconstruídos no período. As demais colunas serão preservadas.</p>
+-        <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setRecriarAberto(false)} disabled={carregando}>Cancelar</button><button type="button" className="admin-primary-button" onClick={reconsolidarDoZero} disabled={carregando}>{carregando ? 'Recriando...' : 'Recriar período'}</button></div>
++        <p className="fg-recriar-aviso">{recriarColuna === 'TIPO_LANCAMENTO' ? 'Somente a coluna T será recalculada pelas regras atuais. Nenhum valor, saldo ou outro dado do período será alterado.' : 'Ao escolher uma coluna, somente os valores dessa coluna serão zerados e reconstruídos no período. As demais colunas serão preservadas.'}</p>
++        <div className="fg-modal-actions"><button type="button" className="fg-modal-cancelar" onClick={() => setRecriarAberto(false)} disabled={carregando}>Cancelar</button><button type="button" className="admin-primary-button" onClick={reconsolidarDoZero} disabled={carregando}>{carregando ? (recriarColuna === 'TIPO_LANCAMENTO' ? 'Atualizando T...' : 'Recriando...') : (recriarColuna === 'TIPO_LANCAMENTO' ? 'Atualizar T' : 'Recriar período')}</button></div>
+       </div>
+     </div>}
+     {novoLancamentoAberto && <div className="fg-modal-overlay" role="dialog" aria-modal="true" aria-label={lancamentoEditandoId === null ? 'Novo lançamento' : 'Alterar lançamento'}>
