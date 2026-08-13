@@ -1936,6 +1936,13 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     }
   }
 
+  const outrasReceitas = linhasConsideradas.filter((r) => Number(r.tipo_lancamento_id) === 19 && n(r.total) > 0.004).map((r) => ({
+    id: r.id,
+    data: String(r.data_lancamento || '').slice(0, 10),
+    descricao: r.descricao_original || r.descricao_normalizada || 'Outra receita',
+    valor: n(r.total),
+  }))
+
   const despesas = linhasConsideradas.filter((r) => {
     const d = desc(r)
     if (n(r.total) >= -0.004) return false
@@ -1952,9 +1959,10 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   }))
 
   const saldoAnteriorTotal = n(saldoAnterior?.total)
+  const totalOutrasReceitas = outrasReceitas.reduce((a, r) => a + n(r.valor), 0)
   const totalDespesas = despesas.reduce((a, r) => a + n(r.valor), 0)
   const resultadoLiquidoPeriodo = resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix
-  const totalComposicao = saldoAnteriorTotal + resultadoLiquidoPeriodo + totalDespesas
+  const totalComposicao = saldoAnteriorTotal + resultadoLiquidoPeriodo + totalOutrasReceitas + totalDespesas
   const saldoFinalTotal = saldoFinal ? n(saldoFinal.total) : totalComposicao
 
   return {
@@ -1967,6 +1975,8 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     taxasCartao,
     tarifaPix,
     resultadoLiquidoPeriodo,
+    outrasReceitas,
+    totalOutrasReceitas,
     despesas,
     totalDespesas,
     totalComposicao,
@@ -2022,11 +2032,30 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
     adicionarResumo(9, 'Tarifa Pix Recebido Maquininha', dados.tarifaPix)
     adicionarResumo(11, 'Resultado Líquido do período', dados.resultadoLiquidoPeriodo)
 
-    ws.getCell('A13').value = 'Data'
-    ws.getCell('B13').value = 'Despesas pagas no período'
-    ws.getCell('C13').value = 'Valor'
-    for (const c of ['A13', 'B13', 'C13']) ws.getCell(c).font = { bold: true }
-    let linha = 14
+    let linha = 13
+    if ((dados.outrasReceitas || []).length > 0) {
+      ws.getCell(`A${linha}`).value = 'Data'
+      ws.getCell(`B${linha}`).value = 'Outras Receitas'
+      ws.getCell(`C${linha}`).value = 'Valor'
+      for (const c of [`A${linha}`, `B${linha}`, `C${linha}`]) ws.getCell(c).font = { bold: true }
+      linha += 1
+      for (const receita of dados.outrasReceitas || []) {
+        ws.getCell(`A${linha}`).value = receita.data ? receita.data.split('-').reverse().join('/') : ''
+        ws.getCell(`B${linha}`).value = receita.descricao
+        ws.getCell(`C${linha}`).value = Number(receita.valor || 0)
+        ws.getCell(`C${linha}`).numFmt = moedaFmt
+        linha += 1
+      }
+      adicionarResumo(linha, 'Total de Outras Receitas', dados.totalOutrasReceitas)
+      ws.getCell(`B${linha}`).font = { bold: true }
+      ws.getCell(`C${linha}`).font = { bold: true }
+      linha += 2
+    }
+    ws.getCell(`A${linha}`).value = 'Data'
+    ws.getCell(`B${linha}`).value = 'Despesas pagas no período'
+    ws.getCell(`C${linha}`).value = 'Valor'
+    for (const c of [`A${linha}`, `B${linha}`, `C${linha}`]) ws.getCell(c).font = { bold: true }
+    linha += 1
     for (const despesa of dados.despesas) {
       ws.getCell(`A${linha}`).value = despesa.data ? despesa.data.split('-').reverse().join('/') : ''
       ws.getCell(`B${linha}`).value = despesa.descricao
@@ -2151,6 +2180,13 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     }
     const ehMovimentoEntreContas = (r) => temTransferenciaNaMesmaLinha(r) || idsNegativosComContrapartida.has(r.id)
 
+    const outrasReceitas = linhasConsideradas.filter((r) => Number(r.tipo_lancamento_id) === 19 && n(r.total) > 0.004).map((r) => ({
+      id: r.id,
+      descricao: r.descricao_original || r.descricao_normalizada || 'Outra receita',
+      valor: n(r.total),
+      origem: r.origem || '',
+    }))
+
     const despesas = linhasConsideradas.filter((r) => {
       const d = desc(r)
       if (n(r.total) >= -0.004) return false
@@ -2166,12 +2202,14 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     }).map((r) => ({ id: r.id, descricao: r.descricao_original || r.descricao_normalizada || 'Despesa', valor: n(r.total), origem: r.origem || '' }))
 
     const saldoAnteriorTotal = n(saldoAnterior?.total)
-    const totalComposicao = saldoAnteriorTotal + resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix + despesas.reduce((a, r) => a + n(r.valor), 0)
+    const totalOutrasReceitas = outrasReceitas.reduce((a, r) => a + n(r.valor), 0)
+    const totalDespesas = despesas.reduce((a, r) => a + n(r.valor), 0)
+    const totalComposicao = saldoAnteriorTotal + resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix + totalOutrasReceitas + totalDespesas
     const saldoDoDiaTotal = saldoDoDia ? n(saldoDoDia.total) : totalComposicao
     // totalCalculado é mantido por compatibilidade com o frontend, porém agora
     // corresponde ao Total da linha Saldo do dia clicada.
     const totalCalculado = saldoDoDiaTotal
-    res.json({ ok: true, data, saldoAnterior: saldoAnteriorTotal, resultadoLiquido, ajusteEstoque, taxasCartao, tarifaPix, despesas, totalCalculado, totalComposicao, saldoDoDia: saldoDoDiaTotal })
+    res.json({ ok: true, data, saldoAnterior: saldoAnteriorTotal, resultadoLiquido, ajusteEstoque, taxasCartao, tarifaPix, outrasReceitas, totalOutrasReceitas, despesas, totalDespesas, totalCalculado, totalComposicao, saldoDoDia: saldoDoDiaTotal })
   } catch (error) {
     res.status(400).json({ ok: false, erro: error.message || 'Erro ao montar os dados do dia.' })
   }
