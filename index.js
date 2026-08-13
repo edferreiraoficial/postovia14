@@ -1850,8 +1850,9 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   await garantirEstruturaTiposLancamento()
   const configuracaoTipos = await carregarConfiguracaoTipos(db, empresaId)
   const considerarTipoPeriodo = (row) => {
-    const id = Number(row?.tipo_lancamento_id || 0)
-    if (!id) return true
+    const bruto = row?.tipo_lancamento_id
+    if (bruto === null || bruto === undefined || bruto === '') return true
+    const id = Number(bruto)
     const config = configuracaoTipos.get(id)
     return config ? config.periodo : true
   }
@@ -2066,8 +2067,9 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     await garantirEstruturaTiposLancamento()
     const configuracaoTipos = await carregarConfiguracaoTipos(db, empresaId)
     const considerarTipoResumo = (row) => {
-      const id = Number(row?.tipo_lancamento_id || 0)
-      if (!id) return true
+      const bruto = row?.tipo_lancamento_id
+      if (bruto === null || bruto === undefined || bruto === '') return true
+      const id = Number(bruto)
       const config = configuracaoTipos.get(id)
       return config ? config.resumo : true
     }
@@ -3375,25 +3377,22 @@ async function podeGerenciarMapeamentosFinanceiro(req, res, next) {
 
 app.get('/api/tipos-lancamento', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
   try {
-    const empresaId = Number(req.query.empresaId || 1)
-    if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
     await garantirEstruturaTiposLancamento()
     const [tipos] = await db.query(
-      `SELECT c.id,c.empresa_id,c.tipo_lancamento_id,c.codigo,c.nome,c.considera_resumo_dia,
-              c.considera_relatorio_periodo,c.ativo,COUNT(f.id) AS quantidade_lancamentos
-         FROM tipos_lancamento_config c
-         LEFT JOIN financeiro_geral f ON f.empresa_id=c.empresa_id AND f.tipo_lancamento_id=c.tipo_lancamento_id AND f.status='ATIVO'
-        WHERE c.empresa_id=?
-        GROUP BY c.id,c.empresa_id,c.tipo_lancamento_id,c.codigo,c.nome,c.considera_resumo_dia,c.considera_relatorio_periodo,c.ativo
-        ORDER BY c.tipo_lancamento_id`,
-      [empresaId]
+      `SELECT t.id,t.id AS tipo_lancamento_id,t.codigo,t.nome,t.natureza,t.ordem_relatorio,
+              t.considera_resumo_dia,t.considera_relatorio_periodo,t.ativo,
+              COUNT(f.id) AS quantidade_lancamentos
+         FROM tipos_lancamento t
+         LEFT JOIN financeiro_geral f ON f.tipo_lancamento_id=t.id AND f.status='ATIVO'
+        GROUP BY t.id,t.codigo,t.nome,t.natureza,t.ordem_relatorio,
+                 t.considera_resumo_dia,t.considera_relatorio_periodo,t.ativo
+        ORDER BY t.ordem_relatorio,t.id`
     )
     const [regras] = await db.query(
-      `SELECT r.id,r.tipo_lancamento_id,r.texto_procurado,r.texto_excluir,r.prioridade,r.ativo
+      `SELECT r.id,r.tipo_lancamento_id,t.nome AS tipo_nome,r.texto_procurado,r.texto_excluir,r.prioridade,r.ativo
          FROM regras_tipo_lancamento r
-         INNER JOIN tipos_lancamento_config c ON c.tipo_lancamento_id=r.tipo_lancamento_id AND c.empresa_id=?
-        ORDER BY r.prioridade,r.id`,
-      [empresaId]
+         INNER JOIN tipos_lancamento t ON t.id=r.tipo_lancamento_id
+        ORDER BY r.prioridade,r.id`
     )
     res.json({ ok:true, tipos, regras })
   } catch (error) {
@@ -3401,42 +3400,72 @@ app.get('/api/tipos-lancamento', podeGerenciarMapeamentosFinanceiro, async (req,
   }
 })
 
-app.put('/api/tipos-lancamento/:tipoId', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+app.post('/api/tipos-lancamento', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
   try {
-    const empresaId = Number(req.body?.empresa_id || req.body?.empresaId || 1)
-    const tipoId = Number(req.params.tipoId)
+    await garantirEstruturaTiposLancamento()
+    const codigo = String(req.body?.codigo || '').trim().toUpperCase()
     const nome = String(req.body?.nome || '').trim()
+    const natureza = String(req.body?.natureza || 'OUTROS').trim().toUpperCase()
+    const ordem = Number(req.body?.ordem_relatorio || 100)
     const resumo = Number(req.body?.considera_resumo_dia !== false && Number(req.body?.considera_resumo_dia) !== 0)
     const periodo = Number(req.body?.considera_relatorio_periodo !== false && Number(req.body?.considera_relatorio_periodo) !== 0)
     const ativo = Number(req.body?.ativo !== false)
-    if (!Number.isInteger(tipoId) || tipoId <= 0 || !nome) throw new Error('Tipo de lançamento inválido.')
-    await garantirEstruturaTiposLancamento()
+    if (!codigo || !nome) throw new Error('Informe o código e o nome do tipo de lançamento.')
     const [result] = await db.query(
-      `UPDATE tipos_lancamento_config SET nome=?,considera_resumo_dia=?,considera_relatorio_periodo=?,ativo=?,atualizado_em=NOW()
-        WHERE empresa_id=? AND tipo_lancamento_id=?`,
-      [nome,resumo,periodo,ativo,empresaId,tipoId]
+      `INSERT INTO tipos_lancamento
+         (codigo,nome,natureza,ordem_relatorio,considera_resumo_dia,considera_relatorio_periodo,ativo,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,NOW(),NOW())`,
+      [codigo,nome,natureza,ordem,resumo,periodo,ativo]
+    )
+    res.status(201).json({ ok:true, id:result.insertId, mensagem:'Tipo de lançamento cadastrado com sucesso.' })
+  } catch (error) {
+    const msg = error?.code === 'ER_DUP_ENTRY' ? 'Já existe um tipo de lançamento com esse código.' : (error.message || 'Erro ao cadastrar o tipo de lançamento.')
+    res.status(400).json({ ok:false, erro:msg })
+  }
+})
+
+app.put('/api/tipos-lancamento/:tipoId', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+  try {
+    await garantirEstruturaTiposLancamento()
+    const tipoId = Number(req.params.tipoId)
+    const codigo = String(req.body?.codigo || '').trim().toUpperCase()
+    const nome = String(req.body?.nome || '').trim()
+    const natureza = String(req.body?.natureza || 'OUTROS').trim().toUpperCase()
+    const ordem = Number(req.body?.ordem_relatorio || 100)
+    const resumo = Number(req.body?.considera_resumo_dia !== false && Number(req.body?.considera_resumo_dia) !== 0)
+    const periodo = Number(req.body?.considera_relatorio_periodo !== false && Number(req.body?.considera_relatorio_periodo) !== 0)
+    const ativo = Number(req.body?.ativo !== false)
+    if (!Number.isInteger(tipoId) || tipoId < 0 || !codigo || !nome) throw new Error('Tipo de lançamento inválido.')
+    const [result] = await db.query(
+      `UPDATE tipos_lancamento
+          SET codigo=?,nome=?,natureza=?,ordem_relatorio=?,considera_resumo_dia=?,considera_relatorio_periodo=?,ativo=?,updated_at=NOW()
+        WHERE id=?`,
+      [codigo,nome,natureza,ordem,resumo,periodo,ativo,tipoId]
     )
     if (!result.affectedRows) throw new Error('Tipo de lançamento não encontrado.')
-    res.json({ ok:true, mensagem:'Configuração do tipo atualizada.' })
+    res.json({ ok:true, mensagem:'Tipo de lançamento atualizado com sucesso.' })
   } catch (error) {
-    res.status(400).json({ ok:false, erro:error.message || 'Erro ao salvar o tipo de lançamento.' })
+    const msg = error?.code === 'ER_DUP_ENTRY' ? 'Já existe um tipo de lançamento com esse código.' : (error.message || 'Erro ao salvar o tipo de lançamento.')
+    res.status(400).json({ ok:false, erro:msg })
   }
 })
 
 app.post('/api/tipos-lancamento/regras', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
   try {
+    await garantirEstruturaTiposLancamento()
     const tipoId = Number(req.body?.tipo_lancamento_id)
     const texto = String(req.body?.texto_procurado || '').trim()
     const excluir = String(req.body?.texto_excluir || '').trim() || null
     const prioridade = Math.max(0, Number(req.body?.prioridade || 100))
     const ativo = Number(req.body?.ativo !== false)
-    if (!Number.isInteger(tipoId) || tipoId <= 0 || !texto) throw new Error('Informe o tipo e o texto da regra.')
-    await garantirEstruturaTiposLancamento()
+    if (!Number.isInteger(tipoId) || tipoId < 0 || !texto) throw new Error('Informe o tipo e o texto da regra.')
+    const [[tipo]] = await db.query(`SELECT id FROM tipos_lancamento WHERE id=? LIMIT 1`, [tipoId])
+    if (!tipo) throw new Error('Tipo de lançamento não encontrado.')
     const [result] = await db.query(
       `INSERT INTO regras_tipo_lancamento (tipo_lancamento_id,texto_procurado,texto_excluir,prioridade,ativo) VALUES (?,?,?,?,?)`,
       [tipoId,texto,excluir,prioridade,ativo]
     )
-    res.status(201).json({ ok:true, id:result.insertId })
+    res.status(201).json({ ok:true, id:result.insertId, mensagem:'Regra cadastrada com sucesso.' })
   } catch (error) {
     res.status(400).json({ ok:false, erro:error.message || 'Erro ao criar a regra.' })
   }
@@ -3444,20 +3473,34 @@ app.post('/api/tipos-lancamento/regras', podeGerenciarMapeamentosFinanceiro, asy
 
 app.put('/api/tipos-lancamento/regras/:id', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
   try {
+    await garantirEstruturaTiposLancamento()
     const id = Number(req.params.id)
     const tipoId = Number(req.body?.tipo_lancamento_id)
     const texto = String(req.body?.texto_procurado || '').trim()
     const excluir = String(req.body?.texto_excluir || '').trim() || null
     const prioridade = Math.max(0, Number(req.body?.prioridade || 100))
     const ativo = Number(req.body?.ativo !== false)
-    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(tipoId) || tipoId <= 0 || !texto) throw new Error('Regra inválida.')
-    await db.query(
-      `UPDATE regras_tipo_lancamento SET tipo_lancamento_id=?,texto_procurado=?,texto_excluir=?,prioridade=?,ativo=?,atualizado_em=NOW() WHERE id=?`,
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(tipoId) || tipoId < 0 || !texto) throw new Error('Regra inválida.')
+    const [result] = await db.query(
+      `UPDATE regras_tipo_lancamento SET tipo_lancamento_id=?,texto_procurado=?,texto_excluir=?,prioridade=?,ativo=? WHERE id=?`,
       [tipoId,texto,excluir,prioridade,ativo,id]
     )
-    res.json({ ok:true })
+    if (!result.affectedRows) throw new Error('Regra não encontrada.')
+    res.json({ ok:true, mensagem:'Regra atualizada com sucesso.' })
   } catch (error) {
     res.status(400).json({ ok:false, erro:error.message || 'Erro ao atualizar a regra.' })
+  }
+})
+
+app.delete('/api/tipos-lancamento/regras/:id', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) throw new Error('Regra inválida.')
+    const [result] = await db.query(`DELETE FROM regras_tipo_lancamento WHERE id=?`, [id])
+    if (!result.affectedRows) throw new Error('Regra não encontrada.')
+    res.json({ ok:true, mensagem:'Regra excluída com sucesso.' })
+  } catch (error) {
+    res.status(400).json({ ok:false, erro:error.message || 'Erro ao excluir a regra.' })
   }
 })
 

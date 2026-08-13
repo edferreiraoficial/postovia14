@@ -29,7 +29,7 @@ export default function CadastrosAdminPage() {
       const empresaId = Number(payload.empresas?.[0]?.id || 1)
       const [respostaMapeamentos, respostaTipos] = await Promise.all([
         fetch(`${API_BASE}/mapeamentos-financeiro?empresaId=${empresaId}`),
-        fetch(`${API_BASE}/tipos-lancamento?empresaId=${empresaId}`),
+        fetch(`${API_BASE}/tipos-lancamento`),
       ])
       const payloadMapeamentos = await respostaMapeamentos.json().catch(() => ({}))
       const payloadTipos = await respostaTipos.json().catch(() => ({}))
@@ -51,8 +51,7 @@ export default function CadastrosAdminPage() {
       return
     }
     if (aba === 'tipos_lancamento') {
-      const primeiro = dados.tiposLancamento?.[0]
-      setForm(primeiro ? { ...primeiro, ativo: Boolean(Number(primeiro.ativo)), considera_resumo_dia: Boolean(Number(primeiro.considera_resumo_dia)), considera_relatorio_periodo: Boolean(Number(primeiro.considera_relatorio_periodo)) } : { ativo: true })
+      setForm({ ativo: true, natureza: 'OUTROS', ordem_relatorio: 100, considera_resumo_dia: true, considera_relatorio_periodo: true })
       setRegraForm({ prioridade: 100, ativo: true })
       return
     }
@@ -68,7 +67,7 @@ export default function CadastrosAdminPage() {
       setForm(primeiro ? { ...primeiro, ativo: Boolean(Number(primeiro.ativo)) } : { ativo: true })
     } else if (novaAba === 'tipos_lancamento') {
       const primeiro = dados.tiposLancamento?.[0]
-      setForm(primeiro ? { ...primeiro, ativo: Boolean(Number(primeiro.ativo)), considera_resumo_dia: Boolean(Number(primeiro.considera_resumo_dia)), considera_relatorio_periodo: Boolean(Number(primeiro.considera_relatorio_periodo)) } : { ativo: true })
+      setForm(primeiro ? { ...primeiro, ativo: Boolean(Number(primeiro.ativo)), considera_resumo_dia: Boolean(Number(primeiro.considera_resumo_dia)), considera_relatorio_periodo: Boolean(Number(primeiro.considera_relatorio_periodo)) } : { ativo: true, natureza: 'OUTROS', ordem_relatorio: 100, considera_resumo_dia: true, considera_relatorio_periodo: true })
       setRegraForm({ prioridade: 100, ativo: true })
     } else {
       setForm({ ativo: true, empresa_id: dados.empresas?.[0]?.id || '' })
@@ -89,9 +88,9 @@ export default function CadastrosAdminPage() {
         url = `${API_BASE}/mapeamentos-financeiro/${form.id}`
         method = 'PUT'
       } else if (aba === 'tipos_lancamento') {
-        if (!form.tipo_lancamento_id) throw new Error('Selecione um tipo de lançamento.')
-        url = `${API_BASE}/tipos-lancamento/${form.tipo_lancamento_id}`
-        method = 'PUT'
+        const editandoTipo = form.id !== undefined && form.id !== null
+        url = `${API_BASE}/tipos-lancamento${editandoTipo ? `/${form.id}` : ''}`
+        method = editandoTipo ? 'PUT' : 'POST'
       } else {
         const plural = aba === 'empresas' ? 'empresas' : aba === 'contas' ? 'contas-financeiras' : 'produtos'
         url = `${API_BASE}/${plural}${form.id ? `/${form.id}` : ''}`
@@ -108,8 +107,11 @@ export default function CadastrosAdminPage() {
 
       setMensagem(aba === 'mapeamentos' ? (payload.mensagem || 'Mapeamento atualizado com sucesso.') : aba === 'tipos_lancamento' ? (payload.mensagem || 'Tipo de lançamento atualizado com sucesso.') : 'Cadastro salvo com sucesso.')
       await carregar()
-      if (aba === 'mapeamentos' || aba === 'tipos_lancamento') {
+      if (aba === 'mapeamentos') {
         setDados((atual: any) => atual)
+      } else if (aba === 'tipos_lancamento') {
+        setForm({ ativo: true, natureza: 'OUTROS', ordem_relatorio: 100, considera_resumo_dia: true, considera_relatorio_periodo: true })
+        setRegraForm({ prioridade: 100, ativo: true })
       } else {
         novo()
       }
@@ -137,28 +139,42 @@ export default function CadastrosAdminPage() {
 
   const selecionar = (item: any) => {
     setForm({ ...item, ativo: Boolean(Number(item.ativo)), considera_resumo_dia: Boolean(Number(item.considera_resumo_dia)), considera_relatorio_periodo: Boolean(Number(item.considera_relatorio_periodo)) })
-    if (aba === 'tipos_lancamento') setRegraForm({ tipo_lancamento_id: Number(item.tipo_lancamento_id), prioridade: 100, ativo: true })
+    if (aba === 'tipos_lancamento') setRegraForm({ tipo_lancamento_id: Number(item.id), prioridade: 100, ativo: true })
     setErro('')
     setMensagem('')
   }
 
   const salvarRegra = async (event: FormEvent) => {
     event.preventDefault()
-    if (!form.tipo_lancamento_id) return
+    if (form.id === undefined || form.id === null) return
     setSalvandoRegra(true); setErro(''); setMensagem('')
     try {
       const editando = Boolean(regraForm.id)
       const response = await fetch(`${API_BASE}/tipos-lancamento/regras${editando ? `/${regraForm.id}` : ''}`, {
         method: editando ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...regraForm, tipo_lancamento_id: Number(form.tipo_lancamento_id) }),
+        body: JSON.stringify({ ...regraForm, tipo_lancamento_id: Number(form.id) }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.erro || 'Erro ao salvar a regra.')
       setMensagem('Regra de classificação salva com sucesso.')
-      setRegraForm({ tipo_lancamento_id: Number(form.tipo_lancamento_id), prioridade: 100, ativo: true })
+      setRegraForm({ tipo_lancamento_id: Number(form.id), prioridade: 100, ativo: true })
       await carregar()
     } catch (e) { setErro(e instanceof Error ? e.message : 'Erro ao salvar a regra.') }
     finally { setSalvandoRegra(false) }
+  }
+
+
+  const excluirRegra = async (regraId: number) => {
+    if (!window.confirm('Excluir esta regra de classificação?')) return
+    setErro(''); setMensagem('')
+    try {
+      const response = await fetch(`${API_BASE}/tipos-lancamento/regras/${regraId}`, { method: 'DELETE' })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.erro || 'Erro ao excluir a regra.')
+      setMensagem(payload.mensagem || 'Regra excluída com sucesso.')
+      setRegraForm({ tipo_lancamento_id: Number(form.id), prioridade: 100, ativo: true })
+      await carregar()
+    } catch (e) { setErro(e instanceof Error ? e.message : 'Erro ao excluir a regra.') }
   }
 
   return <section className="settings-page">
@@ -168,7 +184,7 @@ export default function CadastrosAdminPage() {
         <h1>Cadastros diversos</h1>
         <p>Gerencie empresas, contas financeiras, produtos e os mapeamentos do Financeiro Geral.</p>
       </div>
-      {aba !== 'mapeamentos' && aba !== 'tipos_lancamento' && <button className="settings-btn settings-btn-secondary" onClick={novo}>Novo cadastro</button>}
+      {aba !== 'mapeamentos' && <button className="settings-btn settings-btn-secondary" onClick={novo}>{aba === 'tipos_lancamento' ? 'Novo tipo' : 'Novo cadastro'}</button>}
     </header>
 
     {erro && <div className="settings-alert settings-alert-error">{erro}</div>}
@@ -186,12 +202,12 @@ export default function CadastrosAdminPage() {
       <article className="settings-card">
         <div className="cadastros-form-header">
           <div>
-            <h2>{aba === 'mapeamentos' ? (form.id ? 'Editar mapeamento' : 'Selecione um mapeamento') : aba === 'tipos_lancamento' ? (form.tipo_lancamento_id ? 'Configurar tipo de lançamento' : 'Selecione um tipo') : (form.id ? 'Editar cadastro' : 'Novo cadastro')}</h2>
+            <h2>{aba === 'mapeamentos' ? (form.id ? 'Editar mapeamento' : 'Selecione um mapeamento') : aba === 'tipos_lancamento' ? (form.id !== undefined && form.id !== null ? 'Editar tipo de lançamento' : 'Novo tipo de lançamento') : (form.id ? 'Editar cadastro' : 'Novo cadastro')}</h2>
             {aba === 'mapeamentos' && <p>O campo destino e o tipo são estruturais e permanecem protegidos. Você pode alterar o título, o vínculo e a situação do mapeamento.</p>}
             {aba === 'tipos_lancamento' && <p>Defina se o T entra no Resumo do Dia e no Relatório do Período. As regras por texto reaplicam o T ao recriar os lançamentos.</p>}
           </div>
           <label className="cadastros-active-checkbox">
-            <input type="checkbox" checked={form.ativo !== false} disabled={(aba === 'mapeamentos' && !form.id) || (aba === 'tipos_lancamento' && !form.tipo_lancamento_id)} onChange={e => setForm({ ...form, ativo: e.target.checked })} />
+            <input type="checkbox" checked={form.ativo !== false} disabled={aba === 'mapeamentos' && !form.id} onChange={e => setForm({ ...form, ativo: e.target.checked })} />
             <span>Cadastro ativo</span>
           </label>
         </div>
@@ -227,16 +243,18 @@ export default function CadastrosAdminPage() {
             {String(form.tipo || '').toUpperCase() === 'PRODUTO' && <label className="settings-field-full"><span>Produto vinculado</span><select value={form.produto_id || ''} onChange={e => setForm({ ...form, produto_id: e.target.value ? Number(e.target.value) : null })}><option value="">Sem vínculo específico</option>{dados.produtos.map((produto: any) => <option key={produto.id} value={produto.id}>{produto.nome}</option>)}</select></label>}
           </>}
 
-          {aba === 'tipos_lancamento' && form.tipo_lancamento_id && <>
-            <label><span>T</span><input value={form.tipo_lancamento_id || ''} disabled /></label>
-            <label><span>Código do sistema</span><input value={form.codigo || ''} disabled /></label>
+          {aba === 'tipos_lancamento' && <>
+            {form.id !== undefined && form.id !== null && <label><span>T</span><input value={form.id} disabled /></label>}
+            <label><span>Código</span><input required value={form.codigo || ''} onChange={e => setForm({ ...form, codigo: e.target.value.toUpperCase() })} placeholder="Ex.: TRANSFERENCIA" /></label>
             <label className="settings-field-full"><span>Nome do tipo</span><input required value={form.nome || ''} onChange={e => setForm({ ...form, nome: e.target.value })} /></label>
+            <label><span>Natureza</span><select value={form.natureza || 'OUTROS'} onChange={e => setForm({ ...form, natureza: e.target.value })}><option value="SALDO">Saldo</option><option value="RECEITA">Receita</option><option value="DESPESA">Despesa</option><option value="CUSTO">Custo</option><option value="TRANSFERENCIA">Transferência</option><option value="AJUSTE">Ajuste</option><option value="OUTROS">Outros</option></select></label>
+            <label><span>Ordem no relatório</span><input type="number" min="0" value={form.ordem_relatorio ?? 100} onChange={e => setForm({ ...form, ordem_relatorio: Number(e.target.value) })} /></label>
             <label className="cadastros-active-checkbox settings-field-full"><input type="checkbox" checked={Boolean(form.considera_resumo_dia)} onChange={e => setForm({ ...form, considera_resumo_dia: e.target.checked })} /><span>Considerar no Resumo do Dia</span></label>
             <label className="cadastros-active-checkbox settings-field-full"><input type="checkbox" checked={Boolean(form.considera_relatorio_periodo)} onChange={e => setForm({ ...form, considera_relatorio_periodo: e.target.checked })} /><span>Considerar no Relatório do Período</span></label>
           </>}
 
           <div className="settings-actions">
-            <button className="settings-btn settings-btn-primary" type="submit" disabled={salvando || (aba === 'mapeamentos' && !form.id) || (aba === 'tipos_lancamento' && !form.tipo_lancamento_id)}>{salvando ? 'Salvando...' : 'Salvar'}</button>
+            <button className="settings-btn settings-btn-primary" type="submit" disabled={salvando || (aba === 'mapeamentos' && !form.id)}>{salvando ? 'Salvando...' : 'Salvar'}</button>
           </div>
         </form>
       </article>
@@ -245,7 +263,7 @@ export default function CadastrosAdminPage() {
         <div className="settings-card-title"><div><h2>{aba === 'mapeamentos' ? 'Mapeamentos existentes' : aba === 'tipos_lancamento' ? 'Tipos de lançamento' : 'Cadastros existentes'}</h2><p>{lista?.length || 0} registro(s).</p></div></div>
         <div className="settings-users-list">{lista?.map((item: any) => <button type="button" className="settings-user-row" key={item.id} onClick={() => selecionar(item)}>
           <div>
-            <strong>{aba === 'mapeamentos' ? item.descricao : aba === 'tipos_lancamento' ? `T ${item.tipo_lancamento_id} — ${item.nome}` : (item.nome || item.nome_conta)}</strong>
+            <strong>{aba === 'mapeamentos' ? item.descricao : aba === 'tipos_lancamento' ? `T ${item.id} — ${item.nome}` : (item.nome || item.nome_conta)}</strong>
             <span>{aba === 'contas'
               ? `${item.empresa} • ${item.tipo}`
               : aba === 'produtos'
@@ -253,23 +271,23 @@ export default function CadastrosAdminPage() {
                 : aba === 'mapeamentos'
                   ? `${item.campo_destino} • ${item.tipo}${item.conta_financeira ? ` • ${item.conta_financeira}` : item.produto ? ` • ${item.produto}` : ''}`
                   : aba === 'tipos_lancamento'
-                    ? `${item.codigo || 'Personalizado'} • ${Number(item.quantidade_lancamentos || 0)} lançamento(s) • Resumo: ${Number(item.considera_resumo_dia) ? 'Sim' : 'Não'} • Período: ${Number(item.considera_relatorio_periodo) ? 'Sim' : 'Não'}`
+                    ? `${item.codigo} • ${item.natureza} • ${Number(item.quantidade_lancamentos || 0)} lançamento(s) • Resumo: ${Number(item.considera_resumo_dia) ? 'Sim' : 'Não'} • Período: ${Number(item.considera_relatorio_periodo) ? 'Sim' : 'Não'}`
                     : item.cnpj || 'Sem CNPJ'}</span>
           </div>
           <span>{Number(item.ativo) ? 'Ativo' : 'Inativo'}</span>
         </button>)}</div>
       </article>
 
-      {aba === 'tipos_lancamento' && form.tipo_lancamento_id && <article className="settings-card settings-field-full">
-        <div className="settings-card-title"><div><h2>Regras para preencher a coluna T</h2><p>Quando a descrição contiver o texto procurado, o lançamento receberá T {form.tipo_lancamento_id}. O campo “não pode conter” é opcional.</p></div></div>
+      {aba === 'tipos_lancamento' && form.id !== undefined && form.id !== null && <article className="settings-card settings-field-full">
+        <div className="settings-card-title"><div><h2>Regras para preencher a coluna T</h2><p>Quando a descrição contiver o texto procurado, o lançamento receberá T {form.id}. O campo “não pode conter” é opcional.</p></div></div>
         <form className="settings-form" onSubmit={salvarRegra}>
           <label><span>Texto procurado</span><input required value={regraForm.texto_procurado || ''} onChange={e => setRegraForm({ ...regraForm, texto_procurado: e.target.value })} placeholder="Ex.: TRANSFERENCIA" /></label>
           <label><span>Não pode conter</span><input value={regraForm.texto_excluir || ''} onChange={e => setRegraForm({ ...regraForm, texto_excluir: e.target.value })} /></label>
           <label><span>Prioridade</span><input type="number" min="0" value={regraForm.prioridade ?? 100} onChange={e => setRegraForm({ ...regraForm, prioridade: Number(e.target.value) })} /></label>
           <label className="cadastros-active-checkbox"><input type="checkbox" checked={regraForm.ativo !== false} onChange={e => setRegraForm({ ...regraForm, ativo: e.target.checked })} /><span>Regra ativa</span></label>
-          <div className="settings-actions"><button className="settings-btn settings-btn-primary" type="submit" disabled={salvandoRegra}>{salvandoRegra ? 'Salvando...' : regraForm.id ? 'Atualizar regra' : 'Adicionar regra'}</button>{regraForm.id && <button className="settings-btn settings-btn-secondary" type="button" onClick={() => setRegraForm({ tipo_lancamento_id: Number(form.tipo_lancamento_id), prioridade: 100, ativo: true })}>Nova regra</button>}</div>
+          <div className="settings-actions"><button className="settings-btn settings-btn-primary" type="submit" disabled={salvandoRegra}>{salvandoRegra ? 'Salvando...' : regraForm.id ? 'Atualizar regra' : 'Adicionar regra'}</button>{regraForm.id && <button className="settings-btn settings-btn-secondary" type="button" onClick={() => setRegraForm({ tipo_lancamento_id: Number(form.id), prioridade: 100, ativo: true })}>Nova regra</button>}</div>
         </form>
-        <div className="settings-users-list">{(dados.regrasTipo || []).filter((r: any) => Number(r.tipo_lancamento_id) === Number(form.tipo_lancamento_id)).map((r: any) => <button type="button" className="settings-user-row" key={r.id} onClick={() => setRegraForm({ ...r, ativo: Boolean(Number(r.ativo)) })}><div><strong>{r.texto_procurado}</strong><span>{r.texto_excluir ? `Exceto: ${r.texto_excluir} • ` : ''}Prioridade ${r.prioridade}</span></div><span>{Number(r.ativo) ? 'Ativa' : 'Inativa'}</span></button>)}</div>
+        <div className="settings-users-list">{(dados.regrasTipo || []).filter((r: any) => Number(r.tipo_lancamento_id) === Number(form.id)).map((r: any) => <div className="settings-user-row" key={r.id}><button type="button" style={{flex:1,textAlign:'left',background:'transparent',border:0}} onClick={() => setRegraForm({ ...r, ativo: Boolean(Number(r.ativo)) })}><div><strong>{r.texto_procurado}</strong><span>{r.texto_excluir ? `Exceto: ${r.texto_excluir} • ` : ''}Prioridade ${r.prioridade}</span></div></button><span>{Number(r.ativo) ? 'Ativa' : 'Inativa'}</span><button type="button" className="settings-btn settings-btn-secondary" onClick={() => excluirRegra(Number(r.id))}>Excluir</button></div>)}</div>
       </article>}
     </div>
   </section>
