@@ -3389,10 +3389,11 @@ app.get('/api/tipos-lancamento', podeGerenciarMapeamentosFinanceiro, async (req,
         ORDER BY t.ordem_relatorio,t.id`
     )
     const [regras] = await db.query(
-      `SELECT r.id,r.tipo_lancamento_id,t.nome AS tipo_nome,r.texto_procurado,r.texto_excluir,r.prioridade,r.ativo
+      `SELECT r.id,r.tipo_lancamento_id,t.nome AS tipo_nome,t.codigo AS tipo_codigo,
+              r.texto_procurado,r.texto_excluir,r.prioridade,r.ativo
          FROM regras_tipo_lancamento r
-         INNER JOIN tipos_lancamento t ON t.id=r.tipo_lancamento_id
-        ORDER BY r.prioridade,r.id`
+         LEFT JOIN tipos_lancamento t ON t.id=r.tipo_lancamento_id
+        ORDER BY COALESCE(t.ordem_relatorio,999999),r.prioridade,r.id`
     )
     res.json({ ok:true, tipos, regras })
   } catch (error) {
