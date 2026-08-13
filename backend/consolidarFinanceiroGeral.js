@@ -360,17 +360,25 @@ async function gravarLinha(conn, {
   const total = calcularTotal(dados)
   const descricaoOriginal = String(descricao || '').slice(0, 500) || null
   const descricaoNormalizada = descricaoOriginal ? normalizarTexto(descricaoOriginal).slice(0, 500) : null
-  const tipoSistemaId = tiposSistema.get(codigoTipoNormalizado(tipo)) || null
+  // IMPORTANTE: T=0 (SALDO) e um valor valido. Nao usar `||` aqui,
+  // pois o JavaScript considera zero como falso e acabaria aplicando T19/T20.
+  const tipoSistemaId = tiposSistema.get(codigoTipoNormalizado(tipo)) ?? null
   const tipoRegraId = obterTipoLancamentoId(descricaoOriginal, regrasTipoLancamento)
-  const tipoPreservadoId = tiposPreservados.get(String(chave || '')) || null
-  // Quando nenhuma regra/tipo de sistema classificar a linha, usa o sinal do valor
-  // total como fallback: positivo = OUTRAS RECEITAS (T19), negativo = OUTRAS DESPESAS (T20).
-  // Linhas com total zero permanecem sem classificação automática.
-  const tipoFallbackId = total > 0.000004 ? 19 : (total < -0.000004 ? 20 : null)
-  const tipoLancamentoIdCalculado = tipoSistemaId || tipoRegraId || tipoPreservadoId || tipoFallbackId || null
+  const tipoPreservadoId = tiposPreservados.get(String(chave || '')) ?? null
   const campos = Object.keys(dados)
   const [existentes] = await conn.query('SELECT id, tipo_lancamento_id FROM financeiro_geral WHERE chave_integracao = ? LIMIT 1', [chave])
-  const tipoLancamentoId = tipoLancamentoIdCalculado || (existentes[0]?.tipo_lancamento_id == null ? null : Number(existentes[0].tipo_lancamento_id))
+  const tipoExistenteId = existentes[0]?.tipo_lancamento_id == null ? null : Number(existentes[0].tipo_lancamento_id)
+
+  // O fallback por sinal e a ULTIMA alternativa absoluta:
+  // sistema -> regra -> preservado -> existente -> fallback.
+  // Positivo sem qualquer classificacao = T19; negativo = T20; zero fica vazio.
+  const tipoFallbackId = total > 0.000004 ? 19 : (total < -0.000004 ? 20 : null)
+  const tipoLancamentoId = tipoSistemaId
+    ?? tipoRegraId
+    ?? tipoPreservadoId
+    ?? tipoExistenteId
+    ?? tipoFallbackId
+    ?? null
 
   if (existentes[0]) {
     const zerar = [
@@ -707,7 +715,7 @@ export async function consolidarFinanceiroGeral({
           `UPDATE financeiro_geral SET descricao_original = 'Saldo anterior',
              descricao_normalizada = 'SALDO ANTERIOR', tipo_lancamento = 'SALDO', tipo_lancamento_id = ?,
              origem = 'SISTEMA', atualizado_em = NOW() WHERE id = ?`,
-          [tiposSistema.get('SALDO') || saldoInicialExistente.tipo_lancamento_id || null, saldoInicialExistente.id]
+          [tiposSistema.get('SALDO') ?? (saldoInicialExistente.tipo_lancamento_id == null ? null : Number(saldoInicialExistente.tipo_lancamento_id)), saldoInicialExistente.id]
         )
         await atualizarCamposLinha(conn, saldoInicialExistente.id, valores)
       } else {
@@ -1361,7 +1369,7 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
            SET descricao_original = 'Saldo do dia', descricao_normalizada = 'SALDO DO DIA',
                tipo_lancamento = 'SALDO', tipo_lancamento_id = ?, origem = 'SISTEMA', atualizado_em = NOW()
            WHERE id = ?`,
-          [tiposSistema.get('SALDO') || saldoDia.tipo_lancamento_id || null, saldoDia.id]
+          [tiposSistema.get('SALDO') ?? (saldoDia.tipo_lancamento_id == null ? null : Number(saldoDia.tipo_lancamento_id)), saldoDia.id]
         )
         for (const extra of saldosRows.filter((r) => Number(r.id) !== Number(saldoDia.id))) {
           await conn.query('DELETE FROM financeiro_geral WHERE id = ?', [extra.id])
