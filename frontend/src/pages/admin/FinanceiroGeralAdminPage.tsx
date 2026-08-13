@@ -4,31 +4,6 @@ import { hasPermission } from '../../authPermissions';
 
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
-const CAMPOS_PADRAO = [
-  { key: 'conta01', label: 'SPOT', largura: 'valor12' },
-  { key: 'conta02', label: 'Itaú', largura: 'valor12' },
-  { key: 'conta03', label: 'SPOT Lucila', largura: 'valor12' },
-  { key: 'conta11', label: 'Caixa', largura: 'valor12' },
-  { key: 'conta12', label: 'Cartão', largura: 'valor12' },
-  { key: 'conta13', label: 'Vendas', largura: 'valor12' },
-  { key: 'prod1_quant', label: 'GC Quant', largura: 'valor9' },
-  { key: 'prod1_valor', label: 'GC Valor', largura: 'valor9' },
-  { key: 'prod1_total', label: 'GC Total', largura: 'valor12' },
-  { key: 'prod2_quant', label: 'EH Quant', largura: 'valor9' },
-  { key: 'prod2_valor', label: 'EH Valor', largura: 'valor9' },
-  { key: 'prod2_total', label: 'EH Total', largura: 'valor12' },
-  { key: 'prod3_quant', label: 'S10 Quant', largura: 'valor9' },
-  { key: 'prod3_valor', label: 'S10 Valor', largura: 'valor9' },
-  { key: 'prod3_total', label: 'S10 Total', largura: 'valor12' },
-  { key: 'prod4_quant', label: 'GC-A Quant', largura: 'valor9' },
-  { key: 'prod4_valor', label: 'GC-A Valor', largura: 'valor9' },
-  { key: 'prod4_total', label: 'GC-A Total', largura: 'valor12' },
-  { key: 'conta21', label: 'Investidor Eraldo', largura: 'valor12' },
-  { key: 'conta23', label: 'Empréstimos', largura: 'valor12' },
-  { key: 'conta24', label: 'Fornecedores', largura: 'valor12' },
-  { key: 'total', label: 'Total', largura: 'valor12' },
-];
-
 type CampoFinanceiro = { key: string; label: string; largura: string };
 
 type Linha = Record<string, any>;
@@ -50,7 +25,7 @@ const escapar = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g,
 const ehSaldo = (l: Linha) => String(l.descricao_normalizada || l.descricao_original || '').toUpperCase().startsWith('SALDO');
 const ehSaldoAnterior = (l: Linha) => { const d = String(l.descricao_normalizada || l.descricao_original || '').toUpperCase(); return d.startsWith('SALDO ANTERIOR') || d.startsWith('SALDO INICIAL DO DIA'); };
 const classeLarguraCampo = (campo: CampoFinanceiro) => {
-  if (['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24'].includes(campo.key)) return 'fg-col-w90';
+  if (/^conta\d{2}$/.test(campo.key)) return 'fg-col-w90';
   if (/^prod[1-4]_(quant|valor)$/.test(campo.key)) return 'fg-col-w60';
   return `fg-col-${campo.largura}`;
 };
@@ -68,7 +43,7 @@ export default function FinanceiroGeralAdminPage() {
   const [valorMaximo, setValorMaximo] = useState('');
   const [pagina, setPagina] = useState(1);
   const [porPagina, setPorPagina] = useState(500);
-  const [campos, setCampos] = useState<CampoFinanceiro[]>(CAMPOS_PADRAO);
+  const [campos, setCampos] = useState<CampoFinanceiro[]>([]);
   const [linhas, setLinhas] = useState<Linha[]>([]);
   const [totais, setTotais] = useState<Linha>({});
   const [ultimoSaldo, setUltimoSaldo] = useState<Linha>({});
@@ -201,12 +176,7 @@ export default function FinanceiroGeralAdminPage() {
       const dados = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(dados.erro || 'Erro ao carregar lançamentos.');
       setLinhas(dados.lancamentos || []); setTotais(dados.totais || {}); setUltimoSaldo(dados.ultimoSaldo || {});
-      if (Array.isArray(dados.colunas) && dados.colunas.length) {
-        // Usa exatamente as colunas e os títulos devolvidos pelo backend,
-        // cuja fonte oficial é financeiro_geral_mapeamentos.descricao.
-        const recebidas = dados.colunas as CampoFinanceiro[];
-        setCampos(recebidas);
-      }
+      setCampos(Array.isArray(dados.colunas) ? dados.colunas as CampoFinanceiro[] : []);
       setTotalRegistros(Number(dados.paginacao?.total || 0));
     } catch (e: any) { setMensagem(e.message || 'Erro ao carregar lançamentos.'); }
     finally { setCarregando(false); }

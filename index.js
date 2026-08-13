@@ -1587,98 +1587,68 @@ app.get('/api/financeiro-geral/resumo', async (req, res) => {
 })
 
 
-const FINANCEIRO_GERAL_CONTAS_ORDEM = [
-  'conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13',
-  'conta04', 'conta05', 'conta06', 'conta07', 'conta08', 'conta09', 'conta10',
-  'conta14', 'conta15', 'conta16', 'conta17', 'conta18', 'conta19', 'conta20',
-  'conta21', 'conta22', 'conta23', 'conta24', 'conta25', 'conta26', 'conta27', 'conta28', 'conta29', 'conta30',
-]
-const FINANCEIRO_GERAL_LABELS_CONTAS = {
-  conta01: 'SPOT', conta02: 'Itaú', conta03: 'SPOT Lucila', conta11: 'Caixa', conta12: 'Cartão', conta13: 'Vendas',
-  conta21: 'Investidor Eraldo', conta23: 'Empréstimos', conta24: 'Fornecedores',
-}
 const CAMPOS_CONTAS_FINANCEIRO = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
-const ROTULOS_CONTAS_PADRAO = new Map([
-  ['conta01', 'SPOT'], ['conta02', 'Itaú'], ['conta03', 'SPOT Lucila'],
-  ['conta11', 'Caixa'], ['conta12', 'Cartão'], ['conta13', 'Vendas Total'],
-  ['conta21', 'Investidor Eraldo'], ['conta23', 'Empréstimos'], ['conta24', 'Fornecedores'],
-])
-const PRODUTOS_FINANCEIRO_PADRAO = [
-  ['prod1_quant', 'GC Quant'], ['prod1_valor', 'GC Valor'], ['prod1_total', 'GC Total'],
-  ['prod2_quant', 'EH Quant'], ['prod2_valor', 'EH Valor'], ['prod2_total', 'EH Total'],
-  ['prod3_quant', 'S10 Quant'], ['prod3_valor', 'S10 Valor'], ['prod3_total', 'S10 Total'],
-  ['prod4_quant', 'GC-A Quant'], ['prod4_valor', 'GC-A Valor'], ['prod4_total', 'GC-A Total'],
-]
+const CAMPOS_PRODUTOS_FINANCEIRO = Array.from({ length: 4 }, (_, i) => {
+  const produto = `prod${i + 1}`
+  return [`${produto}_quant`, `${produto}_valor`, `${produto}_total`]
+}).flat()
+// Lista exclusivamente técnica dos campos físicos aceitos na tabela financeiro_geral.
+// Nomes, títulos, ordem e visibilidade estrutural vêm de financeiro_geral_mapeamentos.
 const FINANCEIRO_GERAL_COLUNAS = [
-  ...CAMPOS_CONTAS_FINANCEIRO.map((campo) => [campo, ROTULOS_CONTAS_PADRAO.get(campo) || campo.toUpperCase()]),
-  ...PRODUTOS_FINANCEIRO_PADRAO,
-  ['total', 'Total'],
-]
-const FINANCEIRO_GERAL_CHAVES = new Set(FINANCEIRO_GERAL_COLUNAS.map(([chave]) => chave))
+  ...CAMPOS_CONTAS_FINANCEIRO,
+  ...CAMPOS_PRODUTOS_FINANCEIRO,
+  'total',
+].map((campo) => [campo, campo])
 
 async function colunasFinanceiroGeralAtivas(empresaId) {
-  // A tabela financeiro_geral_mapeamentos é a fonte oficial da estrutura visual.
-  // Não exige conta_financeira_id: mapeamentos estruturais antigos podem ter esse
-  // campo NULL e, mesmo assim, precisam continuar aparecendo no Financeiro Geral.
-  try {
-    const [mapeamentos] = await db.query(
-      `SELECT id, tipo, campo_destino, conta_financeira_id, produto_id, descricao
-         FROM financeiro_geral_mapeamentos
-        WHERE empresa_id = ? AND ativo = 1
-        ORDER BY id ASC`,
-      [empresaId]
-    )
+  // Única fonte da estrutura visual: financeiro_geral_mapeamentos.
+  // conta_financeira_id pode ser NULL em mapeamentos estruturais e isso não
+  // impede a coluna de existir. O campo descricao define o título exibido.
+  const [mapeamentos] = await db.query(
+    `SELECT id, tipo, campo_destino, conta_financeira_id, produto_id, descricao
+       FROM financeiro_geral_mapeamentos
+      WHERE empresa_id = ? AND ativo = 1
+      ORDER BY id ASC`,
+    [empresaId]
+  )
 
-    if (mapeamentos.length) {
-      const colunas = []
-      const chavesIncluidas = new Set()
+  const colunas = []
+  const chavesIncluidas = new Set()
 
-      for (const item of mapeamentos) {
-        const tipo = String(item.tipo || '').toUpperCase()
-        const destino = String(item.campo_destino || '').trim()
-        const descricao = String(item.descricao || '').trim()
+  for (const item of mapeamentos) {
+    const tipo = String(item.tipo || '').toUpperCase()
+    const destino = String(item.campo_destino || '').trim()
+    const descricao = String(item.descricao || '').trim()
 
-        if (tipo === 'CONTA' && /^conta\d{2}$/.test(destino) && CAMPOS_CONTAS_FINANCEIRO.includes(destino)) {
-          if (!chavesIncluidas.has(destino)) {
-            colunas.push({
-              key: destino,
-              label: descricao || ROTULOS_CONTAS_PADRAO.get(destino) || destino.toUpperCase(),
-              largura: 'valor12',
-            })
-            chavesIncluidas.add(destino)
-          }
-          continue
-        }
-
-        if (tipo === 'PRODUTO' && /^prod[1-4]$/.test(destino)) {
-          for (const sufixo of ['quant', 'valor', 'total']) {
-            const key = `${destino}_${sufixo}`
-            if (chavesIncluidas.has(key)) continue
-            const nomeProduto = descricao || destino.toUpperCase()
-            colunas.push({
-              key,
-              label: `${nomeProduto} ${sufixo === 'quant' ? 'Quant' : sufixo === 'valor' ? 'Valor' : 'Total'}`,
-              largura: sufixo === 'total' ? 'valor12' : 'valor9',
-            })
-            chavesIncluidas.add(key)
-          }
-        }
-      }
-
-      colunas.push({ key: 'total', label: 'Total', largura: 'valor12' })
-      return colunas
+    if (tipo === 'CONTA' && /^conta\d{2}$/.test(destino) && CAMPOS_CONTAS_FINANCEIRO.includes(destino)) {
+      if (chavesIncluidas.has(destino)) continue
+      colunas.push({
+        key: destino,
+        label: descricao || destino.toUpperCase(),
+        largura: 'valor12',
+      })
+      chavesIncluidas.add(destino)
+      continue
     }
-  } catch (error) {
-    console.warn('Não foi possível carregar financeiro_geral_mapeamentos; usando estrutura padrão:', error.message)
+
+    if (tipo === 'PRODUTO' && /^prod[1-4]$/.test(destino)) {
+      for (const sufixo of ['quant', 'valor', 'total']) {
+        const key = `${destino}_${sufixo}`
+        if (chavesIncluidas.has(key)) continue
+        const nomeProduto = descricao || destino.toUpperCase()
+        colunas.push({
+          key,
+          label: `${nomeProduto} ${sufixo === 'quant' ? 'Quant' : sufixo === 'valor' ? 'Valor' : 'Total'}`,
+          largura: sufixo === 'total' ? 'valor12' : 'valor9',
+        })
+        chavesIncluidas.add(key)
+      }
+    }
   }
 
-  // Compatibilidade com instalações antigas sem a tabela de mapeamentos.
-  return [
-    ...['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24']
-      .map((key) => ({ key, label: ROTULOS_CONTAS_PADRAO.get(key) || key.toUpperCase(), largura: 'valor12' })),
-    ...PRODUTOS_FINANCEIRO_PADRAO.map(([key, label]) => ({ key, label, largura: key.endsWith('_total') ? 'valor12' : 'valor9' })),
-    { key: 'total', label: 'Total', largura: 'valor12' },
-  ]
+  // Total é calculado pelo Financeiro Geral e permanece como coluna estrutural fixa.
+  colunas.push({ key: 'total', label: 'Total', largura: 'valor12' })
+  return colunas
 }
 
 function parametrosFinanceiroGeral(req) {
