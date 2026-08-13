@@ -1420,7 +1420,9 @@ app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
         atualizados += 1
       }
 
-      const somas = colunas.map((campo) => `COALESCE(SUM(${campo}),0) AS ${campo}`).join(', ')
+      const somas = colunas.map((campo) => campo === 'conta12'
+        ? `COALESCE(SUM(CASE WHEN tipo_lancamento = 'SEPARACAO_VENDAS' THEN 0 ELSE conta12 END),0) AS conta12`
+        : `COALESCE(SUM(${campo}),0) AS ${campo}`).join(', ')
       const [[movimentos]] = await conn.query(
         `SELECT ${somas} FROM financeiro_geral WHERE empresa_id = ? AND status = 'ATIVO' AND data_lancamento = ?
          AND tipo_lancamento <> 'SALDO'

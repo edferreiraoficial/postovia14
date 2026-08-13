@@ -843,7 +843,8 @@ export async function consolidarFinanceiroGeral({
         }))
         saldoContas.set('conta14', arred2(numero(saldoContas.get('conta14')) + valorVendasTotal))
         saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) + valorCartao))
-        saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + valorVendasPrazo))
+        // conta12 da linha de Separação é apenas informativa: ela já existe nos lançamentos
+        // reais de VENDAS A PRAZO do dia e não deve ser somada novamente ao saldo.
         saldoContas.set('conta11', arred2(numero(saldoContas.get('conta11')) + valorCaixa))
       }
 
@@ -862,7 +863,9 @@ export async function consolidarFinanceiroGeral({
 
       // Linha única ao final de cada dia. O fechamento das contas é reconstruído
       // pelas linhas efetivamente gravadas, incluindo a Separação no Caixa.
-      const somasContasSql = Array.from(CAMPOS_CONTAS, (campo) => `COALESCE(SUM(${campo}), 0) AS ${campo}`).join(', ')
+      const somasContasSql = Array.from(CAMPOS_CONTAS, (campo) => campo === 'conta12'
+        ? `COALESCE(SUM(CASE WHEN tipo_lancamento = 'SEPARACAO_VENDAS' THEN 0 ELSE conta12 END), 0) AS conta12`
+        : `COALESCE(SUM(${campo}), 0) AS ${campo}`).join(', ')
       const [[movimentosContasDia]] = await conn.query(
         `SELECT ${somasContasSql}
            FROM financeiro_geral
@@ -1225,7 +1228,8 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         })
         saldoContas.set('conta14', arred2(numero(saldoContas.get('conta14')) + valorVendasTotal))
         saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) + valorCartao))
-        saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + valorVendasPrazo))
+        // conta12 da linha de Separação é apenas informativa: ela já existe nos lançamentos
+        // reais de VENDAS A PRAZO do dia e não deve ser somada novamente ao saldo.
         saldoContas.set('conta11', arred2(numero(saldoContas.get('conta11')) + valorCaixa))
       }
       for (const row of ajustesRows) {
@@ -1256,7 +1260,9 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
 
       // Reconstrói o fechamento financeiro usando as linhas visíveis do próprio dia.
       // Regra: saldo anterior/abertura + lançamentos do dia = saldo do dia.
-      const somasContasSql = Array.from(CAMPOS_CONTAS, (campo) => `COALESCE(SUM(${campo}), 0) AS ${campo}`).join(', ')
+      const somasContasSql = Array.from(CAMPOS_CONTAS, (campo) => campo === 'conta12'
+        ? `COALESCE(SUM(CASE WHEN tipo_lancamento = 'SEPARACAO_VENDAS' THEN 0 ELSE conta12 END), 0) AS conta12`
+        : `COALESCE(SUM(${campo}), 0) AS ${campo}`).join(', ')
       const [[movimentosContasDia]] = await conn.query(
         `SELECT ${somasContasSql}
            FROM financeiro_geral
