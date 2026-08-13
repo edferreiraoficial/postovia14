@@ -1851,7 +1851,7 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   const configuracaoTipos = await carregarConfiguracaoTipos(db, empresaId)
   const considerarTipoPeriodo = (row) => {
     const bruto = row?.tipo_lancamento_id
-    if (bruto === null || bruto === undefined || bruto === '') return true
+    if (bruto === null || bruto === undefined || bruto === '') return false
     const id = Number(bruto)
     const config = configuracaoTipos.get(id)
     return config ? config.periodo : true
@@ -2068,7 +2068,7 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     const configuracaoTipos = await carregarConfiguracaoTipos(db, empresaId)
     const considerarTipoResumo = (row) => {
       const bruto = row?.tipo_lancamento_id
-      if (bruto === null || bruto === undefined || bruto === '') return true
+      if (bruto === null || bruto === undefined || bruto === '') return false
       const id = Number(bruto)
       const config = configuracaoTipos.get(id)
       return config ? config.resumo : true
