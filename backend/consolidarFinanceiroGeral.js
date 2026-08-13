@@ -1,4 +1,5 @@
 import { db } from './db.js'
+import { garantirEstruturaTiposLancamento, carregarRegrasTipoLancamento, obterTipoLancamentoId, carregarTiposSistema, codigoTipoNormalizado } from './tiposLancamento.js'
 
 const CAMPOS_CONTAS = new Set(Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`))
 const CAMPOS_PRODUTOS = ['prod1', 'prod2', 'prod3', 'prod4']
@@ -307,9 +308,49 @@ function calcularTotal(valores) {
   return arred2(total)
 }
 
+async function classificarTransferenciasDia(conn, empresaId, data, tipoTransferenciaId) {
+  if (!tipoTransferenciaId) return
+  const campos = Array.from(CAMPOS_CONTAS)
+  const [linhas] = await conn.query(
+    `SELECT id,tipo_lancamento,tipo_lancamento_id,total,${campos.join(',')}
+       FROM financeiro_geral
+      WHERE empresa_id=? AND data_lancamento=? AND status='ATIVO'
+        AND tipo_lancamento NOT IN ('SALDO','SEPARACAO_VENDAS','COMPRA','VENDA','RESULTADO','AJUSTE','TAXA_CARTAO')
+      ORDER BY id`,
+    [empresaId, data]
+  )
+  const candidatos = linhas.filter((r) => r.tipo_lancamento_id == null)
+  const ids = new Set()
+  const centavos = (v) => Math.round(Math.abs(numero(v)) * 100)
+  for (const r of candidatos) {
+    const valores = campos.map((c) => numero(r[c])).filter((v) => Math.abs(v) >= 0.005)
+    const pos = valores.filter((v) => v > 0).reduce((a,v) => a+v,0)
+    const neg = valores.filter((v) => v < 0).reduce((a,v) => a+Math.abs(v),0)
+    if (pos >= 0.005 && neg >= 0.005 && Math.abs(pos-neg) <= 0.01) ids.add(Number(r.id))
+  }
+  const positivos = new Map()
+  for (const r of candidatos) {
+    const valor = numero(r.total)
+    if (valor <= 0.004) continue
+    const k = centavos(valor)
+    if (!positivos.has(k)) positivos.set(k, [])
+    positivos.get(k).push(r)
+  }
+  for (const r of candidatos) {
+    const valor = numero(r.total)
+    if (valor >= -0.004) continue
+    const fila = positivos.get(centavos(valor)) || []
+    const positivo = fila.shift()
+    if (positivo) { ids.add(Number(r.id)); ids.add(Number(positivo.id)) }
+  }
+  if (ids.size) {
+    await conn.query(`UPDATE financeiro_geral SET tipo_lancamento_id=? WHERE id IN (${Array.from(ids).map(() => '?').join(',')})`, [tipoTransferenciaId, ...ids])
+  }
+}
+
 async function gravarLinha(conn, {
   empresa, data, descricao, tipo, origem, tabelaOrigem, registroOrigemId = null,
-  chave, usuarioId, valores = {},
+  chave, usuarioId, valores = {}, regrasTipoLancamento = [], tiposSistema = new Map(), tiposPreservados = new Map(),
 }) {
   const permitidos = new Set([
     ...CAMPOS_CONTAS,
@@ -319,8 +360,13 @@ async function gravarLinha(conn, {
   const total = calcularTotal(dados)
   const descricaoOriginal = String(descricao || '').slice(0, 500) || null
   const descricaoNormalizada = descricaoOriginal ? normalizarTexto(descricaoOriginal).slice(0, 500) : null
+  const tipoSistemaId = tiposSistema.get(codigoTipoNormalizado(tipo)) || null
+  const tipoRegraId = obterTipoLancamentoId(descricaoOriginal, regrasTipoLancamento)
+  const tipoPreservadoId = tiposPreservados.get(String(chave || '')) || null
+  const tipoLancamentoIdCalculado = tipoSistemaId || tipoRegraId || tipoPreservadoId || null
   const campos = Object.keys(dados)
-  const [existentes] = await conn.query('SELECT id FROM financeiro_geral WHERE chave_integracao = ? LIMIT 1', [chave])
+  const [existentes] = await conn.query('SELECT id, tipo_lancamento_id FROM financeiro_geral WHERE chave_integracao = ? LIMIT 1', [chave])
+  const tipoLancamentoId = tipoLancamentoIdCalculado || (existentes[0]?.tipo_lancamento_id == null ? null : Number(existentes[0].tipo_lancamento_id))
 
   if (existentes[0]) {
     const zerar = [
@@ -329,14 +375,14 @@ async function gravarLinha(conn, {
     ].filter((c) => !campos.includes(c))
     const sets = [
       'data_lancamento = ?', 'descricao_original = ?', 'descricao_normalizada = ?', 'tipo_lancamento = ?',
-      'origem = ?', 'tabela_origem = ?', 'registro_origem_id = ?', 'usuario_id = ?', 'status = \'ATIVO\'',
+      'origem = ?', 'tabela_origem = ?', 'tipo_lancamento_id = ?', 'registro_origem_id = ?', 'usuario_id = ?', 'status = \'ATIVO\'',
       ...zerar.map((c) => `${c} = 0.000000`),
       ...campos.map((c) => `${c} = ?`),
       'total = ?', 'atualizado_em = NOW()',
     ]
     await conn.query(
       `UPDATE financeiro_geral SET ${sets.join(', ')} WHERE id = ?`,
-      [data, descricaoOriginal, descricaoNormalizada, tipo, origem, tabelaOrigem, registroOrigemId,
+      [data, descricaoOriginal, descricaoNormalizada, tipo, origem, tabelaOrigem, tipoLancamentoId, registroOrigemId,
         usuarioId || null, ...campos.map((c) => dados[c]), total, existentes[0].id]
     )
     return 'atualizado'
@@ -347,10 +393,10 @@ async function gravarLinha(conn, {
   await conn.query(
     `INSERT INTO financeiro_geral
      (empresa_id, data_lancamento, descricao_original, descricao_normalizada, tipo_lancamento,
-      total, origem, tabela_origem, registro_origem_id, chave_integracao, usuario_id, status${colunas})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO'${placeholders})`,
+      total, origem, tabela_origem, tipo_lancamento_id, registro_origem_id, chave_integracao, usuario_id, status${colunas})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO'${placeholders})`,
     [empresa, data, descricaoOriginal, descricaoNormalizada, tipo, total, origem, tabelaOrigem,
-      registroOrigemId, chave, usuarioId || null, ...campos.map((c) => dados[c])]
+      tipoLancamentoId, registroOrigemId, chave, usuarioId || null, ...campos.map((c) => dados[c])]
   )
   return 'inserido'
 }
@@ -370,13 +416,26 @@ export async function consolidarFinanceiroGeral({
     const dataMinimaPermitida = dataMinimaGravacao ? dataIsoValida(dataMinimaGravacao, 'Data mínima de gravação') : null
     if (inicio > fim) throw new Error('A data inicial não pode ser posterior à data final.')
 
+    await garantirEstruturaTiposLancamento(conn)
     await conn.beginTransaction()
+    const regrasTipoLancamento = await carregarRegrasTipoLancamento(conn)
+    const tiposSistema = await carregarTiposSistema(conn, empresa)
+    const tiposPreservados = new Map()
+    const [tiposAnteriores] = await conn.query(
+      `SELECT chave_integracao, tipo_lancamento_id
+         FROM financeiro_geral
+        WHERE empresa_id=? AND data_lancamento BETWEEN ? AND ? AND tipo_lancamento_id IS NOT NULL`,
+      [empresa, diaSaldoInicial, fim]
+    )
+    for (const row of tiposAnteriores) {
+      if (row.chave_integracao) tiposPreservados.set(String(row.chave_integracao), Number(row.tipo_lancamento_id))
+    }
     // Proteção final da trava: nenhuma inclusão ou atualização gerada pela consolidação
     // pode atingir data anterior à data mínima liberada, mesmo em rotinas auxiliares.
     const gravarLinhaSegura = async (dadosLinha) => {
       const dataLinha = String(dadosLinha?.data || '').slice(0, 10)
       if (dataMinimaPermitida && dataLinha && dataLinha < dataMinimaPermitida) return 'ignorado'
-      return gravarLinha(conn, dadosLinha)
+      return gravarLinha(conn, { ...dadosLinha, regrasTipoLancamento, tiposSistema, tiposPreservados })
     }
     for (const campo of ['tabela_origem', 'registro_origem_id', 'chave_integracao']) {
       if (!(await colunaExiste(conn, 'financeiro_geral', campo))) {
@@ -642,9 +701,9 @@ export async function consolidarFinanceiroGeral({
       if (saldoInicialExistente) {
         await conn.query(
           `UPDATE financeiro_geral SET descricao_original = 'Saldo anterior',
-             descricao_normalizada = 'SALDO ANTERIOR', tipo_lancamento = 'SALDO',
+             descricao_normalizada = 'SALDO ANTERIOR', tipo_lancamento = 'SALDO', tipo_lancamento_id = ?,
              origem = 'SISTEMA', atualizado_em = NOW() WHERE id = ?`,
-          [saldoInicialExistente.id]
+          [tiposSistema.get('SALDO') || saldoInicialExistente.tipo_lancamento_id || null, saldoInicialExistente.id]
         )
         await atualizarCamposLinha(conn, saldoInicialExistente.id, valores)
       } else {
@@ -861,6 +920,10 @@ export async function consolidarFinanceiroGeral({
         }))
       }
 
+      // Classifica movimentos entre contas que ainda não possuem T. Isso torna a
+      // coluna T útil também para excluir transferências dos resumos e relatórios.
+      await classificarTransferenciasDia(conn, empresa, dia, tiposSistema.get('TRANSFERENCIA'))
+
       // Linha única ao final de cada dia. O fechamento das contas é reconstruído
       // pelas linhas efetivamente gravadas, incluindo a Separação no Caixa.
       const somasContasSql = Array.from(CAMPOS_CONTAS, (campo) => campo === 'conta12'
@@ -957,12 +1020,16 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
   try {
     const empresa = Number(empresaId)
     const inicio = dataIsoValida(dataInicial, 'Data inicial do recálculo')
+    await garantirEstruturaTiposLancamento(conn)
     await conn.beginTransaction()
+    const regrasTipoLancamento = await carregarRegrasTipoLancamento(conn)
+    const tiposSistema = await carregarTiposSistema(conn, empresa)
+    const tiposPreservados = new Map()
 
     // O recálculo é uma rotina independente da consolidação. Por isso precisa de
     // sua própria função de gravação no mesmo escopo, evitando ReferenceError ao
     // salvar uma linha e recalcular os saldos seguintes.
-    const gravarLinhaSegura = async (dadosLinha) => gravarLinha(conn, dadosLinha)
+    const gravarLinhaSegura = async (dadosLinha) => gravarLinha(conn, { ...dadosLinha, regrasTipoLancamento, tiposSistema, tiposPreservados })
 
     const [[limite]] = await conn.query(
       `SELECT DATE_FORMAT(MAX(data_lancamento), '%Y-%m-%d') AS data_final
@@ -1288,9 +1355,9 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         await conn.query(
           `UPDATE financeiro_geral
            SET descricao_original = 'Saldo do dia', descricao_normalizada = 'SALDO DO DIA',
-               tipo_lancamento = 'SALDO', origem = 'SISTEMA', atualizado_em = NOW()
+               tipo_lancamento = 'SALDO', tipo_lancamento_id = ?, origem = 'SISTEMA', atualizado_em = NOW()
            WHERE id = ?`,
-          [saldoDia.id]
+          [tiposSistema.get('SALDO') || saldoDia.tipo_lancamento_id || null, saldoDia.id]
         )
         for (const extra of saldosRows.filter((r) => Number(r.id) !== Number(saldoDia.id))) {
           await conn.query('DELETE FROM financeiro_geral WHERE id = ?', [extra.id])

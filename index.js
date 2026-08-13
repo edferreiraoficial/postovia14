@@ -18,6 +18,7 @@ import { processarPlanilhas } from './backend/processar.js'
 import { gerarExcelExtratoBancario } from './backend/pdfExtratoExcel.js'
 import { migrarContasFinanceiras, garantirMapeamentosContasFinanceiras } from './backend/migrarContasFinanceiras.js'
 import { consolidarFinanceiroGeral, recalcularFinanceiroGeralAPartirDe } from './backend/consolidarFinanceiroGeral.js'
+import { garantirEstruturaTiposLancamento, carregarConfiguracaoTipos, carregarTiposSistema } from './backend/tiposLancamento.js'
 
 dotenv.config()
 
@@ -1371,7 +1372,10 @@ app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
     if (!colunas.length) throw new Error('Selecione pelo menos uma coluna para recalcular.')
 
     const todasNumericas = FINANCEIRO_GERAL_COLUNAS.map(([campo]) => campo).filter((campo) => campo !== 'total')
+    await garantirEstruturaTiposLancamento(conn)
     await conn.beginTransaction()
+    const tiposSistema = await carregarTiposSistema(conn, empresaId)
+    const tipoSaldoId = tiposSistema.get('SALDO') || null
 
     const saldoInicialId = Number(req.body?.saldoInicialId || 0)
     let baseRows = []
@@ -1416,7 +1420,7 @@ app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
       )
       if (aberturasDia[0]) {
         const sets = colunas.map((campo) => `${campo} = ?`).join(', ')
-        await conn.query(`UPDATE financeiro_geral SET ${sets}, descricao_original='Saldo anterior', descricao_normalizada='SALDO ANTERIOR', tipo_lancamento='SALDO', total=(COALESCE(conta01,0)+COALESCE(conta02,0)+COALESCE(conta03,0)+COALESCE(conta04,0)+COALESCE(conta05,0)+COALESCE(conta06,0)+COALESCE(conta07,0)+COALESCE(conta08,0)+COALESCE(conta09,0)+COALESCE(conta10,0)+COALESCE(conta11,0)+COALESCE(conta12,0)+COALESCE(conta13,0)+COALESCE(conta14,0)+COALESCE(conta15,0)+COALESCE(conta16,0)+COALESCE(conta17,0)+COALESCE(conta18,0)+COALESCE(conta19,0)+COALESCE(conta20,0)+COALESCE(conta21,0)+COALESCE(conta22,0)+COALESCE(conta23,0)+COALESCE(conta24,0)+COALESCE(conta25,0)+COALESCE(conta26,0)+COALESCE(conta27,0)+COALESCE(conta28,0)+COALESCE(conta29,0)+COALESCE(conta30,0)+COALESCE(prod1_total,0)+COALESCE(prod2_total,0)+COALESCE(prod3_total,0)+COALESCE(prod4_total,0)), atualizado_em=NOW() WHERE id=?`, [...colunas.map((campo) => acumulado[campo]), aberturasDia[0].id])
+        await conn.query(`UPDATE financeiro_geral SET ${sets}, descricao_original='Saldo anterior', descricao_normalizada='SALDO ANTERIOR', tipo_lancamento='SALDO', tipo_lancamento_id=?, total=(COALESCE(conta01,0)+COALESCE(conta02,0)+COALESCE(conta03,0)+COALESCE(conta04,0)+COALESCE(conta05,0)+COALESCE(conta06,0)+COALESCE(conta07,0)+COALESCE(conta08,0)+COALESCE(conta09,0)+COALESCE(conta10,0)+COALESCE(conta11,0)+COALESCE(conta12,0)+COALESCE(conta13,0)+COALESCE(conta14,0)+COALESCE(conta15,0)+COALESCE(conta16,0)+COALESCE(conta17,0)+COALESCE(conta18,0)+COALESCE(conta19,0)+COALESCE(conta20,0)+COALESCE(conta21,0)+COALESCE(conta22,0)+COALESCE(conta23,0)+COALESCE(conta24,0)+COALESCE(conta25,0)+COALESCE(conta26,0)+COALESCE(conta27,0)+COALESCE(conta28,0)+COALESCE(conta29,0)+COALESCE(conta30,0)+COALESCE(prod1_total,0)+COALESCE(prod2_total,0)+COALESCE(prod3_total,0)+COALESCE(prod4_total,0)), atualizado_em=NOW() WHERE id=?`, [...colunas.map((campo) => acumulado[campo]), tipoSaldoId, aberturasDia[0].id])
         atualizados += 1
       }
 
@@ -1444,7 +1448,7 @@ app.post('/api/financeiro-geral/atualizar-saldos', async (req, res) => {
       )
       if (fechamentos[0]) {
         const sets = colunas.map((campo) => `${campo} = ?`).join(', ')
-        await conn.query(`UPDATE financeiro_geral SET ${sets}, total=(COALESCE(conta01,0)+COALESCE(conta02,0)+COALESCE(conta03,0)+COALESCE(conta04,0)+COALESCE(conta05,0)+COALESCE(conta06,0)+COALESCE(conta07,0)+COALESCE(conta08,0)+COALESCE(conta09,0)+COALESCE(conta10,0)+COALESCE(conta11,0)+COALESCE(conta12,0)+COALESCE(conta13,0)+COALESCE(conta14,0)+COALESCE(conta15,0)+COALESCE(conta16,0)+COALESCE(conta17,0)+COALESCE(conta18,0)+COALESCE(conta19,0)+COALESCE(conta20,0)+COALESCE(conta21,0)+COALESCE(conta22,0)+COALESCE(conta23,0)+COALESCE(conta24,0)+COALESCE(conta25,0)+COALESCE(conta26,0)+COALESCE(conta27,0)+COALESCE(conta28,0)+COALESCE(conta29,0)+COALESCE(conta30,0)+COALESCE(prod1_total,0)+COALESCE(prod2_total,0)+COALESCE(prod3_total,0)+COALESCE(prod4_total,0)), atualizado_em=NOW() WHERE id=?`, [...colunas.map((campo) => acumulado[campo]), fechamentos[0].id])
+        await conn.query(`UPDATE financeiro_geral SET ${sets}, tipo_lancamento='SALDO', tipo_lancamento_id=?, total=(COALESCE(conta01,0)+COALESCE(conta02,0)+COALESCE(conta03,0)+COALESCE(conta04,0)+COALESCE(conta05,0)+COALESCE(conta06,0)+COALESCE(conta07,0)+COALESCE(conta08,0)+COALESCE(conta09,0)+COALESCE(conta10,0)+COALESCE(conta11,0)+COALESCE(conta12,0)+COALESCE(conta13,0)+COALESCE(conta14,0)+COALESCE(conta15,0)+COALESCE(conta16,0)+COALESCE(conta17,0)+COALESCE(conta18,0)+COALESCE(conta19,0)+COALESCE(conta20,0)+COALESCE(conta21,0)+COALESCE(conta22,0)+COALESCE(conta23,0)+COALESCE(conta24,0)+COALESCE(conta25,0)+COALESCE(conta26,0)+COALESCE(conta27,0)+COALESCE(conta28,0)+COALESCE(conta29,0)+COALESCE(conta30,0)+COALESCE(prod1_total,0)+COALESCE(prod2_total,0)+COALESCE(prod3_total,0)+COALESCE(prod4_total,0)), atualizado_em=NOW() WHERE id=?`, [...colunas.map((campo) => acumulado[campo]), tipoSaldoId, fechamentos[0].id])
         atualizados += 1
       }
       dias += 1
@@ -1843,6 +1847,15 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) throw new Error('Período inválido.')
   if (dataInicial > dataFinal) throw new Error('A data inicial não pode ser posterior à data final.')
 
+  await garantirEstruturaTiposLancamento()
+  const configuracaoTipos = await carregarConfiguracaoTipos(db, empresaId)
+  const considerarTipoPeriodo = (row) => {
+    const id = Number(row?.tipo_lancamento_id || 0)
+    if (!id) return true
+    const config = configuracaoTipos.get(id)
+    return config ? config.periodo : true
+  }
+
   const [[saldoAnterior]] = await db.query(
     `SELECT total FROM financeiro_geral
       WHERE empresa_id = ? AND data_lancamento < ? AND status = 'ATIVO'
@@ -1862,7 +1875,7 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
 
   const [linhas] = await db.query(
     `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
-            descricao_original, descricao_normalizada, tipo_lancamento, origem,
+            descricao_original, descricao_normalizada, tipo_lancamento, tipo_lancamento_id, origem,
             conta01, conta02, conta03, conta04, conta05, conta06, conta07, conta08, conta09, conta10,
             conta11, conta12, conta13, conta14, conta15, conta16, conta17, conta18, conta19, conta20,
             conta21, conta22, conta23, conta24, conta25, conta26, conta27, conta28, conta29, conta30,
@@ -1872,6 +1885,7 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
       ORDER BY data_lancamento ASC, id ASC`,
     [empresaId, dataInicial, dataFinal]
   )
+  const linhasConsideradas = linhas.filter(considerarTipoPeriodo)
 
   const n = (v) => Number(v || 0)
   const desc = (r) => String(r.descricao_normalizada || r.descricao_original || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
@@ -1887,16 +1901,16 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     return positivos >= 0.005 && negativos >= 0.005 && Math.abs(positivos - negativos) <= 0.01
   }
 
-  const resultadoLiquido = linhas.filter((r) => r.tipo_lancamento === 'RESULTADO' || desc(r).includes('RESULTADO LIQUIDO')).reduce((a, r) => a + somaProdutos(r), 0)
-  const ajusteEstoque = linhas.filter((r) => r.tipo_lancamento === 'AJUSTE' || desc(r).includes('AJUSTE DE SALDO E VALOR ESTOQUE')).reduce((a, r) => a + somaProdutos(r), 0)
-  const taxasCartao = linhas.filter((r) => r.tipo_lancamento === 'TAXA_CARTAO' || desc(r).includes('DESCONTO TAXAS CARTAO')).reduce((a, r) => a + n(r.conta12), 0)
-  const tarifaPix = linhas.filter((r) => desc(r).includes('TARIFA PIX RECEBIDO MAQUININHA') || desc(r).includes('TARIFA PIX RECEBIDO MAQUINHA') || desc(r).includes('TARIFA PIX RECEBIMENTO')).reduce((a, r) => a + somaContas(r), 0)
+  const resultadoLiquido = linhasConsideradas.filter((r) => r.tipo_lancamento === 'RESULTADO' || desc(r).includes('RESULTADO LIQUIDO')).reduce((a, r) => a + somaProdutos(r), 0)
+  const ajusteEstoque = linhasConsideradas.filter((r) => r.tipo_lancamento === 'AJUSTE' || desc(r).includes('AJUSTE DE SALDO E VALOR ESTOQUE')).reduce((a, r) => a + somaProdutos(r), 0)
+  const taxasCartao = linhasConsideradas.filter((r) => r.tipo_lancamento === 'TAXA_CARTAO' || desc(r).includes('DESCONTO TAXAS CARTAO')).reduce((a, r) => a + n(r.conta13), 0)
+  const tarifaPix = linhasConsideradas.filter((r) => desc(r).includes('TARIFA PIX RECEBIDO MAQUININHA') || desc(r).includes('TARIFA PIX RECEBIDO MAQUINHA') || desc(r).includes('TARIFA PIX RECEBIMENTO')).reduce((a, r) => a + somaContas(r), 0)
 
   // As transferências são identificadas dentro de cada dia. Um valor positivo
   // pode anular apenas uma ocorrência negativa de mesmo valor absoluto naquele dia.
   const idsNegativosComContrapartida = new Set()
   const porData = new Map()
-  for (const r of linhas) {
+  for (const r of linhasConsideradas) {
     const data = String(r.data_lancamento || '')
     if (!porData.has(data)) porData.set(data, [])
     porData.get(data).push(r)
@@ -1921,7 +1935,7 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     }
   }
 
-  const despesas = linhas.filter((r) => {
+  const despesas = linhasConsideradas.filter((r) => {
     const d = desc(r)
     if (n(r.total) >= -0.004) return false
     if (d.startsWith('SALDO')) return false
@@ -2049,6 +2063,14 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     const data = String(req.query.data || '').trim()
     if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
     if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new Error('Data inválida.')
+    await garantirEstruturaTiposLancamento()
+    const configuracaoTipos = await carregarConfiguracaoTipos(db, empresaId)
+    const considerarTipoResumo = (row) => {
+      const id = Number(row?.tipo_lancamento_id || 0)
+      if (!id) return true
+      const config = configuracaoTipos.get(id)
+      return config ? config.resumo : true
+    }
 
     const [[saldoAnterior]] = await db.query(
       `SELECT total FROM financeiro_geral
@@ -2070,7 +2092,7 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     )
 
     const [linhas] = await db.query(
-      `SELECT id, descricao_original, descricao_normalizada, tipo_lancamento, origem,
+      `SELECT id, descricao_original, descricao_normalizada, tipo_lancamento, tipo_lancamento_id, origem,
               conta01, conta02, conta03, conta04, conta05, conta06, conta07, conta08, conta09, conta10,
               conta11, conta12, conta13, conta14, conta15, conta16, conta17, conta18, conta19, conta20,
               conta21, conta22, conta23, conta24, conta25, conta26, conta27, conta28, conta29, conta30,
@@ -2080,16 +2102,17 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
         ORDER BY id ASC`,
       [empresaId, data]
     )
+    const linhasConsideradas = linhas.filter(considerarTipoResumo)
 
     const n = (v) => Number(v || 0)
     const desc = (r) => String(r.descricao_normalizada || r.descricao_original || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
     const somaProdutos = (r) => n(r.prod1_total) + n(r.prod2_total) + n(r.prod3_total) + n(r.prod4_total)
     const somaContas = (r) => Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`).reduce((a, c) => a + n(r[c]), 0)
 
-    const resultadoLiquido = linhas.filter((r) => r.tipo_lancamento === 'RESULTADO' || desc(r).includes('RESULTADO LIQUIDO')).reduce((a, r) => a + somaProdutos(r), 0)
-    const ajusteEstoque = linhas.filter((r) => r.tipo_lancamento === 'AJUSTE' || desc(r).includes('AJUSTE DE SALDO E VALOR ESTOQUE')).reduce((a, r) => a + somaProdutos(r), 0)
-    const taxasCartao = linhas.filter((r) => r.tipo_lancamento === 'TAXA_CARTAO' || desc(r).includes('DESCONTO TAXAS CARTAO')).reduce((a, r) => a + n(r.conta12), 0)
-    const tarifaPix = linhas.filter((r) => desc(r).includes('TARIFA PIX RECEBIDO MAQUININHA') || desc(r).includes('TARIFA PIX RECEBIDO MAQUINHA') || desc(r).includes('TARIFA PIX RECEBIMENTO')).reduce((a, r) => a + somaContas(r), 0)
+    const resultadoLiquido = linhasConsideradas.filter((r) => r.tipo_lancamento === 'RESULTADO' || desc(r).includes('RESULTADO LIQUIDO')).reduce((a, r) => a + somaProdutos(r), 0)
+    const ajusteEstoque = linhasConsideradas.filter((r) => r.tipo_lancamento === 'AJUSTE' || desc(r).includes('AJUSTE DE SALDO E VALOR ESTOQUE')).reduce((a, r) => a + somaProdutos(r), 0)
+    const taxasCartao = linhasConsideradas.filter((r) => r.tipo_lancamento === 'TAXA_CARTAO' || desc(r).includes('DESCONTO TAXAS CARTAO')).reduce((a, r) => a + n(r.conta13), 0)
+    const tarifaPix = linhasConsideradas.filter((r) => desc(r).includes('TARIFA PIX RECEBIDO MAQUININHA') || desc(r).includes('TARIFA PIX RECEBIDO MAQUINHA') || desc(r).includes('TARIFA PIX RECEBIMENTO')).reduce((a, r) => a + somaContas(r), 0)
 
     const contas = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
     const centavosAbs = (v) => Math.round(Math.abs(n(v)) * 100)
@@ -2107,14 +2130,14 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     // e por quantidade de ocorrências, evitando que um único positivo elimine várias
     // despesas negativas iguais.
     const positivosDisponiveis = new Map()
-    for (const r of linhas) {
+    for (const r of linhasConsideradas) {
       const valor = n(r.total)
       if (valor <= 0.004) continue
       const chave = centavosAbs(valor)
       positivosDisponiveis.set(chave, (positivosDisponiveis.get(chave) || 0) + 1)
     }
     const idsNegativosComContrapartida = new Set()
-    for (const r of linhas) {
+    for (const r of linhasConsideradas) {
       const valor = n(r.total)
       if (valor >= -0.004) continue
       const chave = centavosAbs(valor)
@@ -2126,7 +2149,7 @@ app.get('/api/financeiro-geral/detalhe-dia', async (req, res) => {
     }
     const ehMovimentoEntreContas = (r) => temTransferenciaNaMesmaLinha(r) || idsNegativosComContrapartida.has(r.id)
 
-    const despesas = linhas.filter((r) => {
+    const despesas = linhasConsideradas.filter((r) => {
       const d = desc(r)
       if (n(r.total) >= -0.004) return false
       if (d.startsWith('SALDO')) return false
@@ -3350,6 +3373,94 @@ async function podeGerenciarMapeamentosFinanceiro(req, res, next) {
   }
 }
 
+app.get('/api/tipos-lancamento', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+  try {
+    const empresaId = Number(req.query.empresaId || 1)
+    if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
+    await garantirEstruturaTiposLancamento()
+    const [tipos] = await db.query(
+      `SELECT c.id,c.empresa_id,c.tipo_lancamento_id,c.codigo,c.nome,c.considera_resumo_dia,
+              c.considera_relatorio_periodo,c.ativo,COUNT(f.id) AS quantidade_lancamentos
+         FROM tipos_lancamento_config c
+         LEFT JOIN financeiro_geral f ON f.empresa_id=c.empresa_id AND f.tipo_lancamento_id=c.tipo_lancamento_id AND f.status='ATIVO'
+        WHERE c.empresa_id=?
+        GROUP BY c.id,c.empresa_id,c.tipo_lancamento_id,c.codigo,c.nome,c.considera_resumo_dia,c.considera_relatorio_periodo,c.ativo
+        ORDER BY c.tipo_lancamento_id`,
+      [empresaId]
+    )
+    const [regras] = await db.query(
+      `SELECT r.id,r.tipo_lancamento_id,r.texto_procurado,r.texto_excluir,r.prioridade,r.ativo
+         FROM regras_tipo_lancamento r
+         INNER JOIN tipos_lancamento_config c ON c.tipo_lancamento_id=r.tipo_lancamento_id AND c.empresa_id=?
+        ORDER BY r.prioridade,r.id`,
+      [empresaId]
+    )
+    res.json({ ok:true, tipos, regras })
+  } catch (error) {
+    res.status(400).json({ ok:false, erro:error.message || 'Erro ao carregar os tipos de lançamento.' })
+  }
+})
+
+app.put('/api/tipos-lancamento/:tipoId', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+  try {
+    const empresaId = Number(req.body?.empresa_id || req.body?.empresaId || 1)
+    const tipoId = Number(req.params.tipoId)
+    const nome = String(req.body?.nome || '').trim()
+    const resumo = Number(req.body?.considera_resumo_dia !== false && Number(req.body?.considera_resumo_dia) !== 0)
+    const periodo = Number(req.body?.considera_relatorio_periodo !== false && Number(req.body?.considera_relatorio_periodo) !== 0)
+    const ativo = Number(req.body?.ativo !== false)
+    if (!Number.isInteger(tipoId) || tipoId <= 0 || !nome) throw new Error('Tipo de lançamento inválido.')
+    await garantirEstruturaTiposLancamento()
+    const [result] = await db.query(
+      `UPDATE tipos_lancamento_config SET nome=?,considera_resumo_dia=?,considera_relatorio_periodo=?,ativo=?,atualizado_em=NOW()
+        WHERE empresa_id=? AND tipo_lancamento_id=?`,
+      [nome,resumo,periodo,ativo,empresaId,tipoId]
+    )
+    if (!result.affectedRows) throw new Error('Tipo de lançamento não encontrado.')
+    res.json({ ok:true, mensagem:'Configuração do tipo atualizada.' })
+  } catch (error) {
+    res.status(400).json({ ok:false, erro:error.message || 'Erro ao salvar o tipo de lançamento.' })
+  }
+})
+
+app.post('/api/tipos-lancamento/regras', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+  try {
+    const tipoId = Number(req.body?.tipo_lancamento_id)
+    const texto = String(req.body?.texto_procurado || '').trim()
+    const excluir = String(req.body?.texto_excluir || '').trim() || null
+    const prioridade = Math.max(0, Number(req.body?.prioridade || 100))
+    const ativo = Number(req.body?.ativo !== false)
+    if (!Number.isInteger(tipoId) || tipoId <= 0 || !texto) throw new Error('Informe o tipo e o texto da regra.')
+    await garantirEstruturaTiposLancamento()
+    const [result] = await db.query(
+      `INSERT INTO regras_tipo_lancamento (tipo_lancamento_id,texto_procurado,texto_excluir,prioridade,ativo) VALUES (?,?,?,?,?)`,
+      [tipoId,texto,excluir,prioridade,ativo]
+    )
+    res.status(201).json({ ok:true, id:result.insertId })
+  } catch (error) {
+    res.status(400).json({ ok:false, erro:error.message || 'Erro ao criar a regra.' })
+  }
+})
+
+app.put('/api/tipos-lancamento/regras/:id', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    const tipoId = Number(req.body?.tipo_lancamento_id)
+    const texto = String(req.body?.texto_procurado || '').trim()
+    const excluir = String(req.body?.texto_excluir || '').trim() || null
+    const prioridade = Math.max(0, Number(req.body?.prioridade || 100))
+    const ativo = Number(req.body?.ativo !== false)
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(tipoId) || tipoId <= 0 || !texto) throw new Error('Regra inválida.')
+    await db.query(
+      `UPDATE regras_tipo_lancamento SET tipo_lancamento_id=?,texto_procurado=?,texto_excluir=?,prioridade=?,ativo=?,atualizado_em=NOW() WHERE id=?`,
+      [tipoId,texto,excluir,prioridade,ativo,id]
+    )
+    res.json({ ok:true })
+  } catch (error) {
+    res.status(400).json({ ok:false, erro:error.message || 'Erro ao atualizar a regra.' })
+  }
+})
+
 app.get('/api/mapeamentos-financeiro', podeGerenciarMapeamentosFinanceiro, async (req, res) => {
   try {
     const empresaId = Number(req.query.empresaId || 1)
@@ -3529,6 +3640,7 @@ async function iniciarServidor() {
   try {
     await garantirPermissaoNumeroLancamento()
     await garantirPermissaoMapeamentosFinanceiro()
+    await garantirEstruturaTiposLancamento()
   } catch (error) {
     console.error('Erro na migração das permissões administrativas:', error)
     process.exitCode = 1
