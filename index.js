@@ -2009,10 +2009,26 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   )
   const linhasConsideradas = linhas.filter(considerarTipoPeriodo)
 
+  const [mapeamentosContas] = await db.query(
+    `SELECT campo_destino, descricao
+       FROM financeiro_geral_mapeamentos
+      WHERE empresa_id = ? AND ativo = 1 AND tipo = 'CONTA'
+        AND campo_destino REGEXP '^conta[0-9]{2}$'
+      ORDER BY id ASC`,
+    [empresaId]
+  )
+
   const n = (v) => Number(v || 0)
   const desc = (r) => String(r.descricao_normalizada || r.descricao_original || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
   const somaProdutos = (r) => n(r.prod1_total) + n(r.prod2_total) + n(r.prod3_total) + n(r.prod4_total)
   const contas = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
+  const nomePorConta = new Map(mapeamentosContas.map((m) => [String(m.campo_destino), String(m.descricao || m.campo_destino)]))
+  const nomeContaLancamento = (r) => {
+    const nomes = contas
+      .filter((c) => Math.abs(n(r[c])) >= 0.005)
+      .map((c) => nomePorConta.get(c) || c)
+    return [...new Set(nomes)].join(' / ')
+  }
   const somaContas = (r) => contas.reduce((a, c) => a + n(r[c]), 0)
   const centavosAbs = (v) => Math.round(Math.abs(n(v)) * 100)
   const valoresConta = (r) => contas.map((c) => n(r[c])).filter((v) => Math.abs(v) >= 0.005)
@@ -2060,6 +2076,7 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   const outrasReceitas = linhasConsideradas.filter((r) => Number(r.tipo_lancamento_id) === 19 && n(r.total) > 0.004).map((r) => ({
     id: r.id,
     data: String(r.data_lancamento || '').slice(0, 10),
+    conta: nomeContaLancamento(r),
     descricao: r.descricao_original || r.descricao_normalizada || 'Outra receita',
     valor: n(r.total),
   }))
@@ -2075,6 +2092,7 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   }).map((r) => ({
     id: r.id,
     data: String(r.data_lancamento || '').slice(0, 10),
+    conta: nomeContaLancamento(r),
     descricao: r.descricao_original || r.descricao_normalizada || 'Despesa',
     valor: n(r.total),
   }))
@@ -2083,7 +2101,9 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   const totalOutrasReceitas = outrasReceitas.reduce((a, r) => a + n(r.valor), 0)
   const totalDespesas = despesas.reduce((a, r) => a + n(r.valor), 0)
   const resultadoLiquidoPeriodo = resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix
-  const totalComposicao = saldoAnteriorTotal + resultadoLiquidoPeriodo + totalOutrasReceitas + totalDespesas
+  // totalDespesas já é negativo; somá-lo equivale a subtrair o total das despesas.
+  const resultadoLiquidoFinalPeriodo = resultadoLiquidoPeriodo + totalOutrasReceitas + totalDespesas
+  const totalComposicao = saldoAnteriorTotal + resultadoLiquidoFinalPeriodo
   const saldoFinalTotal = saldoFinal ? n(saldoFinal.total) : totalComposicao
 
   return {
@@ -2100,6 +2120,7 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     totalOutrasReceitas,
     despesas,
     totalDespesas,
+    resultadoLiquidoFinalPeriodo,
     totalComposicao,
     saldoFinal: saldoFinalTotal,
     dataSaldoFinal: saldoFinal?.data_lancamento || null,
@@ -2129,22 +2150,23 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
     const ws = wb.addWorksheet('Resumo do período')
     ws.columns = [
       { header: 'Data', key: 'data', width: 14 },
-      { header: 'Descrição', key: 'descricao', width: 52 },
+      { header: 'Conta/Banco', key: 'conta', width: 24 },
+      { header: 'Descrição', key: 'descricao', width: 46 },
       { header: 'Valor', key: 'valor', width: 18 },
     ]
-    ws.mergeCells('A1:C1')
+    ws.mergeCells('A1:D1')
     ws.getCell('A1').value = 'Relatório Financeiro do Período'
     ws.getCell('A1').font = { bold: true, size: 16 }
     ws.getCell('A1').alignment = { horizontal: 'center' }
-    ws.mergeCells('A2:C2')
+    ws.mergeCells('A2:D2')
     ws.getCell('A2').value = `${dataInicial.split('-').reverse().join('/')} a ${dataFinal.split('-').reverse().join('/')}`
     ws.getCell('A2').alignment = { horizontal: 'center' }
 
     const moedaFmt = 'R$ #,##0.00;[Red]-R$ #,##0.00'
     const adicionarResumo = (linha, descricao, valor) => {
-      ws.getCell(`B${linha}`).value = descricao
-      ws.getCell(`C${linha}`).value = Number(valor || 0)
-      ws.getCell(`C${linha}`).numFmt = moedaFmt
+      ws.getCell(`C${linha}`).value = descricao
+      ws.getCell(`D${linha}`).value = Number(valor || 0)
+      ws.getCell(`D${linha}`).numFmt = moedaFmt
     }
     adicionarResumo(4, 'Saldo total anterior ao período', dados.saldoAnterior)
     adicionarResumo(6, 'Resultado Líquido dos Produtos', dados.resultadoLiquido)
@@ -2156,42 +2178,50 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
     let linha = 13
     if ((dados.outrasReceitas || []).length > 0) {
       ws.getCell(`A${linha}`).value = 'Data'
-      ws.getCell(`B${linha}`).value = 'Outras Receitas'
-      ws.getCell(`C${linha}`).value = 'Valor'
-      for (const c of [`A${linha}`, `B${linha}`, `C${linha}`]) ws.getCell(c).font = { bold: true }
+      ws.getCell(`B${linha}`).value = 'Conta/Banco'
+      ws.getCell(`C${linha}`).value = 'Outras Receitas'
+      ws.getCell(`D${linha}`).value = 'Valor'
+      for (const c of [`A${linha}`, `B${linha}`, `C${linha}`, `D${linha}`]) ws.getCell(c).font = { bold: true }
       linha += 1
       for (const receita of dados.outrasReceitas || []) {
         ws.getCell(`A${linha}`).value = receita.data ? receita.data.split('-').reverse().join('/') : ''
-        ws.getCell(`B${linha}`).value = receita.descricao
-        ws.getCell(`C${linha}`).value = Number(receita.valor || 0)
-        ws.getCell(`C${linha}`).numFmt = moedaFmt
+        ws.getCell(`B${linha}`).value = receita.conta || ''
+        ws.getCell(`C${linha}`).value = receita.descricao
+        ws.getCell(`D${linha}`).value = Number(receita.valor || 0)
+        ws.getCell(`D${linha}`).numFmt = moedaFmt
         linha += 1
       }
       adicionarResumo(linha, 'Total de Outras Receitas', dados.totalOutrasReceitas)
-      ws.getCell(`B${linha}`).font = { bold: true }
       ws.getCell(`C${linha}`).font = { bold: true }
+      ws.getCell(`D${linha}`).font = { bold: true }
       linha += 2
     }
     ws.getCell(`A${linha}`).value = 'Data'
-    ws.getCell(`B${linha}`).value = 'Despesas pagas no período'
-    ws.getCell(`C${linha}`).value = 'Valor'
-    for (const c of [`A${linha}`, `B${linha}`, `C${linha}`]) ws.getCell(c).font = { bold: true }
+    ws.getCell(`B${linha}`).value = 'Conta/Banco'
+    ws.getCell(`C${linha}`).value = 'Despesas pagas no período'
+    ws.getCell(`D${linha}`).value = 'Valor'
+    for (const c of [`A${linha}`, `B${linha}`, `C${linha}`, `D${linha}`]) ws.getCell(c).font = { bold: true }
     linha += 1
     for (const despesa of dados.despesas) {
       ws.getCell(`A${linha}`).value = despesa.data ? despesa.data.split('-').reverse().join('/') : ''
-      ws.getCell(`B${linha}`).value = despesa.descricao
-      ws.getCell(`C${linha}`).value = Number(despesa.valor || 0)
-      ws.getCell(`C${linha}`).numFmt = moedaFmt
+      ws.getCell(`B${linha}`).value = despesa.conta || ''
+      ws.getCell(`C${linha}`).value = despesa.descricao
+      ws.getCell(`D${linha}`).value = Number(despesa.valor || 0)
+      ws.getCell(`D${linha}`).numFmt = moedaFmt
       linha += 1
     }
     linha += 1
     adicionarResumo(linha, 'Total das despesas do período', dados.totalDespesas)
-    ws.getCell(`B${linha}`).font = { bold: true }
     ws.getCell(`C${linha}`).font = { bold: true }
+    ws.getCell(`D${linha}`).font = { bold: true }
+    linha += 1
+    adicionarResumo(linha, 'RESULTADO LIQUIDO DO PERÍODO', dados.resultadoLiquidoFinalPeriodo)
+    ws.getCell(`C${linha}`).font = { bold: true }
+    ws.getCell(`D${linha}`).font = { bold: true }
     linha += 2
     adicionarResumo(linha, 'Saldo Final do período', dados.saldoFinal)
-    ws.getCell(`B${linha}`).font = { bold: true }
     ws.getCell(`C${linha}`).font = { bold: true }
+    ws.getCell(`D${linha}`).font = { bold: true }
 
     ws.eachRow((row) => {
       row.alignment = { vertical: 'middle' }
