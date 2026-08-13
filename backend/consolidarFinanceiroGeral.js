@@ -7,8 +7,9 @@ const ALIASES_PADRAO = [
   { campo: 'conta03', termos: ['SPOT LUCILA', 'LUCILA'] },
   { campo: 'conta02', termos: ['ITAU', 'ITAÚ'] },
   { campo: 'conta11', termos: ['CAIXA'] },
-  { campo: 'conta12', termos: ['CARTAO', 'CARTÃO'] },
-  { campo: 'conta13', termos: ['VENDAS'] },
+  { campo: 'conta12', termos: ['VENDAS A PRAZO', 'VENDAS PRAZO'] },
+  { campo: 'conta13', termos: ['VENDAS NO CARTAO', 'VENDAS NO CARTÃO', 'VENDAS CARTAO', 'VENDAS CARTÃO', 'CARTAO', 'CARTÃO'] },
+  { campo: 'conta14', termos: ['VENDAS TOTAL', 'VENDAS'] },
   { campo: 'conta21', termos: ['ERALDO'] },
   { campo: 'conta23', termos: ['EMPRESTIMO', 'EMPRÉSTIMO'] },
   { campo: 'conta24', termos: ['FORNECEDOR'] },
@@ -221,7 +222,7 @@ function prioridadeColunaLancamento(row, campoMapeado = null) {
   if (ehSeparacaoVendas(row)) return 9
 
   // Compras e vendas de produtos precisam permanecer no mesmo bloco de estoque.
-  // A venda também movimenta conta13, mas não pode ser classificada antes como
+  // A venda também movimenta conta14, mas não pode ser classificada antes como
   // lançamento financeiro, pois isso faria a baixa ocorrer antes da compra e do
   // recálculo do custo médio do próprio dia.
   const tipoProduto = String(row?.tipo_lancamento || '').toUpperCase()
@@ -235,9 +236,10 @@ function prioridadeColunaLancamento(row, campoMapeado = null) {
   if (tem('conta02')) return 2  // ITAÚ
   if (tem('conta03')) return 3  // LUCILA
   if (tem('conta11')) return 4  // CAIXA
-  if (tem('conta12')) return 5  // CARTÃO
-  if (tem('conta13')) return 6  // VENDAS
-  if (tem('conta21')) return 7  // ERALDO
+  if (tem('conta12')) return 5  // VENDAS A PRAZO
+  if (tem('conta13')) return 6  // VENDAS NO CARTÃO
+  if (tem('conta14')) return 7  // VENDAS TOTAL
+  if (tem('conta21')) return 8  // ERALDO
 
   const possuiOutraConta = Array.from(CAMPOS_CONTAS).some((campo) => numero(row?.[campo]) !== 0)
   if (possuiOutraConta || (campoMapeado && CAMPOS_CONTAS.has(campoMapeado))) return 8
@@ -287,7 +289,7 @@ function ehSeparacaoVendas(row) {
 }
 
 function separacaoTemValores(row) {
-  return ['conta11', 'conta12', 'conta13'].some((campo) => Math.abs(numero(row?.[campo])) > 0.0000005)
+  return ['conta11', 'conta12', 'conta13', 'conta14'].some((campo) => Math.abs(numero(row?.[campo])) > 0.0000005)
 }
 
 function origemPermitida(row) {
@@ -680,7 +682,7 @@ export async function consolidarFinanceiroGeral({
       for (const row of linhasBanco) {
         const campo = mapeamentos.get(Number(row.conta_bancaria_id))
         if (!campo) { ignorados += 1; semMapeamento.set(Number(row.conta_bancaria_id), row.nome_conta || row.instituicao); continue }
-        const saldoCartaoInicial = numero(saldoContas.get('conta12'))
+        const saldoCartaoInicial = numero(saldoContas.get('conta13'))
         // Linhas de saldo do PDF/extrato são conferências externas. Elas não podem
         // substituir o acumulado porque não aparecem como movimento no Financeiro Geral.
         if (ehSaldoExtrato(row)) continue
@@ -699,11 +701,11 @@ export async function consolidarFinanceiroGeral({
         if (creditoCartao) {
           // Crédito vendas cartão é um movimento: replica o valor do SPOT
           // na coluna Cartão com sinal negativo.
-          valoresLinha.conta12 = -Math.abs(valor)
-          saldoContas.set('conta12', arred2(saldoCartaoInicial + valoresLinha.conta12))
+          valoresLinha.conta13 = -Math.abs(valor)
+          saldoContas.set('conta13', arred2(saldoCartaoInicial + valoresLinha.conta13))
         } else if (pixMaquininha) {
-          valoresLinha.conta12 = -Math.abs(valor)
-          saldoContas.set('conta12', arred2(saldoCartaoInicial + valoresLinha.conta12))
+          valoresLinha.conta13 = -Math.abs(valor)
+          saldoContas.set('conta13', arred2(saldoCartaoInicial + valoresLinha.conta13))
         }
         contabilizar(await gravarLinhaSegura({
           empresa, data: dia, descricao: row.descricao_original, tipo: String(row.tipo_lancamento || row.natureza || 'LANÇAMENTO').slice(0, 100),
@@ -720,12 +722,12 @@ export async function consolidarFinanceiroGeral({
             detalhesPorData: vendasCartaoDetalhesPorData,
             usados: taxasVendasCartaoUsadas,
           })
-          saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + descontoTaxas))
+          saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) + descontoTaxas))
           contabilizar(await gravarLinhaSegura({
             empresa, data: dia, descricao: 'Desconto taxas Cartão', tipo: 'TAXA_CARTAO', origem: 'SISTEMA',
             tabelaOrigem: 'extratos_bancarios', registroOrigemId: row.id,
             chave: `${empresa}:extratos_bancarios:${row.id}:taxa-cartao`, usuarioId,
-            valores: { conta12: descontoTaxas },
+            valores: { conta13: descontoTaxas },
           }))
         }
       }
@@ -775,10 +777,10 @@ export async function consolidarFinanceiroGeral({
               [`${p}_quant`]: -vendida,
               [`${p}_valor`]: precoVenda,
               [`${p}_total`]: -vendida * precoVenda,
-              conta13: totalVenda,
+              conta14: totalVenda,
             },
           }))
-          saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) + totalVenda))
+          saldoContas.set('conta14', arred2(numero(saldoContas.get('conta14')) + totalVenda))
 
           totalVendasDia = arred2(totalVendasDia + totalVenda)
 
@@ -815,15 +817,33 @@ export async function consolidarFinanceiroGeral({
         // e será liquidado pelas linhas Crédito/Taxa no bloco do dia seguinte.
         const vendaCartaoDoDia = vendaCartaoPorData.get(dia)
         const valorCartao = vendaCartaoDoDia ? Math.abs(arred2(vendaCartaoDoDia.separacao_cartao)) : 0
-        const valorCaixa = arred2(totalVendasDia - valorCartao)
+
+        // VENDAS A PRAZO (conta12): soma somente os movimentos positivos do próprio dia,
+        // excluindo saldos e a própria linha de separação para não retroalimentar o cálculo.
+        const [[vendasPrazoDia]] = await conn.query(
+          `SELECT COALESCE(SUM(CASE WHEN conta12 > 0 THEN conta12 ELSE 0 END), 0) AS total_vendas_prazo
+             FROM financeiro_geral
+            WHERE empresa_id = ? AND data_lancamento = ? AND status = 'ATIVO'
+              AND tipo_lancamento <> 'SALDO'
+              AND tipo_lancamento <> 'SEPARACAO_VENDAS'`,
+          [empresa, dia]
+        )
+        const valorVendasPrazo = Math.abs(arred2(vendasPrazoDia?.total_vendas_prazo))
+
+        // Ordem e fórmula da Separação:
+        // conta14 = VENDAS TOTAL (negativo), conta13 = VENDAS NO CARTÃO,
+        // conta12 = VENDAS A PRAZO e conta11 = CAIXA.
+        const valorVendasTotal = -Math.abs(arred2(totalVendasDia))
+        const valorCaixa = arred2((-valorVendasTotal) - valorCartao - valorVendasPrazo)
         contabilizar(await gravarLinhaSegura({
           empresa, data: dia, descricao: 'Separação Vendas Cartão/dinheiro/etc', tipo: 'SEPARACAO_VENDAS', origem: 'SISTEMA',
           tabelaOrigem: 'lmc_movimentos', registroOrigemId: null,
           chave: `${empresa}:lmc:${dia}:separacao-vendas`, usuarioId,
-          valores: { conta13: -totalVendasDia, conta12: valorCartao, conta11: valorCaixa },
+          valores: { conta14: valorVendasTotal, conta13: valorCartao, conta12: valorVendasPrazo, conta11: valorCaixa },
         }))
-        saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) - totalVendasDia))
-        saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + valorCartao))
+        saldoContas.set('conta14', arred2(numero(saldoContas.get('conta14')) + valorVendasTotal))
+        saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) + valorCartao))
+        saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + valorVendasPrazo))
         saldoContas.set('conta11', arred2(numero(saldoContas.get('conta11')) + valorCaixa))
       }
 
@@ -859,7 +879,7 @@ export async function consolidarFinanceiroGeral({
       // As descrições de saldo também são excluídas para impedir que linhas antigas ou
       // importadas com tipo incorreto sejam somadas como movimento e dupliquem o fechamento.
       const [[movimentoCartaoDia]] = await conn.query(
-        `SELECT COALESCE(SUM(conta12), 0) AS total_cartao
+        `SELECT COALESCE(SUM(conta13), 0) AS total_cartao
            FROM financeiro_geral
           WHERE empresa_id = ? AND data_lancamento = ? AND status = 'ATIVO'
             AND tipo_lancamento <> 'SALDO'
@@ -869,8 +889,8 @@ export async function consolidarFinanceiroGeral({
         [empresa, dia]
       )
       saldoContas.set(
-        'conta12',
-        arred2(numero(saldoContasInicioDia.get('conta12')) + numero(movimentoCartaoDia?.total_cartao))
+        'conta13',
+        arred2(numero(saldoContasInicioDia.get('conta13')) + numero(movimentoCartaoDia?.total_cartao))
       )
 
       const valoresSaldo = {}
@@ -1103,17 +1123,17 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         }
         // A tarifa pertence somente ao SPOT. Crédito de cartão e Pix recebido
         // pela maquininha são replicados em Cartão com o mesmo valor negativo.
-        if (tarifaPixRecebido && numero(row.conta12) !== 0) {
-          row.conta12 = 0
-          await atualizarCamposLinha(conn, row.id, { conta12: 0 })
+        if (tarifaPixRecebido && numero(row.conta13) !== 0) {
+          row.conta13 = 0
+          await atualizarCamposLinha(conn, row.id, { conta13: 0 })
         }
         if (creditoCartao) {
           const valorSpot = numero(row.conta01)
-          const saldoCartaoAntesCredito = numero(saldoContas.get('conta12'))
+          const saldoCartaoAntesCredito = numero(saldoContas.get('conta13'))
           // Crédito vendas cartão é um movimento negativo na coluna Cartão,
           // exatamente igual ao valor positivo lançado no SPOT.
-          row.conta12 = -Math.abs(valorSpot)
-          await atualizarCamposLinha(conn, row.id, { conta01: valorSpot, conta12: row.conta12 })
+          row.conta13 = -Math.abs(valorSpot)
+          await atualizarCamposLinha(conn, row.id, { conta01: valorSpot, conta13: row.conta13 })
           for (const campo of CAMPOS_CONTAS) {
             saldoContas.set(campo, arred2(numero(saldoContas.get(campo)) + numero(row[campo])))
           }
@@ -1123,8 +1143,8 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         } else {
           if (pixMaquininha) {
             const valorSpot = numero(row.conta01)
-            row.conta12 = -Math.abs(valorSpot)
-            await atualizarCamposLinha(conn, row.id, { conta01: valorSpot, conta12: row.conta12 })
+            row.conta13 = -Math.abs(valorSpot)
+            await atualizarCamposLinha(conn, row.id, { conta01: valorSpot, conta13: row.conta13 })
           }
           for (const campo of CAMPOS_CONTAS) saldoContas.set(campo, arred2(numero(saldoContas.get(campo)) + numero(row[campo])))
         }
@@ -1138,17 +1158,17 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
           })
           const taxaExistente = taxaCartaoPorCredito.get(idCreditoOrigem)
           if (taxaExistente) {
-            taxaExistente.conta12 = descontoTaxas
-            await atualizarCamposLinha(conn, taxaExistente.id, { conta12: descontoTaxas })
+            taxaExistente.conta13 = descontoTaxas
+            await atualizarCamposLinha(conn, taxaExistente.id, { conta13: descontoTaxas })
           } else if (descontoTaxas !== 0) {
             await gravarLinhaSegura({
               empresa, data: dia, descricao: 'Desconto taxas Cartão', tipo: 'TAXA_CARTAO', origem: 'SISTEMA',
               tabelaOrigem: 'extratos_bancarios', registroOrigemId: idCreditoOrigem,
               chave: `${empresa}:extratos_bancarios:${idCreditoOrigem}:taxa-cartao`, usuarioId,
-              valores: { conta12: descontoTaxas },
+              valores: { conta13: descontoTaxas },
             })
           }
-          saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + descontoTaxas))
+          saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) + descontoTaxas))
         }
 
         for (const p of CAMPOS_PRODUTOS) {
@@ -1168,10 +1188,10 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
               [`${p}_quant`]: q,
               [`${p}_valor`]: valor,
               [`${p}_total`]: totalVendaProduto,
-              conta13: totalVenda,
+              conta14: totalVenda,
             })
             // A linha já entrou na soma com o valor anteriormente gravado; aplica somente a diferença editada.
-            saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) + totalVenda - numero(row.conta13)))
+            saldoContas.set('conta14', arred2(numero(saldoContas.get('conta14')) + totalVenda - numero(row.conta14)))
 
             totalVendasDia = arred2(totalVendasDia + totalVenda)
 
@@ -1186,15 +1206,26 @@ export async function recalcularFinanceiroGeralAPartirDe({ empresaId, dataInicia
         // Usa exclusivamente a soma de vendas_bruta da tabela vendas_cartao
         // para as descrições permitidas no próprio dia.
         const valorCartao = Math.abs(numero(vendaCartaoPorData.get(dia)?.separacao_cartao))
-        const valorCaixa = arred2(totalVendasDia - valorCartao)
+        const [[vendasPrazoDia]] = await conn.query(
+          `SELECT COALESCE(SUM(CASE WHEN conta12 > 0 THEN conta12 ELSE 0 END), 0) AS total_vendas_prazo
+             FROM financeiro_geral
+            WHERE empresa_id = ? AND data_lancamento = ? AND status = 'ATIVO'
+              AND tipo_lancamento <> 'SALDO'
+              AND tipo_lancamento <> 'SEPARACAO_VENDAS'`,
+          [empresa, dia]
+        )
+        const valorVendasPrazo = Math.abs(arred2(vendasPrazoDia?.total_vendas_prazo))
+        const valorVendasTotal = -Math.abs(arred2(totalVendasDia))
+        const valorCaixa = arred2((-valorVendasTotal) - valorCartao - valorVendasPrazo)
         await gravarLinhaSegura({
           empresa, data: dia, descricao: 'Separação Vendas Cartão/dinheiro/etc', tipo: 'SEPARACAO_VENDAS', origem: 'SISTEMA',
           tabelaOrigem: 'lmc_movimentos', registroOrigemId: null,
           chave: `${empresa}:lmc:${dia}:separacao-vendas`, usuarioId,
-          valores: { conta13: -totalVendasDia, conta12: valorCartao, conta11: valorCaixa },
+          valores: { conta14: valorVendasTotal, conta13: valorCartao, conta12: valorVendasPrazo, conta11: valorCaixa },
         })
-        saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) - totalVendasDia))
-        saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + valorCartao))
+        saldoContas.set('conta14', arred2(numero(saldoContas.get('conta14')) + valorVendasTotal))
+        saldoContas.set('conta13', arred2(numero(saldoContas.get('conta13')) + valorCartao))
+        saldoContas.set('conta12', arred2(numero(saldoContas.get('conta12')) + valorVendasPrazo))
         saldoContas.set('conta11', arred2(numero(saldoContas.get('conta11')) + valorCaixa))
       }
       for (const row of ajustesRows) {

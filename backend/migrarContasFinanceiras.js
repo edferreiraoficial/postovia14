@@ -1,12 +1,14 @@
 import { db } from './db.js'
 
 const CAMPOS_CONTAS_FINANCEIRO = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
-const CAMPOS_ESTRUTURAIS_RESERVADOS = new Set(['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta21', 'conta23', 'conta24'])
+const CAMPOS_ESTRUTURAIS_RESERVADOS = new Set(['conta01', 'conta02', 'conta03', 'conta11', 'conta12', 'conta13', 'conta14', 'conta21', 'conta23', 'conta24'])
 const ALIASES_CONTAS_FINANCEIRO = [
   { campo: 'conta03', termos: ['SPOT LUCILA', 'LUCILA'] },
   { campo: 'conta02', termos: ['ITAU', 'ITAÚ'] },
   { campo: 'conta11', termos: ['CAIXA'] },
-  { campo: 'conta12', termos: ['CARTAO', 'CARTÃO'] },
+  { campo: 'conta12', termos: ['VENDAS A PRAZO', 'VENDAS PRAZO'] },
+  { campo: 'conta13', termos: ['VENDAS NO CARTAO', 'VENDAS NO CARTÃO', 'VENDAS CARTAO', 'VENDAS CARTÃO', 'CARTAO', 'CARTÃO'] },
+  { campo: 'conta14', termos: ['VENDAS TOTAL'] },
   { campo: 'conta21', termos: ['ERALDO'] },
   { campo: 'conta23', termos: ['EMPRESTIMO', 'EMPRÉSTIMO'] },
   { campo: 'conta24', termos: ['FORNECEDOR'] },
