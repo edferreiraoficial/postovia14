@@ -144,21 +144,6 @@ export default function CadastrosAdminPage() {
     setMensagem('')
   }
 
-  const editarRegra = (regra: any) => {
-    const tipo = (dados.tiposLancamento || []).find((item: any) => Number(item.id) === Number(regra.tipo_lancamento_id))
-    if (tipo) {
-      setForm({
-        ...tipo,
-        ativo: Boolean(Number(tipo.ativo)),
-        considera_resumo_dia: Boolean(Number(tipo.considera_resumo_dia)),
-        considera_relatorio_periodo: Boolean(Number(tipo.considera_relatorio_periodo)),
-      })
-    }
-    setRegraForm({ ...regra, ativo: Boolean(Number(regra.ativo)) })
-    setErro('')
-    setMensagem('')
-  }
-
   const salvarRegra = async (event: FormEvent) => {
     event.preventDefault()
     if (form.id === undefined || form.id === null) return
@@ -293,27 +278,16 @@ export default function CadastrosAdminPage() {
         </button>)}</div>
       </article>
 
-      {aba === 'tipos_lancamento' && <article className="settings-card settings-field-full">
-        <div className="settings-card-title"><div><h2>Regras cadastradas</h2><p>{(dados.regrasTipo || []).length} regra(s) cadastrada(s) em regras_tipo_lancamento. Clique em uma regra para editar.</p></div></div>
-        <div className="settings-users-list">{(dados.regrasTipo || []).map((r: any) => <div className="settings-user-row" key={`regra-geral-${r.id}`}>
-          <button type="button" style={{flex:1,textAlign:'left',background:'transparent',border:0}} onClick={() => editarRegra(r)}>
-            <div><strong>{r.texto_procurado}</strong><span>T {r.tipo_lancamento_id} — {r.tipo_nome || r.tipo_codigo || 'Tipo não encontrado'}{r.texto_excluir ? ` • Exceto: ${r.texto_excluir}` : ''} • Prioridade ${r.prioridade}</span></div>
-          </button>
-          <span>{Number(r.ativo) ? 'Ativa' : 'Inativa'}</span>
-          <button type="button" className="settings-btn settings-btn-secondary" onClick={() => excluirRegra(Number(r.id))}>Excluir</button>
-        </div>)}</div>
-      </article>}
-
       {aba === 'tipos_lancamento' && form.id !== undefined && form.id !== null && <article className="settings-card settings-field-full">
-        <div className="settings-card-title"><div><h2>Regras para preencher a coluna T</h2><p>Quando a descrição contiver o texto procurado, o lançamento receberá T {form.id}. O campo “não pode conter” é opcional.</p></div></div>
+        <div className="settings-card-title"><div><h2>Regras para preencher a coluna T</h2><p>Quando a descrição contiver qualquer expressão do texto procurado, o lançamento receberá T {form.id}. Separe alternativas por ponto e vírgula (;). O campo “não pode conter” também aceita várias expressões separadas por ;.</p></div></div>
         <form className="settings-form" onSubmit={salvarRegra}>
-          <label><span>Texto procurado</span><input required value={regraForm.texto_procurado || ''} onChange={e => setRegraForm({ ...regraForm, texto_procurado: e.target.value })} placeholder="Ex.: TRANSFERENCIA" /></label>
-          <label><span>Não pode conter</span><input value={regraForm.texto_excluir || ''} onChange={e => setRegraForm({ ...regraForm, texto_excluir: e.target.value })} /></label>
+          <label><span>Texto procurado</span><input required value={regraForm.texto_procurado || ''} onChange={e => setRegraForm({ ...regraForm, texto_procurado: e.target.value })} placeholder="Ex.: TRANSFERENCIA;TED ENVIADA;PIX ENVIADO" /></label>
+          <label><span>Não pode conter</span><input value={regraForm.texto_excluir || ''} onChange={e => setRegraForm({ ...regraForm, texto_excluir: e.target.value })} placeholder="Ex.: TARIFA;ESTORNO" /></label>
           <label><span>Prioridade</span><input type="number" min="0" value={regraForm.prioridade ?? 100} onChange={e => setRegraForm({ ...regraForm, prioridade: Number(e.target.value) })} /></label>
           <label className="cadastros-active-checkbox"><input type="checkbox" checked={regraForm.ativo !== false} onChange={e => setRegraForm({ ...regraForm, ativo: e.target.checked })} /><span>Regra ativa</span></label>
           <div className="settings-actions"><button className="settings-btn settings-btn-primary" type="submit" disabled={salvandoRegra}>{salvandoRegra ? 'Salvando...' : regraForm.id ? 'Atualizar regra' : 'Adicionar regra'}</button>{regraForm.id && <button className="settings-btn settings-btn-secondary" type="button" onClick={() => setRegraForm({ tipo_lancamento_id: Number(form.id), prioridade: 100, ativo: true })}>Nova regra</button>}</div>
         </form>
-        <div className="settings-users-list">{(dados.regrasTipo || []).filter((r: any) => Number(r.tipo_lancamento_id) === Number(form.id)).map((r: any) => <div className="settings-user-row" key={r.id}><button type="button" style={{flex:1,textAlign:'left',background:'transparent',border:0}} onClick={() => editarRegra(r)}><div><strong>{r.texto_procurado}</strong><span>{r.texto_excluir ? `Exceto: ${r.texto_excluir} • ` : ''}Prioridade ${r.prioridade}</span></div></button><span>{Number(r.ativo) ? 'Ativa' : 'Inativa'}</span><button type="button" className="settings-btn settings-btn-secondary" onClick={() => excluirRegra(Number(r.id))}>Excluir</button></div>)}</div>
+        <div className="settings-users-list">{(dados.regrasTipo || []).filter((r: any) => Number(r.tipo_lancamento_id) === Number(form.id)).map((r: any) => <div className="settings-user-row" key={r.id}><button type="button" style={{flex:1,textAlign:'left',background:'transparent',border:0}} onClick={() => setRegraForm({ ...r, ativo: Boolean(Number(r.ativo)) })}><div><strong>{r.texto_procurado}</strong><span>{r.texto_excluir ? `Exceto: ${r.texto_excluir} • ` : ''}Prioridade ${r.prioridade}</span></div></button><span>{Number(r.ativo) ? 'Ativa' : 'Inativa'}</span><button type="button" className="settings-btn settings-btn-secondary" onClick={() => excluirRegra(Number(r.id))}>Excluir</button></div>)}</div>
       </article>}
     </div>
   </section>

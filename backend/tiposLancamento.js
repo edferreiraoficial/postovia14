@@ -72,6 +72,11 @@ export async function garantirEstruturaTiposLancamento(connExterna = null) {
   }
 }
 
+const separarExpressoesRegra = (valor) => String(valor || '')
+  .split(';')
+  .map((parte) => normalizar(parte))
+  .filter(Boolean)
+
 export async function carregarRegrasTipoLancamento(conn) {
   await garantirEstruturaTiposLancamento(conn)
   const [rows] = await conn.query(
@@ -84,17 +89,27 @@ export async function carregarRegrasTipoLancamento(conn) {
   return rows.map((row) => ({
     id: Number(row.id),
     tipoLancamentoId: row.tipo_lancamento_id == null ? null : Number(row.tipo_lancamento_id),
-    procurar: normalizar(row.texto_procurado),
-    excluir: normalizar(row.texto_excluir),
-  })).filter((row) => row.tipoLancamentoId != null && row.procurar)
+    // Cada item separado por ; e uma alternativa (OU).
+    // Sem ; o comportamento permanece identico ao anterior.
+    procurar: separarExpressoesRegra(row.texto_procurado),
+    excluir: separarExpressoesRegra(row.texto_excluir),
+  })).filter((row) => row.tipoLancamentoId != null && row.procurar.length > 0)
 }
 
 export function obterTipoLancamentoId(descricaoOriginal, regras = []) {
   const descricao = normalizar(descricaoOriginal)
   if (!descricao) return null
   for (const regra of regras) {
-    if (!descricao.includes(regra.procurar)) continue
-    if (regra.excluir && descricao.includes(regra.excluir)) continue
+    const termosProcurados = Array.isArray(regra.procurar) ? regra.procurar : separarExpressoesRegra(regra.procurar)
+    const termosExclusao = Array.isArray(regra.excluir) ? regra.excluir : separarExpressoesRegra(regra.excluir)
+
+    // A regra casa quando QUALQUER expressao de texto_procurado estiver presente.
+    if (!termosProcurados.some((termo) => descricao.includes(termo))) continue
+
+    // Se QUALQUER expressao de texto_excluir estiver presente, a regra e descartada.
+    if (termosExclusao.some((termo) => descricao.includes(termo))) continue
+
+    // As regras ja chegam ordenadas por prioridade; a primeira compativel vence.
     return regra.tipoLancamentoId
   }
   return null
