@@ -364,7 +364,6 @@ async function gravarLinha(conn, {
   const tipoSistemaId = tiposSistema.get(codigoTipoNormalizado(tipo)) ?? null
   const tipoRegraId = obterTipoLancamentoId(descricaoOriginal, regrasTipoLancamento)
   const tipoPreservadoId = tiposPreservados.get(String(chave || '')) ?? null
-  const campos = Object.keys(dados)
   const [existentes] = await conn.query('SELECT id, tipo_lancamento_id FROM financeiro_geral WHERE chave_integracao = ? LIMIT 1', [chave])
   const tipoExistenteId = existentes[0]?.tipo_lancamento_id == null ? null : Number(existentes[0].tipo_lancamento_id)
 
@@ -395,6 +394,10 @@ async function gravarLinha(conn, {
     if (recebidoBancoCaixa > 0.000004) dados.conta12 = -Math.abs(recebidoBancoCaixa)
   }
 
+  // A lista de campos precisa ser montada somente depois das contrapartidas
+  // automáticas. Assim, no T=5, a conta12 criada acima entra de fato no
+  // INSERT/UPDATE durante a consolidação e também na recriação do período.
+  const campos = Object.keys(dados)
   const total = calcularTotal(dados)
 
   if (existentes[0]) {
