@@ -1867,7 +1867,9 @@ async function colunasFinanceiroSolicitadas(req, empresaId) {
 async function consultarFinanceiroGeral(f, limite = null, offset = 0) {
   const filtro = filtroFinanceiroGeral(f)
   const numericas = FINANCEIRO_GERAL_COLUNAS.map(([c]) => c)
-  let sql = `SELECT id, data_lancamento, descricao_original, descricao_normalizada, tipo_lancamento, tipo_lancamento_id,
+  const [[colunaTipoLancamentoId]] = await db.query(`SELECT COUNT(*) AS existe FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'financeiro_geral' AND COLUMN_NAME = 'tipo_lancamento_id'`)
+  const campoTipoLancamentoId = Number(colunaTipoLancamentoId?.existe || 0) > 0 ? 'tipo_lancamento_id' : 'NULL AS tipo_lancamento_id'
+  let sql = `SELECT id, data_lancamento, descricao_original, descricao_normalizada, tipo_lancamento, ${campoTipoLancamentoId},
                     CASE WHEN UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO%' THEN '' ELSE origem END AS origem,
                     ${numericas.join(', ')}
              FROM financeiro_geral WHERE ${filtro.sql}
