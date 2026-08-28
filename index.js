@@ -1976,26 +1976,11 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     const bruto = row?.tipo_lancamento_id
     if (bruto === null || bruto === undefined || bruto === '') return false
     const id = Number(bruto)
+    // T6 - COMPRA DE PRODUTOS não participa do Relatório do Período.
+    if (id === 6) return false
     const config = configuracaoTipos.get(id)
     return config ? config.periodo : true
   }
-
-  const [[saldoAnterior]] = await db.query(
-    `SELECT total FROM financeiro_geral
-      WHERE empresa_id = ? AND data_lancamento < ? AND status = 'ATIVO'
-        AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO DO DIA%'
-      ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
-    [empresaId, dataInicial]
-  )
-
-  const [[saldoFinal]] = await db.query(
-    `SELECT total, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento
-       FROM financeiro_geral
-      WHERE empresa_id = ? AND data_lancamento BETWEEN ? AND ? AND status = 'ATIVO'
-        AND UPPER(COALESCE(descricao_normalizada, descricao_original, '')) LIKE 'SALDO DO DIA%'
-      ORDER BY data_lancamento DESC, id DESC LIMIT 1`,
-    [empresaId, dataInicial, dataFinal]
-  )
 
   const [linhas] = await db.query(
     `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
@@ -2099,20 +2084,16 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     valor: n(r.total),
   }))
 
-  const saldoAnteriorTotal = n(saldoAnterior?.total)
   const totalOutrasReceitas = outrasReceitas.reduce((a, r) => a + n(r.valor), 0)
   const totalDespesas = despesas.reduce((a, r) => a + n(r.valor), 0)
   const resultadoLiquidoPeriodo = resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix
   // totalDespesas já é negativo; somá-lo equivale a subtrair o total das despesas.
   const resultadoLiquidoFinalPeriodo = resultadoLiquidoPeriodo + totalOutrasReceitas + totalDespesas
-  const totalComposicao = saldoAnteriorTotal + resultadoLiquidoFinalPeriodo
-  const saldoFinalTotal = saldoFinal ? n(saldoFinal.total) : totalComposicao
 
   return {
     ok: true,
     dataInicial,
     dataFinal,
-    saldoAnterior: saldoAnteriorTotal,
     resultadoLiquido,
     ajusteEstoque,
     taxasCartao,
@@ -2123,9 +2104,6 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     despesas,
     totalDespesas,
     resultadoLiquidoFinalPeriodo,
-    totalComposicao,
-    saldoFinal: saldoFinalTotal,
-    dataSaldoFinal: saldoFinal?.data_lancamento || null,
   }
 }
 
@@ -2170,7 +2148,6 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
       ws.getCell(`D${linha}`).value = Number(valor || 0)
       ws.getCell(`D${linha}`).numFmt = moedaFmt
     }
-    adicionarResumo(4, 'Saldo total anterior ao período', dados.saldoAnterior)
     adicionarResumo(6, 'Resultado Líquido dos Produtos', dados.resultadoLiquido)
     adicionarResumo(7, 'Ajuste de Saldo Estoque', dados.ajusteEstoque)
     adicionarResumo(8, 'Despesa Taxas Cartão', dados.taxasCartao)
@@ -2218,10 +2195,6 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
     ws.getCell(`D${linha}`).font = { bold: true }
     linha += 1
     adicionarResumo(linha, 'RESULTADO LIQUIDO DO PERÍODO', dados.resultadoLiquidoFinalPeriodo)
-    ws.getCell(`C${linha}`).font = { bold: true }
-    ws.getCell(`D${linha}`).font = { bold: true }
-    linha += 2
-    adicionarResumo(linha, 'Saldo Final do período', dados.saldoFinal)
     ws.getCell(`C${linha}`).font = { bold: true }
     ws.getCell(`D${linha}`).font = { bold: true }
 
