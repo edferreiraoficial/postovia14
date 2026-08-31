@@ -263,70 +263,59 @@ export default function CadastrosAdminPage() {
     </div>
 
     {aba === 'relatorio_periodo' ? (
-      <div className="settings-grid">
-        <article className="settings-card settings-field-full">
-          <div className="settings-card-title">
-            <div>
-              <h2>Configuração do Relatório do Período</h2>
-              <p>Defina em qual setor cada tipo de lançamento será apresentado. Tipos sem setor não participam do relatório.</p>
-            </div>
-          </div>
+      <div className="admin-tool-page">
+        <section className="admin-tool-hero">
+          <h1>Configuração do Relatório do Período</h1>
+          <p>Defina em qual setor cada Tipo de Lançamento (T) será computado. Tipos sem setor não serão listados nem somados.</p>
+        </section>
 
-          <div className="settings-grid">
-            {[
-              { setor: 'RESULTADO_PRODUTOS', titulo: 'Resultado Líquido dos Produtos' },
-              { setor: 'OUTRAS_RECEITAS', titulo: 'Outras Receitas' },
-              { setor: 'DESPESAS', titulo: 'Despesas pagas no período' },
-            ].map((grupo) => (
-              <article className="settings-card" key={grupo.setor}>
-                <div className="settings-card-title">
-                  <div><h2>{grupo.titulo}</h2><p>Marque os tipos que pertencem a este setor.</p></div>
-                </div>
-                <div className="settings-users-list">
-                  {tiposRelatorio.map((tipo: any) => (
-                    <label className="settings-user-row" key={`${grupo.setor}-${tipo.id}`} style={{ cursor: 'pointer' }}>
-                      <div>
-                        <strong>T {tipo.id} — {tipo.nome}</strong>
-                        <span>{tipo.codigo || 'Sem código'}</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={tipo.setor === grupo.setor}
-                        onChange={(e) => definirSetorRelatorio(Number(tipo.id), e.target.checked ? grupo.setor : '')}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <article className="settings-card settings-field-full" style={{ marginTop: 16 }}>
-            <div className="settings-card-title">
-              <div>
-                <h2>Não computar no Relatório do Período</h2>
-                <p>Tipos sem setor ficam fora das listagens e das totalizações.</p>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12}}>
+          {[
+            { setor:'RESULTADO_PRODUTOS', titulo:'Receitas / Resultado Líquido dos Produtos', ajuda:'Tipos usados para compor o resultado líquido dos produtos.' },
+            { setor:'OUTRAS_RECEITAS', titulo:'Outras Receitas', ajuda:'Tipos listados e somados como outras receitas do período.' },
+            { setor:'DESPESAS', titulo:'Despesas pagas no período', ajuda:'Tipos listados e somados como despesas do período.' },
+          ].map((grupo) => (
+            <section className="admin-tool-card" key={grupo.setor}>
+              <h2 style={{marginTop:0}}>{grupo.titulo}</h2>
+              <p style={{color:'#64748B'}}>{grupo.ajuda}</p>
+              <div style={{display:'grid',gap:6}}>
+                {tiposRelatorio.map((tipo:any) => (
+                  <label
+                    key={`${grupo.setor}-${tipo.id}`}
+                    style={{display:'flex',gap:8,alignItems:'center',padding:'7px 8px',border:'1px solid #E2E8F0',borderRadius:7,cursor:'pointer'}}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={tipo.setor === grupo.setor}
+                      onChange={() => definirSetorRelatorio(Number(tipo.id), tipo.setor === grupo.setor ? '' : grupo.setor)}
+                    />
+                    <span><strong>T{tipo.id}</strong> — {tipo.nome} <small style={{color:'#64748B'}}>({tipo.codigo})</small></span>
+                  </label>
+                ))}
               </div>
-            </div>
-            <div className="settings-users-list">
-              {tiposRelatorio.filter((tipo: any) => !tipo.setor).map((tipo: any) => (
-                <div className="settings-user-row" key={`sem-setor-${tipo.id}`}>
-                  <div><strong>T {tipo.id} — {tipo.nome}</strong><span>{tipo.codigo || 'Sem código'}</span></div>
-                  <span>Não computar</span>
-                </div>
-              ))}
-              {tiposRelatorio.length > 0 && !tiposRelatorio.some((tipo: any) => !tipo.setor) && (
-                <div className="settings-user-row"><div><strong>Nenhum tipo fora do relatório</strong></div></div>
-              )}
-            </div>
-          </article>
+            </section>
+          ))}
+        </div>
 
-          <div className="settings-actions" style={{ marginTop: 16 }}>
-            <button className="settings-btn settings-btn-primary" type="button" onClick={salvarConfiguracaoRelatorio} disabled={salvandoRelatorio}>
-              {salvandoRelatorio ? 'Salvando...' : 'Salvar configuração'}
-            </button>
+        <section className="admin-tool-card" style={{marginTop:12}}>
+          <h2 style={{marginTop:0}}>Não computar no Relatório do Período</h2>
+          <p>Estes tipos ficam fora das listas e de todas as somas:</p>
+          <div>
+            {tiposRelatorio.filter((tipo:any) => !tipo.setor).length
+              ? tiposRelatorio.filter((tipo:any) => !tipo.setor).map((tipo:any) => (
+                  <span key={tipo.id} style={{display:'inline-block',margin:'3px 6px 3px 0',padding:'5px 8px',background:'#F1F5F9',borderRadius:6}}>
+                    T{tipo.id} — {tipo.nome}
+                  </span>
+                ))
+              : 'Nenhum tipo.'}
           </div>
-        </article>
+        </section>
+
+        <div style={{display:'flex',justifyContent:'flex-end',marginTop:12}}>
+          <button className="admin-primary-button" type="button" onClick={salvarConfiguracaoRelatorio} disabled={salvandoRelatorio}>
+            {salvandoRelatorio ? 'Salvando...' : 'Salvar configuração'}
+          </button>
+        </div>
       </div>
     ) : (
       <div className="settings-grid">
