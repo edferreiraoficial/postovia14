@@ -1969,8 +1969,10 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) throw new Error('Período inválido.')
   if (dataInicial > dataFinal) throw new Error('A data inicial não pode ser posterior à data final.')
+
   await garantirEstruturaTiposLancamento()
   const configuracaoTipos = await carregarConfiguracaoTipos(db, empresaId)
+
   const [linhas] = await db.query(
     `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
             descricao_original, descricao_normalizada, tipo_lancamento, tipo_lancamento_id, origem,
@@ -1980,10 +1982,20 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
             prod1_total, prod2_total, prod3_total, prod4_total, total
        FROM financeiro_geral
       WHERE empresa_id = ? AND data_lancamento BETWEEN ? AND ? AND status = 'ATIVO'
-      ORDER BY data_lancamento ASC, id ASC`, [empresaId, dataInicial, dataFinal])
+      ORDER BY data_lancamento ASC, id ASC`,
+    [empresaId, dataInicial, dataFinal]
+  )
+
   const [mapeamentosContas] = await db.query(
-    `SELECT campo_destino, descricao FROM financeiro_geral_mapeamentos WHERE empresa_id=? AND ativo=1 AND tipo='CONTA' AND campo_destino REGEXP '^conta[0-9]{2}$' ORDER BY id ASC`, [empresaId])
-  const setoresValidos = new Set(['RESULTADO_PRODUTOS','OUTRAS_RECEITAS','DESPESAS'])
+    `SELECT campo_destino, descricao
+       FROM financeiro_geral_mapeamentos
+      WHERE empresa_id=? AND ativo=1 AND tipo='CONTA'
+        AND campo_destino REGEXP '^conta[0-9]{2}$'
+      ORDER BY id ASC`,
+    [empresaId]
+  )
+
+  const setoresValidos = new Set(['RESULTADO_PRODUTOS', 'OUTRAS_RECEITAS', 'DESPESAS'])
   const setorLinha = (r) => {
     const id = Number(r?.tipo_lancamento_id)
     if (!Number.isFinite(id)) return null
@@ -1991,40 +2003,110 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
     const setor = String(config?.setorPeriodo || '').toUpperCase()
     return config?.periodo && setoresValidos.has(setor) ? setor : null
   }
+
   const n = (v) => Number(v || 0)
-  const contas = Array.from({ length:30 }, (_,i)=>`conta${String(i+1).padStart(2,'0')}`)
-  const nomePorConta = new Map(mapeamentosContas.map((m)=>[String(m.campo_destino), String(m.descricao || m.campo_destino)]))
-  const nomeContaLancamento = (r) => [...new Set(contas.filter((c)=>Math.abs(n(r[c]))>=0.005).map((c)=>nomePorConta.get(c)||c))].join(' / ')
-  const somaProdutos = (r) => n(r.prod1_total)+n(r.prod2_total)+n(r.prod3_total)+n(r.prod4_total)
-  const valorResultado = (r) => Math.abs(somaProdutos(r)) >= 0.000005 ? somaProdutos(r) : n(r.total)
-  const item = (r, valor) => ({ id:r.id, data:String(r.data_lancamento||'').slice(0,10), conta:nomeContaLancamento(r), descricao:r.descricao_original||r.descricao_normalizada||'', valor })
-  const desc = (r) => String(r?.descricao_normalizada || r?.descricao_original || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
-  const ehDescricao = (r, texto) => desc(r).includes(String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase())
-  const linhasResultado = linhas.filter((r)=>setorLinha(r)==='RESULTADO_PRODUTOS')
-  const linhasReceitas = linhas.filter((r)=>setorLinha(r)==='OUTRAS_RECEITAS')
-  const linhasDespesas = linhas.filter((r)=>setorLinha(r)==='DESPESAS')
+  const normalizarTexto = (v) => String(v || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
 
-  // Bloco consolidado: não lista lançamentos individuais.
-  const resultadoLiquido = linhasResultado.filter((r)=>Number(r.tipo_lancamento_id)===2).reduce((a,r)=>a+valorResultado(r),0)
-  const ajusteEstoque = linhasResultado.filter((r)=>Number(r.tipo_lancamento_id)===18).reduce((a,r)=>a+n(r.total),0)
-  const taxasCartao = linhasResultado.filter((r)=>Number(r.tipo_lancamento_id)===11 && ehDescricao(r,'DESPESAS TAXAS CARTAO')).reduce((a,r)=>a+n(r.total),0)
-  const tarifaPix = linhasResultado.filter((r)=>Number(r.tipo_lancamento_id)===11 && ehDescricao(r,'TARIFA PIX RECEBIDO MAQUININHA')).reduce((a,r)=>a+n(r.total),0)
-  const resultadoLiquidoPeriodo = resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix
+  const descricaoLinha = (r) => `${normalizarTexto(r?.descricao_normalizada)} ${normalizarTexto(r?.descricao_original)}`.trim()
+  const ehDescricao = (r, texto) => descricaoLinha(r).includes(normalizarTexto(texto))
 
-  // Outras Receitas: somente T19, listadas individualmente, respeitando a configuração do setor.
-  const outrasReceitas = linhasReceitas.filter((r)=>Number(r.tipo_lancamento_id)===19).map((r)=>item(r,n(r.total))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
-  const totalOutrasReceitas = outrasReceitas.reduce((a,r)=>a+n(r.valor),0)
+  const contas = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
+  const nomePorConta = new Map(mapeamentosContas.map((m) => [String(m.campo_destino), String(m.descricao || m.campo_destino)]))
+  const nomeContaLancamento = (r) => [...new Set(
+    contas
+      .filter((c) => Math.abs(n(r[c])) >= 0.005)
+      .map((c) => nomePorConta.get(c) || c)
+  )].join(' / ')
 
-  // Despesas: Tarifa Pix Enviado (T12) é consolidada; as demais configuradas ficam individualizadas.
-  const linhasTarifaPixEnviado = linhasDespesas.filter((r)=>Number(r.tipo_lancamento_id)===12 && ehDescricao(r,'TARIFA PIX ENVIADO'))
-  const tarifaPixEnviado = linhasTarifaPixEnviado.reduce((a,r)=>a+n(r.total),0)
-  const idsTarifaPixEnviado = new Set(linhasTarifaPixEnviado.map((r)=>Number(r.id)))
-  const despesas = linhasDespesas.filter((r)=>!idsTarifaPixEnviado.has(Number(r.id))).map((r)=>item(r,n(r.total))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
-  const totalDespesasItens = despesas.reduce((a,r)=>a+n(r.valor),0)
-  const totalDespesas = tarifaPixEnviado + totalDespesasItens
+  const item = (r, valor) => ({
+    id: r.id,
+    data: String(r.data_lancamento || '').slice(0, 10),
+    conta: nomeContaLancamento(r),
+    descricao: r.descricao_original || r.descricao_normalizada || '',
+    valor,
+  })
+
+  // Bloco 1: linhas consolidadas do período, como no relatório anterior.
+  const resultadoLiquido = linhas
+    .filter((r) => Number(r.tipo_lancamento_id) === 2)
+    .reduce((acc, r) => acc + n(r.total), 0)
+
+  const ajusteEstoque = linhas
+    .filter((r) => Number(r.tipo_lancamento_id) === 18)
+    .reduce((acc, r) => acc + n(r.total), 0)
+
+  const descontoTaxasCartao = linhas
+    .filter((r) => Number(r.tipo_lancamento_id) === 11 && ehDescricao(r, 'Desconto taxas Cartão'))
+    .reduce((acc, r) => acc + n(r.total), 0)
+
+  const tarifaPix = linhas
+    .filter((r) => Number(r.tipo_lancamento_id) === 11 && ehDescricao(r, 'Tarifa pix recebido maquininha'))
+    .reduce((acc, r) => acc + n(r.total), 0)
+
+  const resultadoLiquidoPeriodo = resultadoLiquido + ajusteEstoque + descontoTaxasCartao + tarifaPix
+
+  // Itens especiais já consolidados no bloco 1 não podem ser repetidos nos blocos analíticos.
+  const ehEspecialResultado = (r) =>
+    Number(r.tipo_lancamento_id) === 2 ||
+    Number(r.tipo_lancamento_id) === 18 ||
+    (Number(r.tipo_lancamento_id) === 11 && (
+      ehDescricao(r, 'Desconto taxas Cartão') ||
+      ehDescricao(r, 'Tarifa pix recebido maquininha')
+    ))
+
+  // Outras Receitas: totalmente livre conforme a configuração de tipos.
+  // O bloco será ocultado no frontend quando não houver lançamentos.
+  const outrasReceitas = linhas
+    .filter((r) => setorLinha(r) === 'OUTRAS_RECEITAS' && !ehEspecialResultado(r))
+    .map((r) => item(r, n(r.total)))
+    .filter((r) => Math.abs(n(r.valor)) >= 0.000005)
+
+  const totalOutrasReceitas = outrasReceitas.reduce((acc, r) => acc + n(r.valor), 0)
+
+  // Despesas: "Tarifa pix enviado" (T12) é consolidada; as demais ficam individualizadas.
+  const linhasTarifaPixEnviado = linhas.filter(
+    (r) => Number(r.tipo_lancamento_id) === 12 && ehDescricao(r, 'Tarifa pix enviado')
+  )
+  const tarifaPixEnviado = linhasTarifaPixEnviado.reduce((acc, r) => acc + n(r.total), 0)
+  const idsTarifaPixEnviado = new Set(linhasTarifaPixEnviado.map((r) => Number(r.id)))
+
+  const despesasIndividuais = linhas
+    .filter((r) => setorLinha(r) === 'DESPESAS' && !ehEspecialResultado(r) && !idsTarifaPixEnviado.has(Number(r.id)))
+    .map((r) => item(r, n(r.total)))
+    .filter((r) => Math.abs(n(r.valor)) >= 0.000005)
+
+  const despesas = [
+    ...(Math.abs(tarifaPixEnviado) >= 0.000005
+      ? [{ id: 'tarifa-pix-enviado', data: '', conta: '', descricao: 'Tarifa pix enviado', valor: tarifaPixEnviado, consolidado: true }]
+      : []),
+    ...despesasIndividuais,
+  ]
+
+  const totalDespesas = despesas.reduce((acc, r) => acc + n(r.valor), 0)
   const resultadoLiquidoFinalPeriodo = resultadoLiquidoPeriodo + totalOutrasReceitas + totalDespesas
-  return { ok:true, dataInicial, dataFinal, resultadoLiquido, ajusteEstoque, taxasCartao, tarifaPix, resultadoLiquidoPeriodo, outrasReceitas, totalOutrasReceitas, tarifaPixEnviado, despesas, totalDespesasItens, totalDespesas, resultadoLiquidoFinalPeriodo }
+
+  return {
+    ok: true,
+    dataInicial,
+    dataFinal,
+    resultadoLiquido,
+    ajusteEstoque,
+    descontoTaxasCartao,
+    taxasCartao: descontoTaxasCartao,
+    tarifaPix,
+    resultadoLiquidoPeriodo,
+    outrasReceitas,
+    totalOutrasReceitas,
+    despesas,
+    totalDespesas,
+    tarifaPixEnviado,
+    resultadoLiquidoFinalPeriodo,
+  }
 }
 
 app.get('/api/financeiro-geral/resumo-periodo', async (req, res) => {
@@ -2054,6 +2136,7 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
       { header: 'Descrição', key: 'descricao', width: 46 },
       { header: 'Valor', key: 'valor', width: 18 },
     ]
+
     ws.mergeCells('A1:D1')
     ws.getCell('A1').value = 'Relatório Financeiro do Período'
     ws.getCell('A1').font = { bold: true, size: 16 }
@@ -2064,35 +2147,73 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
 
     const moedaFmt = 'R$ #,##0.00;[Red]-R$ #,##0.00'
     let linha = 4
-    const adicionarSetor = (titulo, itens, total) => {
-      ws.getCell(`A${linha}`).value = 'Data'; ws.getCell(`B${linha}`).value = 'Conta/Banco'; ws.getCell(`C${linha}`).value = titulo; ws.getCell(`D${linha}`).value = 'Valor'
-      for (const c of [`A${linha}`,`B${linha}`,`C${linha}`,`D${linha}`]) ws.getCell(c).font = { bold:true }
-      linha += 1
-      for (const item of itens || []) {
-        ws.getCell(`A${linha}`).value = item.data ? item.data.split('-').reverse().join('/') : ''
-        ws.getCell(`B${linha}`).value = item.conta || ''; ws.getCell(`C${linha}`).value = item.descricao || ''; ws.getCell(`D${linha}`).value = Number(item.valor || 0); ws.getCell(`D${linha}`).numFmt = moedaFmt; linha += 1
-      }
-      ws.getCell(`C${linha}`).value = `Total - ${titulo}`; ws.getCell(`D${linha}`).value = Number(total || 0); ws.getCell(`D${linha}`).numFmt = moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}; linha += 2
-    }
-    ws.getCell(`C${linha}`).value='Resultado Líquido do Período'; ws.getCell(`C${linha}`).font={bold:true}; linha += 1
-    const linhasResultado = [
-      ['Resultado Líquido do Período', dados.resultadoLiquido],
-      ['Ajuste de Saldo Estoque', dados.ajusteEstoque],
-      ['Despesas Taxas Cartão', dados.taxasCartao],
-      ['Tarifa Pix Recebido Maquininha', dados.tarifaPix],
-    ]
-    for (const [descricao, valor] of linhasResultado) { ws.getCell(`C${linha}`).value=descricao; ws.getCell(`D${linha}`).value=Number(valor||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; linha += 1 }
-    ws.getCell(`C${linha}`).value='Total - Resultado Líquido do Período'; ws.getCell(`D${linha}`).value=Number(dados.resultadoLiquidoPeriodo||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}; linha += 2
-    adicionarSetor('Outras Receitas', dados.outrasReceitas, dados.totalOutrasReceitas)
-    ws.getCell(`C${linha}`).value='Despesas pagas no período'; ws.getCell(`C${linha}`).font={bold:true}; linha += 1
-    ws.getCell(`C${linha}`).value='Tarifa pix enviado'; ws.getCell(`D${linha}`).value=Number(dados.tarifaPixEnviado||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; linha += 1
-    for (const item of dados.despesas || []) { ws.getCell(`A${linha}`).value=item.data?item.data.split('-').reverse().join('/'):''; ws.getCell(`B${linha}`).value=item.conta||''; ws.getCell(`C${linha}`).value=item.descricao||''; ws.getCell(`D${linha}`).value=Number(item.valor||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; linha += 1 }
-    ws.getCell(`C${linha}`).value='Total - Despesas pagas no período'; ws.getCell(`D${linha}`).value=Number(dados.totalDespesas||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}; linha += 2
-    ws.getCell(`C${linha}`).value='RESULTADO LÍQUIDO DO PERÍODO'; ws.getCell(`D${linha}`).value=Number(dados.resultadoLiquidoFinalPeriodo||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}
 
-    ws.eachRow((row) => {
-      row.alignment = { vertical: 'middle' }
-    })
+    const titulo = (texto) => {
+      ws.mergeCells(`A${linha}:D${linha}`)
+      ws.getCell(`A${linha}`).value = texto
+      ws.getCell(`A${linha}`).font = { bold: true }
+      linha += 1
+    }
+
+    const resumo = (descricao, valor, negrito = false) => {
+      ws.getCell(`C${linha}`).value = descricao
+      ws.getCell(`D${linha}`).value = Number(valor || 0)
+      ws.getCell(`D${linha}`).numFmt = moedaFmt
+      if (negrito) {
+        ws.getCell(`C${linha}`).font = { bold: true }
+        ws.getCell(`D${linha}`).font = { bold: true }
+      }
+      linha += 1
+    }
+
+    const adicionarSetorAnalitico = (tituloSetor, itens, total) => {
+      if (!Array.isArray(itens) || itens.length === 0) return
+      titulo(tituloSetor)
+      ws.getCell(`A${linha}`).value = 'Data'
+      ws.getCell(`B${linha}`).value = 'Conta/Banco'
+      ws.getCell(`C${linha}`).value = 'Descrição'
+      ws.getCell(`D${linha}`).value = 'Valor'
+      for (const c of [`A${linha}`, `B${linha}`, `C${linha}`, `D${linha}`]) ws.getCell(c).font = { bold: true }
+      linha += 1
+
+      for (const item of itens) {
+        ws.getCell(`A${linha}`).value = item.data ? item.data.split('-').reverse().join('/') : ''
+        ws.getCell(`B${linha}`).value = item.conta || ''
+        ws.getCell(`C${linha}`).value = item.descricao || ''
+        ws.getCell(`D${linha}`).value = Number(item.valor || 0)
+        ws.getCell(`D${linha}`).numFmt = moedaFmt
+        linha += 1
+      }
+
+      ws.getCell(`C${linha}`).value = `Total - ${tituloSetor}`
+      ws.getCell(`D${linha}`).value = Number(total || 0)
+      ws.getCell(`D${linha}`).numFmt = moedaFmt
+      ws.getCell(`C${linha}`).font = { bold: true }
+      ws.getCell(`D${linha}`).font = { bold: true }
+      linha += 2
+    }
+
+    titulo('Resultado Líquido do Período')
+    resumo('Resultado Líquido do Período', dados.resultadoLiquido)
+    resumo('Ajuste de Saldo Estoque', dados.ajusteEstoque)
+    resumo('Desconto taxas Cartão', dados.descontoTaxasCartao)
+    resumo('Tarifa Pix Recebido Maquininha', dados.tarifaPix)
+    resumo('Total', dados.resultadoLiquidoPeriodo, true)
+    linha += 1
+
+    // Outras Receitas só aparece se houver lançamentos no período.
+    adicionarSetorAnalitico('Outras Receitas', dados.outrasReceitas, dados.totalOutrasReceitas)
+
+    // Despesas continua analítica, exceto a Tarifa pix enviado já consolidada pela API.
+    adicionarSetorAnalitico('Despesas pagas no período', dados.despesas, dados.totalDespesas)
+
+    ws.getCell(`C${linha}`).value = 'RESULTADO LÍQUIDO DO PERÍODO'
+    ws.getCell(`D${linha}`).value = Number(dados.resultadoLiquidoFinalPeriodo || 0)
+    ws.getCell(`D${linha}`).numFmt = moedaFmt
+    ws.getCell(`C${linha}`).font = { bold: true }
+    ws.getCell(`D${linha}`).font = { bold: true }
+
+    ws.eachRow((row) => { row.alignment = { vertical: 'middle' } })
     ws.views = [{ showGridLines: false }]
 
     const buffer = await wb.xlsx.writeBuffer()

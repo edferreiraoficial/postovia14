@@ -152,12 +152,27 @@ export default function FinanceiroGeralAdminPage() {
     if (!resumoPeriodo) return;
     const moedaPdf = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     const classe = (valor: any) => Number(valor || 0) < 0 ? 'neg' : '';
-    const janela = window.open('', '_blank'); if (!janela) { setMensagem('Permita pop-ups para gerar o PDF.'); return; }
-    const tabelaItens = (titulo: string, itens: any[], total: any) => `<h2>${titulo}</h2><table><thead><tr><th>Data</th><th>Conta/Banco</th><th>Descrição</th><th class="n">Valor</th></tr></thead><tbody>${itens.length ? itens.map((r:any) => `<tr><td>${escapar(dataBr(r.data))}</td><td>${escapar(r.conta || '')}</td><td>${escapar(r.descricao || '')}</td><td class="n ${classe(r.valor)}">${escapar(moedaPdf(r.valor))}</td></tr>`).join('') : '<tr><td colspan="4">Nenhum lançamento configurado neste setor.</td></tr>'}<tr class="total"><td colspan="3">Total</td><td class="n ${classe(total)}">${moedaPdf(total)}</td></tr></tbody></table>`;
-    const htmlResultado = `<h2>Resultado Líquido do Período</h2><table><tbody>${[['Resultado Líquido do Período',resumoPeriodo.resultadoLiquido],['Ajuste de Saldo Estoque',resumoPeriodo.ajusteEstoque],['Despesas Taxas Cartão',resumoPeriodo.taxasCartao],['Tarifa Pix Recebido Maquininha',resumoPeriodo.tarifaPix]].map(([d,v])=>`<tr><td>${escapar(d)}</td><td class="n ${classe(v)}">${moedaPdf(v)}</td></tr>`).join('')}<tr class="total"><td>Total</td><td class="n ${classe(resumoPeriodo.resultadoLiquidoPeriodo)}">${moedaPdf(resumoPeriodo.resultadoLiquidoPeriodo)}</td></tr></tbody></table>`;
-    const htmlReceitas=tabelaItens('Outras Receitas',resumoPeriodo.outrasReceitas||[],resumoPeriodo.totalOutrasReceitas);
-    const htmlDespesas = `<h2>Despesas pagas no período</h2><table><thead><tr><th>Data</th><th>Conta/Banco</th><th>Descrição</th><th class="n">Valor</th></tr></thead><tbody><tr><td></td><td></td><td>Tarifa pix enviado</td><td class="n ${classe(resumoPeriodo.tarifaPixEnviado)}">${moedaPdf(resumoPeriodo.tarifaPixEnviado)}</td></tr>${(resumoPeriodo.despesas||[]).map((r:any)=>`<tr><td>${escapar(dataBr(r.data))}</td><td>${escapar(r.conta||'')}</td><td>${escapar(r.descricao||'')}</td><td class="n ${classe(r.valor)}">${moedaPdf(r.valor)}</td></tr>`).join('')}<tr class="total"><td colspan="3">Total</td><td class="n ${classe(resumoPeriodo.totalDespesas)}">${moedaPdf(resumoPeriodo.totalDespesas)}</td></tr></tbody></table>`;
-    janela.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Relatório Financeiro do Período</title><style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111;font-size:10px}h1{text-align:center;font-size:18px;margin:0 0 4px}.periodo{text-align:center;color:#555;margin-bottom:16px}h2{font-size:13px;margin:15px 0 5px}table{width:100%;border-collapse:collapse;margin-bottom:10px}th{background:#eef2f6;text-align:left}th,td{padding:4px;border-bottom:1px solid #ddd}.n{text-align:right}.neg{color:#c62828}.total td{font-weight:700;border-top:1px solid #777}.final{font-size:14px;font-weight:700;margin-top:18px;border-top:2px solid #333;padding-top:8px;text-align:right}</style></head><body><h1>Relatório Financeiro do Período</h1><div class="periodo">${dataBr(resumoPeriodo.dataInicial)} a ${dataBr(resumoPeriodo.dataFinal)}</div>${htmlResultado}${htmlReceitas}${htmlDespesas}<div class="final">RESULTADO LÍQUIDO DO PERÍODO: <span class="${classe(resumoPeriodo.resultadoLiquidoFinalPeriodo)}">${moedaPdf(resumoPeriodo.resultadoLiquidoFinalPeriodo)}</span></div><script>window.onload=()=>window.print()<\/script></body></html>`); janela.document.close();
+    const janela = window.open('', '_blank');
+    if (!janela) { setMensagem('Permita pop-ups para gerar o PDF.'); return; }
+
+    const tabelaResumo = `<h2>Resultado Líquido do Período</h2><table class="resumo"><tbody>
+      <tr><td>Resultado Líquido do Período</td><td class="n ${classe(resumoPeriodo.resultadoLiquido)}">${moedaPdf(resumoPeriodo.resultadoLiquido)}</td></tr>
+      <tr><td>Ajuste de Saldo Estoque</td><td class="n ${classe(resumoPeriodo.ajusteEstoque)}">${moedaPdf(resumoPeriodo.ajusteEstoque)}</td></tr>
+      <tr><td>Desconto taxas Cartão</td><td class="n ${classe(resumoPeriodo.descontoTaxasCartao)}">${moedaPdf(resumoPeriodo.descontoTaxasCartao)}</td></tr>
+      <tr><td>Tarifa Pix Recebido Maquininha</td><td class="n ${classe(resumoPeriodo.tarifaPix)}">${moedaPdf(resumoPeriodo.tarifaPix)}</td></tr>
+      <tr class="total"><td>Total</td><td class="n ${classe(resumoPeriodo.resultadoLiquidoPeriodo)}">${moedaPdf(resumoPeriodo.resultadoLiquidoPeriodo)}</td></tr>
+    </tbody></table>`;
+
+    const tabelaItens = (titulo: string, itens: any[], total: any) => {
+      if (!Array.isArray(itens) || itens.length === 0) return '';
+      return `<h2>${titulo}</h2><table><thead><tr><th>Data</th><th>Conta/Banco</th><th>Descrição</th><th class="n">Valor</th></tr></thead><tbody>${itens.map((r:any) => `<tr><td>${escapar(r.data ? dataBr(r.data) : '')}</td><td>${escapar(r.conta || '')}</td><td>${escapar(r.descricao || '')}</td><td class="n ${classe(r.valor)}">${escapar(moedaPdf(r.valor))}</td></tr>`).join('')}<tr class="total"><td colspan="3">Total</td><td class="n ${classe(total)}">${moedaPdf(total)}</td></tr></tbody></table>`;
+    };
+
+    const htmlReceitas = tabelaItens('Outras Receitas', resumoPeriodo.outrasReceitas || [], resumoPeriodo.totalOutrasReceitas);
+    const htmlDespesas = tabelaItens('Despesas pagas no período', resumoPeriodo.despesas || [], resumoPeriodo.totalDespesas);
+
+    janela.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Relatório Financeiro do Período</title><style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111;font-size:10px}h1{text-align:center;font-size:18px;margin:0 0 4px}.periodo{text-align:center;color:#555;margin-bottom:16px}h2{font-size:13px;margin:15px 0 5px}table{width:100%;border-collapse:collapse;margin-bottom:10px}th{background:#eef2f6;text-align:left}th,td{padding:4px;border-bottom:1px solid #ddd}.n{text-align:right}.neg{color:#c62828}.total td{font-weight:700;border-top:1px solid #777}.final{font-size:14px;font-weight:700;margin-top:18px;border-top:2px solid #333;padding-top:8px;text-align:right}</style></head><body><h1>Relatório Financeiro do Período</h1><div class="periodo">${dataBr(resumoPeriodo.dataInicial)} a ${dataBr(resumoPeriodo.dataFinal)}</div>${tabelaResumo}${htmlReceitas}${htmlDespesas}<div class="final">RESULTADO LÍQUIDO DO PERÍODO: <span class="${classe(resumoPeriodo.resultadoLiquidoFinalPeriodo)}">${moedaPdf(resumoPeriodo.resultadoLiquidoFinalPeriodo)}</span></div><script>window.onload=()=>window.print()<\/script></body></html>`);
+    janela.document.close();
   };
 
   const parametros = (incluirPaginacao = true) => {
@@ -725,20 +740,29 @@ export default function FinanceiroGeralAdminPage() {
           const classeValor = (valor: any) => Number(valor || 0) < 0 ? 'fg-negativo' : '';
           return <>
             <div className="fg-detalhe-dia-lista fg-resumo-periodo-grade">
-              <div style={{marginBottom:14}}>
+              <div style={{ marginBottom: 14 }}>
                 <div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Resultado Líquido do Período</div>
-                {[['Resultado Líquido do Período', resumoPeriodo.resultadoLiquido], ['Ajuste de Saldo Estoque', resumoPeriodo.ajusteEstoque], ['Despesas Taxas Cartão', resumoPeriodo.taxasCartao], ['Tarifa Pix Recebido Maquininha', resumoPeriodo.tarifaPix]].map(([descricao, valor]) => <div className="fg-detalhe-grade-linha" key={String(descricao)}><span>{descricao}</span><span></span><strong className={classeValor(valor)}>{moeda(valor)}</strong></div>)}
+                <div className="fg-detalhe-grade-linha"><span>Resultado Líquido do Período</span><span></span><strong className={classeValor(resumoPeriodo.resultadoLiquido)}>{moeda(resumoPeriodo.resultadoLiquido)}</strong></div>
+                <div className="fg-detalhe-grade-linha"><span>Ajuste de Saldo Estoque</span><span></span><strong className={classeValor(resumoPeriodo.ajusteEstoque)}>{moeda(resumoPeriodo.ajusteEstoque)}</strong></div>
+                <div className="fg-detalhe-grade-linha"><span>Desconto taxas Cartão</span><span></span><strong className={classeValor(resumoPeriodo.descontoTaxasCartao)}>{moeda(resumoPeriodo.descontoTaxasCartao)}</strong></div>
+                <div className="fg-detalhe-grade-linha"><span>Tarifa Pix Recebido Maquininha</span><span></span><strong className={classeValor(resumoPeriodo.tarifaPix)}>{moeda(resumoPeriodo.tarifaPix)}</strong></div>
                 <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Total</span><span></span><strong className={classeValor(resumoPeriodo.resultadoLiquidoPeriodo)}>{moeda(resumoPeriodo.resultadoLiquidoPeriodo)}</strong></div>
               </div>
-              <div style={{marginBottom:14}}><div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Outras Receitas</div><div className="fg-resumo-periodo-cabecalho" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }}><span>Data</span><span>Conta/Banco</span><span>Descrição</span><span>Valor</span></div>
-                {(resumoPeriodo.outrasReceitas || []).length === 0 ? <div className="fg-detalhe-vazio fg-detalhe-vazio-grade">Nenhum lançamento T19 configurado neste setor.</div> : (resumoPeriodo.outrasReceitas || []).map((item:any)=><div className="fg-resumo-periodo-despesa" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }} key={`receita-${item.id}`}><span>{dataBr(item.data)}</span><span>{item.conta||''}</span><span>{item.descricao}</span><strong className={classeValor(item.valor)}>{moeda(item.valor)}</strong></div>)}
+
+              {(resumoPeriodo.outrasReceitas || []).length > 0 && <div style={{ marginBottom: 14 }}>
+                <div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Outras Receitas</div>
+                <div className="fg-resumo-periodo-cabecalho" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }}><span>Data</span><span>Conta/Banco</span><span>Descrição</span><span>Valor</span></div>
+                {(resumoPeriodo.outrasReceitas || []).map((item: any) => <div className="fg-resumo-periodo-despesa" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }} key={`outras-${item.id}`}><span>{item.data ? dataBr(item.data) : ''}</span><span>{item.conta || ''}</span><span>{item.descricao}</span><strong className={classeValor(item.valor)}>{moeda(item.valor)}</strong></div>)}
                 <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Total</span><span></span><strong className={classeValor(resumoPeriodo.totalOutrasReceitas)}>{moeda(resumoPeriodo.totalOutrasReceitas)}</strong></div>
-              </div>
-              <div style={{marginBottom:14}}><div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Despesas pagas no período</div><div className="fg-resumo-periodo-cabecalho" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }}><span>Data</span><span>Conta/Banco</span><span>Descrição</span><span>Valor</span></div>
-                <div className="fg-resumo-periodo-despesa" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }}><span></span><span></span><span>Tarifa pix enviado</span><strong className={classeValor(resumoPeriodo.tarifaPixEnviado)}>{moeda(resumoPeriodo.tarifaPixEnviado)}</strong></div>
-                {(resumoPeriodo.despesas || []).map((item:any)=><div className="fg-resumo-periodo-despesa" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }} key={`despesa-${item.id}`}><span>{dataBr(item.data)}</span><span>{item.conta||''}</span><span>{item.descricao}</span><strong className={classeValor(item.valor)}>{moeda(item.valor)}</strong></div>)}
+              </div>}
+
+              {(resumoPeriodo.despesas || []).length > 0 && <div style={{ marginBottom: 14 }}>
+                <div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Despesas pagas no período</div>
+                <div className="fg-resumo-periodo-cabecalho" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }}><span>Data</span><span>Conta/Banco</span><span>Descrição</span><span>Valor</span></div>
+                {(resumoPeriodo.despesas || []).map((item: any) => <div className="fg-resumo-periodo-despesa" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }} key={`despesa-${item.id}`}><span>{item.data ? dataBr(item.data) : ''}</span><span>{item.conta || ''}</span><span>{item.descricao}</span><strong className={classeValor(item.valor)}>{moeda(item.valor)}</strong></div>)}
                 <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Total</span><span></span><strong className={classeValor(resumoPeriodo.totalDespesas)}>{moeda(resumoPeriodo.totalDespesas)}</strong></div>
-              </div>
+              </div>}
+
               <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>RESULTADO LÍQUIDO DO PERÍODO</span><span></span><strong className={classeValor(resumoPeriodo.resultadoLiquidoFinalPeriodo)}>{moeda(resumoPeriodo.resultadoLiquidoFinalPeriodo)}</strong></div>
             </div>
             <div className="fg-modal-actions fg-resumo-periodo-acoes"><button type="button" className="fg-modal-cancelar" onClick={() => setResumoPeriodo(null)}>Fechar</button><button type="button" className="admin-primary-button" onClick={baixarExcelResumoPeriodo}>Gerar Excel</button><button type="button" className="admin-primary-button" onClick={gerarPdfResumoPeriodo}>Gerar PDF</button></div>
