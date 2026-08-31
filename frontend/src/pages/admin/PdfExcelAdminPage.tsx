@@ -1,11 +1,12 @@
 import { useState } from 'react';
 
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
-type Banco = 'itau' | 'spot' | 'compras' | 'lmc';
+type Banco = 'itau' | 'spot' | 'valori' | 'compras' | 'lmc';
 
 export default function PdfExcelAdminPage() {
   const [arquivoItau, setArquivoItau] = useState<File | null>(null);
   const [arquivoSpot, setArquivoSpot] = useState<File | null>(null);
+  const [arquivoValori, setArquivoValori] = useState<File | null>(null);
   const [arquivoCompras, setArquivoCompras] = useState<File | null>(null);
   const [arquivoLmc, setArquivoLmc] = useState<File | null>(null);
   const [processando, setProcessando] = useState<Banco | null>(null);
@@ -15,7 +16,7 @@ export default function PdfExcelAdminPage() {
     e.preventDefault();
     setMensagem('');
 
-    const arquivo = banco === 'itau' ? arquivoItau : banco === 'spot' ? arquivoSpot : banco === 'compras' ? arquivoCompras : arquivoLmc;
+    const arquivo = banco === 'itau' ? arquivoItau : banco === 'spot' ? arquivoSpot : banco === 'valori' ? arquivoValori : banco === 'compras' ? arquivoCompras : arquivoLmc;
 
     if (!arquivo) {
       setMensagem('Selecione um arquivo PDF para converter.');
@@ -111,6 +112,14 @@ export default function PdfExcelAdminPage() {
           <button className="admin-primary-button" type="submit" disabled={processando === 'spot'}>
             {processando === 'spot' ? 'Gerando Excel...' : 'Gerar Excel'}
           </button>
+        </div>
+      </form>
+
+      <form className="admin-tool-card admin-tool-form admin-pdf-excel-card" onSubmit={(e) => converterPdf(e, 'valori')}>
+        <div className="admin-tool-section-title admin-pdf-excel-title-row"><div><h2>Converter extrato banco Valori</h2><p>Extraia o extrato Valori em PDF para uma planilha Excel pronta para importação</p></div></div>
+        <div className="admin-pdf-excel-file-action">
+          <label className="admin-file-picker"><input type="file" accept="application/pdf,.pdf" onChange={(e) => setArquivoValori(e.target.files?.[0] || null)} /><span>Escolher arquivo PDF</span><small>{arquivoValori?.name || 'Nenhum arquivo escolhido'}</small></label>
+          <button className="admin-primary-button" type="submit" disabled={processando === 'valori'}>{processando === 'valori' ? 'Gerando Excel...' : 'Gerar Excel'}</button>
         </div>
       </form>
 

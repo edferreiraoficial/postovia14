@@ -51,6 +51,7 @@ const menuItems: Array<{ to: string; label: string; icon: IconName; permission: 
   { to: '/admin/financeiro', label: 'Lançamentos Financeiros', icon: 'finance', permission: 'lancamentos' },
   { to: '/admin/auditoria', label: 'Auditoria', icon: 'audit', permission: 'auditoria' },
   { to: '/admin/cadastros', label: 'Cadastros Diversos', icon: 'database', permission: 'cadastros' },
+  { to: '/admin/config-relatorio-periodo', label: 'Config. Relatório Período', icon: 'settings', permission: 'configuracoes' },
   { to: '/admin/config', label: 'Configurações', icon: 'settings', permission: 'configuracoes' },
 ];
 

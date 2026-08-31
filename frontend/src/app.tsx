@@ -22,6 +22,7 @@ import ImportarExcelBancoAdminPage from './pages/admin/ImportarExcelBancoAdminPa
 import CadastrosAdminPage from './pages/admin/CadastrosAdminPage';
 import FinanceiroGeralAdminPage from './pages/admin/FinanceiroGeralAdminPage';
 import GraficosFinanceiroAdminPage from './pages/admin/GraficosFinanceiroAdminPage';
+import RelatorioPeriodoTiposAdminPage from './pages/admin/RelatorioPeriodoTiposAdminPage';
 
 export default function App() {
   return (
@@ -49,6 +50,7 @@ export default function App() {
               <Route path="consultas-banco" element={<PermissionRoute permission="dados_gravados"><ConsultaBancoAdminPage /></PermissionRoute>} />
               <Route path="financeiro-geral" element={<PermissionRoute permission="dados_gravados"><FinanceiroGeralAdminPage /></PermissionRoute>} />
               <Route path="graficos-financeiros" element={<PermissionRoute permission="dados_gravados"><GraficosFinanceiroAdminPage /></PermissionRoute>} />
+              <Route path="config-relatorio-periodo" element={<PermissionRoute permission="configuracoes"><RelatorioPeriodoTiposAdminPage /></PermissionRoute>} />
             </Route>
           </Routes>
         </BrowserRouter>

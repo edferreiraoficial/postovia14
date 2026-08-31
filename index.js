@@ -1969,19 +1969,8 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   if (!Number.isInteger(empresaId) || empresaId <= 0) throw new Error('Empresa inválida.')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal)) throw new Error('Período inválido.')
   if (dataInicial > dataFinal) throw new Error('A data inicial não pode ser posterior à data final.')
-
   await garantirEstruturaTiposLancamento()
   const configuracaoTipos = await carregarConfiguracaoTipos(db, empresaId)
-  const considerarTipoPeriodo = (row) => {
-    const bruto = row?.tipo_lancamento_id
-    if (bruto === null || bruto === undefined || bruto === '') return false
-    const id = Number(bruto)
-    // T6 - COMPRA DE PRODUTOS não participa do Relatório do Período.
-    if (id === 6) return false
-    const config = configuracaoTipos.get(id)
-    return config ? config.periodo : true
-  }
-
   const [linhas] = await db.query(
     `SELECT id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento,
             descricao_original, descricao_normalizada, tipo_lancamento, tipo_lancamento_id, origem,
@@ -1991,120 +1980,32 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
             prod1_total, prod2_total, prod3_total, prod4_total, total
        FROM financeiro_geral
       WHERE empresa_id = ? AND data_lancamento BETWEEN ? AND ? AND status = 'ATIVO'
-      ORDER BY data_lancamento ASC, id ASC`,
-    [empresaId, dataInicial, dataFinal]
-  )
-  const linhasConsideradas = linhas.filter(considerarTipoPeriodo)
-
+      ORDER BY data_lancamento ASC, id ASC`, [empresaId, dataInicial, dataFinal])
   const [mapeamentosContas] = await db.query(
-    `SELECT campo_destino, descricao
-       FROM financeiro_geral_mapeamentos
-      WHERE empresa_id = ? AND ativo = 1 AND tipo = 'CONTA'
-        AND campo_destino REGEXP '^conta[0-9]{2}$'
-      ORDER BY id ASC`,
-    [empresaId]
-  )
-
+    `SELECT campo_destino, descricao FROM financeiro_geral_mapeamentos WHERE empresa_id=? AND ativo=1 AND tipo='CONTA' AND campo_destino REGEXP '^conta[0-9]{2}$' ORDER BY id ASC`, [empresaId])
+  const setoresValidos = new Set(['RESULTADO_PRODUTOS','OUTRAS_RECEITAS','DESPESAS'])
+  const setorLinha = (r) => {
+    const id = Number(r?.tipo_lancamento_id)
+    if (!Number.isFinite(id)) return null
+    const config = configuracaoTipos.get(id)
+    const setor = String(config?.setorPeriodo || '').toUpperCase()
+    return config?.periodo && setoresValidos.has(setor) ? setor : null
+  }
   const n = (v) => Number(v || 0)
-  const desc = (r) => String(r.descricao_normalizada || r.descricao_original || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
-  const somaProdutos = (r) => n(r.prod1_total) + n(r.prod2_total) + n(r.prod3_total) + n(r.prod4_total)
-  const contas = Array.from({ length: 30 }, (_, i) => `conta${String(i + 1).padStart(2, '0')}`)
-  const nomePorConta = new Map(mapeamentosContas.map((m) => [String(m.campo_destino), String(m.descricao || m.campo_destino)]))
-  const nomeContaLancamento = (r) => {
-    const nomes = contas
-      .filter((c) => Math.abs(n(r[c])) >= 0.005)
-      .map((c) => nomePorConta.get(c) || c)
-    return [...new Set(nomes)].join(' / ')
-  }
-  const somaContas = (r) => contas.reduce((a, c) => a + n(r[c]), 0)
-  const centavosAbs = (v) => Math.round(Math.abs(n(v)) * 100)
-  const valoresConta = (r) => contas.map((c) => n(r[c])).filter((v) => Math.abs(v) >= 0.005)
-  const temTransferenciaNaMesmaLinha = (r) => {
-    const vals = valoresConta(r)
-    const positivos = vals.filter((v) => v > 0).reduce((a, v) => a + v, 0)
-    const negativos = vals.filter((v) => v < 0).reduce((a, v) => a + Math.abs(v), 0)
-    return positivos >= 0.005 && negativos >= 0.005 && Math.abs(positivos - negativos) <= 0.01
-  }
-
-  const resultadoLiquido = linhasConsideradas.filter((r) => r.tipo_lancamento === 'RESULTADO' || desc(r).includes('RESULTADO LIQUIDO')).reduce((a, r) => a + somaProdutos(r), 0)
-  const ajusteEstoque = linhasConsideradas.filter((r) => r.tipo_lancamento === 'AJUSTE' || desc(r).includes('AJUSTE DE SALDO E VALOR ESTOQUE')).reduce((a, r) => a + somaProdutos(r), 0)
-  const taxasCartao = linhasConsideradas.filter((r) => r.tipo_lancamento === 'TAXA_CARTAO' || desc(r).includes('DESCONTO TAXAS CARTAO')).reduce((a, r) => a + n(r.conta13), 0)
-  const tarifaPix = linhasConsideradas.filter((r) => desc(r).includes('TARIFA PIX RECEBIDO MAQUININHA') || desc(r).includes('TARIFA PIX RECEBIDO MAQUINHA') || desc(r).includes('TARIFA PIX RECEBIMENTO')).reduce((a, r) => a + somaContas(r), 0)
-
-  // As transferências são identificadas dentro de cada dia. Um valor positivo
-  // pode anular apenas uma ocorrência negativa de mesmo valor absoluto naquele dia.
-  const idsNegativosComContrapartida = new Set()
-  const porData = new Map()
-  for (const r of linhasConsideradas) {
-    const data = String(r.data_lancamento || '')
-    if (!porData.has(data)) porData.set(data, [])
-    porData.get(data).push(r)
-  }
-  for (const [, linhasDia] of porData) {
-    const positivosDisponiveis = new Map()
-    for (const r of linhasDia) {
-      const valor = n(r.total)
-      if (valor <= 0.004) continue
-      const chave = centavosAbs(valor)
-      positivosDisponiveis.set(chave, (positivosDisponiveis.get(chave) || 0) + 1)
-    }
-    for (const r of linhasDia) {
-      const valor = n(r.total)
-      if (valor >= -0.004) continue
-      const chave = centavosAbs(valor)
-      const disponiveis = positivosDisponiveis.get(chave) || 0
-      if (disponiveis > 0) {
-        idsNegativosComContrapartida.add(r.id)
-        positivosDisponiveis.set(chave, disponiveis - 1)
-      }
-    }
-  }
-
-  const outrasReceitas = linhasConsideradas.filter((r) => Number(r.tipo_lancamento_id) === 19 && n(r.total) > 0.004).map((r) => ({
-    id: r.id,
-    data: String(r.data_lancamento || '').slice(0, 10),
-    conta: nomeContaLancamento(r),
-    descricao: r.descricao_original || r.descricao_normalizada || 'Outra receita',
-    valor: n(r.total),
-  }))
-
-  const despesas = linhasConsideradas.filter((r) => {
-    const d = desc(r)
-    if (n(r.total) >= -0.004) return false
-    if (d.startsWith('SALDO')) return false
-    if (r.tipo_lancamento === 'RESULTADO' || r.tipo_lancamento === 'AJUSTE' || r.tipo_lancamento === 'COMPRA' || r.tipo_lancamento === 'VENDA' || r.tipo_lancamento === 'SEPARACAO_VENDAS' || r.tipo_lancamento === 'TAXA_CARTAO') return false
-    if (d.includes('RESULTADO LIQUIDO') || d.includes('AJUSTE DE SALDO E VALOR ESTOQUE') || d.includes('DESCONTO TAXAS CARTAO') || d.includes('TARIFA PIX RECEBIDO MAQUININHA') || d.includes('TARIFA PIX RECEBIDO MAQUINHA') || d.includes('TARIFA PIX RECEBIMENTO')) return false
-    if (temTransferenciaNaMesmaLinha(r) || idsNegativosComContrapartida.has(r.id)) return false
-    return true
-  }).map((r) => ({
-    id: r.id,
-    data: String(r.data_lancamento || '').slice(0, 10),
-    conta: nomeContaLancamento(r),
-    descricao: r.descricao_original || r.descricao_normalizada || 'Despesa',
-    valor: n(r.total),
-  }))
-
-  const totalOutrasReceitas = outrasReceitas.reduce((a, r) => a + n(r.valor), 0)
-  const totalDespesas = despesas.reduce((a, r) => a + n(r.valor), 0)
-  const resultadoLiquidoPeriodo = resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix
-  // totalDespesas já é negativo; somá-lo equivale a subtrair o total das despesas.
-  const resultadoLiquidoFinalPeriodo = resultadoLiquidoPeriodo + totalOutrasReceitas + totalDespesas
-
-  return {
-    ok: true,
-    dataInicial,
-    dataFinal,
-    resultadoLiquido,
-    ajusteEstoque,
-    taxasCartao,
-    tarifaPix,
-    resultadoLiquidoPeriodo,
-    outrasReceitas,
-    totalOutrasReceitas,
-    despesas,
-    totalDespesas,
-    resultadoLiquidoFinalPeriodo,
-  }
+  const contas = Array.from({ length:30 }, (_,i)=>`conta${String(i+1).padStart(2,'0')}`)
+  const nomePorConta = new Map(mapeamentosContas.map((m)=>[String(m.campo_destino), String(m.descricao || m.campo_destino)]))
+  const nomeContaLancamento = (r) => [...new Set(contas.filter((c)=>Math.abs(n(r[c]))>=0.005).map((c)=>nomePorConta.get(c)||c))].join(' / ')
+  const somaProdutos = (r) => n(r.prod1_total)+n(r.prod2_total)+n(r.prod3_total)+n(r.prod4_total)
+  const valorResultado = (r) => Math.abs(somaProdutos(r)) >= 0.000005 ? somaProdutos(r) : n(r.total)
+  const item = (r, valor) => ({ id:r.id, data:String(r.data_lancamento||'').slice(0,10), conta:nomeContaLancamento(r), descricao:r.descricao_original||r.descricao_normalizada||'', valor })
+  const resultadoProdutosItens = linhas.filter((r)=>setorLinha(r)==='RESULTADO_PRODUTOS').map((r)=>item(r,valorResultado(r))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
+  const outrasReceitas = linhas.filter((r)=>setorLinha(r)==='OUTRAS_RECEITAS').map((r)=>item(r,n(r.total))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
+  const despesas = linhas.filter((r)=>setorLinha(r)==='DESPESAS').map((r)=>item(r,n(r.total))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
+  const resultadoLiquido = resultadoProdutosItens.reduce((a,r)=>a+n(r.valor),0)
+  const totalOutrasReceitas = outrasReceitas.reduce((a,r)=>a+n(r.valor),0)
+  const totalDespesas = despesas.reduce((a,r)=>a+n(r.valor),0)
+  const resultadoLiquidoFinalPeriodo = resultadoLiquido + totalOutrasReceitas + totalDespesas
+  return { ok:true, dataInicial, dataFinal, resultadoProdutosItens, resultadoLiquido, ajusteEstoque:0, taxasCartao:0, tarifaPix:0, resultadoLiquidoPeriodo:resultadoLiquido, outrasReceitas, totalOutrasReceitas, despesas, totalDespesas, resultadoLiquidoFinalPeriodo }
 }
 
 app.get('/api/financeiro-geral/resumo-periodo', async (req, res) => {
@@ -2143,60 +2044,21 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
     ws.getCell('A2').alignment = { horizontal: 'center' }
 
     const moedaFmt = 'R$ #,##0.00;[Red]-R$ #,##0.00'
-    const adicionarResumo = (linha, descricao, valor) => {
-      ws.getCell(`C${linha}`).value = descricao
-      ws.getCell(`D${linha}`).value = Number(valor || 0)
-      ws.getCell(`D${linha}`).numFmt = moedaFmt
-    }
-    adicionarResumo(6, 'Resultado Líquido dos Produtos', dados.resultadoLiquido)
-    adicionarResumo(7, 'Ajuste de Saldo Estoque', dados.ajusteEstoque)
-    adicionarResumo(8, 'Despesa Taxas Cartão', dados.taxasCartao)
-    adicionarResumo(9, 'Tarifa Pix Recebido Maquininha', dados.tarifaPix)
-    adicionarResumo(11, 'Resultado Líquido do período', dados.resultadoLiquidoPeriodo)
-
-    let linha = 13
-    if ((dados.outrasReceitas || []).length > 0) {
-      ws.getCell(`A${linha}`).value = 'Data'
-      ws.getCell(`B${linha}`).value = 'Conta/Banco'
-      ws.getCell(`C${linha}`).value = 'Outras Receitas'
-      ws.getCell(`D${linha}`).value = 'Valor'
-      for (const c of [`A${linha}`, `B${linha}`, `C${linha}`, `D${linha}`]) ws.getCell(c).font = { bold: true }
+    let linha = 4
+    const adicionarSetor = (titulo, itens, total) => {
+      ws.getCell(`A${linha}`).value = 'Data'; ws.getCell(`B${linha}`).value = 'Conta/Banco'; ws.getCell(`C${linha}`).value = titulo; ws.getCell(`D${linha}`).value = 'Valor'
+      for (const c of [`A${linha}`,`B${linha}`,`C${linha}`,`D${linha}`]) ws.getCell(c).font = { bold:true }
       linha += 1
-      for (const receita of dados.outrasReceitas || []) {
-        ws.getCell(`A${linha}`).value = receita.data ? receita.data.split('-').reverse().join('/') : ''
-        ws.getCell(`B${linha}`).value = receita.conta || ''
-        ws.getCell(`C${linha}`).value = receita.descricao
-        ws.getCell(`D${linha}`).value = Number(receita.valor || 0)
-        ws.getCell(`D${linha}`).numFmt = moedaFmt
-        linha += 1
+      for (const item of itens || []) {
+        ws.getCell(`A${linha}`).value = item.data ? item.data.split('-').reverse().join('/') : ''
+        ws.getCell(`B${linha}`).value = item.conta || ''; ws.getCell(`C${linha}`).value = item.descricao || ''; ws.getCell(`D${linha}`).value = Number(item.valor || 0); ws.getCell(`D${linha}`).numFmt = moedaFmt; linha += 1
       }
-      adicionarResumo(linha, 'Total de Outras Receitas', dados.totalOutrasReceitas)
-      ws.getCell(`C${linha}`).font = { bold: true }
-      ws.getCell(`D${linha}`).font = { bold: true }
-      linha += 2
+      ws.getCell(`C${linha}`).value = `Total - ${titulo}`; ws.getCell(`D${linha}`).value = Number(total || 0); ws.getCell(`D${linha}`).numFmt = moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}; linha += 2
     }
-    ws.getCell(`A${linha}`).value = 'Data'
-    ws.getCell(`B${linha}`).value = 'Conta/Banco'
-    ws.getCell(`C${linha}`).value = 'Despesas pagas no período'
-    ws.getCell(`D${linha}`).value = 'Valor'
-    for (const c of [`A${linha}`, `B${linha}`, `C${linha}`, `D${linha}`]) ws.getCell(c).font = { bold: true }
-    linha += 1
-    for (const despesa of dados.despesas) {
-      ws.getCell(`A${linha}`).value = despesa.data ? despesa.data.split('-').reverse().join('/') : ''
-      ws.getCell(`B${linha}`).value = despesa.conta || ''
-      ws.getCell(`C${linha}`).value = despesa.descricao
-      ws.getCell(`D${linha}`).value = Number(despesa.valor || 0)
-      ws.getCell(`D${linha}`).numFmt = moedaFmt
-      linha += 1
-    }
-    linha += 1
-    adicionarResumo(linha, 'Total das despesas do período', dados.totalDespesas)
-    ws.getCell(`C${linha}`).font = { bold: true }
-    ws.getCell(`D${linha}`).font = { bold: true }
-    linha += 1
-    adicionarResumo(linha, 'RESULTADO LIQUIDO DO PERÍODO', dados.resultadoLiquidoFinalPeriodo)
-    ws.getCell(`C${linha}`).font = { bold: true }
-    ws.getCell(`D${linha}`).font = { bold: true }
+    adicionarSetor('Receitas / Resultado Líquido dos Produtos', dados.resultadoProdutosItens, dados.resultadoLiquido)
+    adicionarSetor('Outras Receitas', dados.outrasReceitas, dados.totalOutrasReceitas)
+    adicionarSetor('Despesas pagas no período', dados.despesas, dados.totalDespesas)
+    ws.getCell(`C${linha}`).value='RESULTADO LÍQUIDO DO PERÍODO'; ws.getCell(`D${linha}`).value=Number(dados.resultadoLiquidoFinalPeriodo||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}
 
     ws.eachRow((row) => {
       row.alignment = { vertical: 'middle' }
@@ -2395,13 +2257,25 @@ function proximaDataLocal(dataIso) {
   return data.toISOString().slice(0, 10)
 }
 
+app.put('/api/financeiro-geral/lancamentos/:id/tipo', async (req, res) => {
+  try {
+    const id=Number(req.params.id); const tipoId=req.body?.tipo_lancamento_id==null||req.body?.tipo_lancamento_id===''?null:Number(req.body.tipo_lancamento_id)
+    if(!Number.isInteger(id)||id<=0) throw new Error('Lançamento inválido.'); if(tipoId!==null&&(!Number.isInteger(tipoId)||tipoId<0)) throw new Error('Tipo de lançamento inválido.')
+    const [[linha]]=await db.query(`SELECT empresa_id,DATE_FORMAT(data_lancamento,'%Y-%m-%d') AS data_lancamento FROM financeiro_geral WHERE id=? AND status='ATIVO' LIMIT 1`,[id]); if(!linha) return res.status(404).json({ok:false,erro:'Lançamento não encontrado.'})
+    await validarDataDesbloqueada(Number(linha.empresa_id||1),linha.data_lancamento,'alterar o tipo de')
+    if(tipoId!==null){ await garantirEstruturaTiposLancamento(); const [[tipo]]=await db.query(`SELECT id FROM tipos_lancamento WHERE id=? AND ativo=1 LIMIT 1`,[tipoId]); if(!tipo) throw new Error('Tipo de lançamento não encontrado ou inativo.') }
+    await db.query(`UPDATE financeiro_geral SET tipo_lancamento_id=?,usuario_id=?,atualizado_em=NOW() WHERE id=? AND status='ATIVO'`,[tipoId,req.user?.id||req.usuario?.id||null,id])
+    res.json({ok:true,id,tipo_lancamento_id:tipoId,recalculo:false,mensagem:'Tipo do lançamento alterado sem recalcular saldos.'})
+  } catch(error){ res.status(400).json({ok:false,erro:error.message||'Erro ao alterar o tipo do lançamento.'}) }
+})
+
 app.put('/api/financeiro-geral/lancamentos/:id', async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isInteger(id) || id <= 0) throw new Error('Lançamento inválido.')
     const body = req.body || {}
     const [linhasAntes] = await db.query(
-      `SELECT empresa_id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento, tipo_lancamento, descricao_normalizada
+      `SELECT empresa_id, DATE_FORMAT(data_lancamento, '%Y-%m-%d') AS data_lancamento, tipo_lancamento, tipo_lancamento_id, descricao_normalizada
        FROM financeiro_geral WHERE id = ? AND status = 'ATIVO' LIMIT 1`, [id]
     )
     if (!linhasAntes[0]) return res.status(404).json({ ok: false, erro: 'Lançamento não encontrado.' })
@@ -2464,8 +2338,10 @@ app.put('/api/financeiro-geral/lancamentos/:id', async (req, res) => {
     const sets = ['data_lancamento = ?', 'descricao_original = ?', 'descricao_normalizada = ?', 'origem = ?']
     const params = [dataEfetiva, descricao || null, descricao ? descricao.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase() : null, origem || 'SISTEMA']
     for (const campo of camposNumericos) { sets.push(`${campo} = ?`); params.push(valores[campo]) }
-    sets.push('total = ?', 'usuario_id = ?', 'atualizado_em = NOW()')
-    params.push(total, req.user?.id || null, id)
+    const tipoLancamentoIdBody = body.tipo_lancamento_id == null || body.tipo_lancamento_id === '' ? null : Number(body.tipo_lancamento_id)
+    if (tipoLancamentoIdBody !== null && (!Number.isInteger(tipoLancamentoIdBody) || tipoLancamentoIdBody < 0)) throw new Error('Tipo de lançamento inválido.')
+    sets.push('tipo_lancamento_id = ?', 'total = ?', 'usuario_id = ?', 'atualizado_em = NOW()')
+    params.push(tipoLancamentoIdBody, total, req.user?.id || req.usuario?.id || null, id)
     const [resultado] = await db.query(`UPDATE financeiro_geral SET ${sets.join(', ')} WHERE id = ? AND status = 'ATIVO'`, params)
     if (!resultado.affectedRows) return res.status(404).json({ ok: false, erro: 'Lançamento não encontrado.' })
     const dataRecalculoBase = ehSaldoInicialEditado ? dataEfetiva : (ehSaldoEditado ? proximaDataLocal(dataEfetiva) : dataEfetiva)
@@ -3563,6 +3439,22 @@ app.get('/api/tipos-lancamento', podeGerenciarMapeamentosFinanceiro, async (req,
   } catch (error) {
     res.status(400).json({ ok:false, erro:error.message || 'Erro ao carregar os tipos de lançamento.' })
   }
+})
+
+app.get('/api/relatorio-periodo/tipos', async (_req, res) => {
+  try { await garantirEstruturaTiposLancamento(); const [tipos]=await db.query(`SELECT id,codigo,nome,ativo,setor_relatorio_periodo FROM tipos_lancamento WHERE ativo=1 ORDER BY ordem_relatorio,id`); res.json({ok:true,tipos}) }
+  catch(error){ res.status(400).json({ok:false,erro:error.message||'Erro ao carregar configuração do relatório.'}) }
+})
+app.put('/api/relatorio-periodo/tipos', async (req, res) => {
+  const conn=await db.getConnection()
+  try { await garantirEstruturaTiposLancamento(conn); const itens=Array.isArray(req.body?.tipos)?req.body.tipos:[]; const validos=new Set(['RESULTADO_PRODUTOS','OUTRAS_RECEITAS','DESPESAS','']); await conn.beginTransaction();
+    for(const item of itens){ const id=Number(item.id); const setor=String(item.setor||'').trim().toUpperCase(); if(!Number.isInteger(id)||id<0||!validos.has(setor)) throw new Error('Configuração de tipo inválida.'); await conn.query(`UPDATE tipos_lancamento SET setor_relatorio_periodo=?,considera_relatorio_periodo=?,updated_at=NOW() WHERE id=?`,[setor||null,setor?1:0,id]) }
+    await conn.commit(); res.json({ok:true,mensagem:'Configuração do Relatório do Período salva com sucesso.'})
+  } catch(error){ await conn.rollback().catch(()=>{}); res.status(400).json({ok:false,erro:error.message||'Erro ao salvar configuração.'}) } finally { conn.release() }
+})
+app.get('/api/financeiro-geral/tipos-lancamento', async (_req,res)=>{
+  try { await garantirEstruturaTiposLancamento(); const [tipos]=await db.query(`SELECT id,codigo,nome FROM tipos_lancamento WHERE ativo=1 ORDER BY ordem_relatorio,id`); res.json({ok:true,tipos}) }
+  catch(error){ res.status(400).json({ok:false,erro:error.message||'Erro ao carregar tipos.'}) }
 })
 
 app.post('/api/tipos-lancamento', podeGerenciarMapeamentosFinanceiro, async (req, res) => {

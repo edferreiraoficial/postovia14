@@ -66,6 +66,8 @@ export default function FinanceiroGeralAdminPage() {
   const [configuracaoFinanceiraCarregada, setConfiguracaoFinanceiraCarregada] = useState(false);
   const [novoLancamentoAberto, setNovoLancamentoAberto] = useState(false);
   const [novoLancamento, setNovoLancamento] = useState<Linha>({ data_lancamento: iso(new Date()), descricao_original: '', origem: 'MANUAL' });
+  const [lancamentoOriginal, setLancamentoOriginal] = useState<Linha | null>(null);
+  const [tiposLancamento, setTiposLancamento] = useState<Array<{id:number;codigo:string;nome:string}>>([]);
   const [incluindo, setIncluindo] = useState(false);
   const [senhaEdicaoSaldo, setSenhaEdicaoSaldo] = useState('');
   const [lancamentoEditandoId, setLancamentoEditandoId] = useState<number | null>(null);
@@ -150,12 +152,10 @@ export default function FinanceiroGeralAdminPage() {
     if (!resumoPeriodo) return;
     const moedaPdf = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     const classe = (valor: any) => Number(valor || 0) < 0 ? 'neg' : '';
-    const janela = window.open('', '_blank');
-    if (!janela) { setMensagem('Permita pop-ups para gerar o PDF.'); return; }
-    const outrasReceitas = (resumoPeriodo.outrasReceitas || []).map((r: any) => `<tr><td>${escapar(dataBr(r.data))}</td><td>${escapar(r.conta || '')}</td><td>${escapar(r.descricao)}</td><td class="n ${classe(r.valor)}">${escapar(moedaPdf(r.valor))}</td></tr>`).join('');
-    const despesas = (resumoPeriodo.despesas || []).map((d: any) => `<tr><td>${escapar(dataBr(d.data))}</td><td>${escapar(d.conta || '')}</td><td>${escapar(d.descricao)}</td><td class="n ${classe(d.valor)}">${escapar(moedaPdf(d.valor))}</td></tr>`).join('');
-    janela.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Relatório Financeiro do Período</title><style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111;font-size:11px}h1{text-align:center;font-size:18px;margin:0 0 4px}p.periodo{text-align:center;margin:0 0 18px;color:#555}.resumo{width:100%;border-collapse:collapse;margin-bottom:18px}.resumo td{padding:4px 2px}.resumo td:last-child{text-align:right;font-weight:600}.linha-total td{font-weight:700;border-top:1px solid #999;padding-top:7px}.despesas{width:100%;border-collapse:collapse}.despesas th{background:#eef2f6;text-align:left;padding:5px}.despesas td{padding:4px 5px}.despesas .n{text-align:right}.neg{color:#c62828}.saldo-final{font-size:13px;font-weight:700;border-top:2px solid #444}</style></head><body><h1>Relatório Financeiro do Período</h1><p class="periodo">${dataBr(resumoPeriodo.dataInicial)} a ${dataBr(resumoPeriodo.dataFinal)}</p><table class="resumo"><tr><td>Resultado Líquido dos Produtos</td><td class="${classe(resumoPeriodo.resultadoLiquido)}">${moedaPdf(resumoPeriodo.resultadoLiquido)}</td></tr><tr><td>Ajuste de Saldo Estoque</td><td class="${classe(resumoPeriodo.ajusteEstoque)}">${moedaPdf(resumoPeriodo.ajusteEstoque)}</td></tr><tr><td>Despesa Taxas Cartão</td><td class="${classe(resumoPeriodo.taxasCartao)}">${moedaPdf(resumoPeriodo.taxasCartao)}</td></tr><tr><td>Tarifa Pix Recebido Maquininha</td><td class="${classe(resumoPeriodo.tarifaPix)}">${moedaPdf(resumoPeriodo.tarifaPix)}</td></tr><tr class="linha-total"><td>Resultado Líquido do período</td><td class="${classe(resumoPeriodo.resultadoLiquidoPeriodo)}">${moedaPdf(resumoPeriodo.resultadoLiquidoPeriodo)}</td></tr></table>${(resumoPeriodo.outrasReceitas || []).length ? `<h2>Outras Receitas</h2><table class="despesas"><thead><tr><th>Data</th><th>Conta/Banco</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead><tbody>${outrasReceitas}<tr class="linha-total"><td colspan="3">Total de Outras Receitas</td><td class="n ${classe(resumoPeriodo.totalOutrasReceitas)}">${moedaPdf(resumoPeriodo.totalOutrasReceitas)}</td></tr></tbody></table>` : ''}<h2>Despesas pagas no período</h2><table class="despesas"><thead><tr><th>Data</th><th>Conta/Banco</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead><tbody>${despesas || '<tr><td colspan="4">Nenhuma despesa encontrada.</td></tr>'}<tr class="linha-total"><td colspan="3">Total das despesas do período</td><td class="n ${classe(resumoPeriodo.totalDespesas)}">${moedaPdf(resumoPeriodo.totalDespesas)}</td></tr><tr class="linha-total"><td colspan="3">RESULTADO LIQUIDO DO PERÍODO</td><td class="n ${classe(resumoPeriodo.resultadoLiquidoFinalPeriodo)}">${moedaPdf(resumoPeriodo.resultadoLiquidoFinalPeriodo)}</td></tr></tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`);
-    janela.document.close();
+    const janela = window.open('', '_blank'); if (!janela) { setMensagem('Permita pop-ups para gerar o PDF.'); return; }
+    const tabelaItens = (titulo: string, itens: any[], total: any) => `<h2>${titulo}</h2><table><thead><tr><th>Data</th><th>Conta/Banco</th><th>Descrição</th><th class="n">Valor</th></tr></thead><tbody>${itens.length ? itens.map((r:any) => `<tr><td>${escapar(dataBr(r.data))}</td><td>${escapar(r.conta || '')}</td><td>${escapar(r.descricao || '')}</td><td class="n ${classe(r.valor)}">${escapar(moedaPdf(r.valor))}</td></tr>`).join('') : '<tr><td colspan="4">Nenhum lançamento configurado neste setor.</td></tr>'}<tr class="total"><td colspan="3">Total</td><td class="n ${classe(total)}">${moedaPdf(total)}</td></tr></tbody></table>`;
+    const htmlResultado=tabelaItens('Receitas / Resultado Líquido dos Produtos',resumoPeriodo.resultadoProdutosItens||[],resumoPeriodo.resultadoLiquido); const htmlReceitas=tabelaItens('Outras Receitas',resumoPeriodo.outrasReceitas||[],resumoPeriodo.totalOutrasReceitas); const htmlDespesas=tabelaItens('Despesas pagas no período',resumoPeriodo.despesas||[],resumoPeriodo.totalDespesas);
+    janela.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Relatório Financeiro do Período</title><style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111;font-size:10px}h1{text-align:center;font-size:18px;margin:0 0 4px}.periodo{text-align:center;color:#555;margin-bottom:16px}h2{font-size:13px;margin:15px 0 5px}table{width:100%;border-collapse:collapse;margin-bottom:10px}th{background:#eef2f6;text-align:left}th,td{padding:4px;border-bottom:1px solid #ddd}.n{text-align:right}.neg{color:#c62828}.total td{font-weight:700;border-top:1px solid #777}.final{font-size:14px;font-weight:700;margin-top:18px;border-top:2px solid #333;padding-top:8px;text-align:right}</style></head><body><h1>Relatório Financeiro do Período</h1><div class="periodo">${dataBr(resumoPeriodo.dataInicial)} a ${dataBr(resumoPeriodo.dataFinal)}</div>${htmlResultado}${htmlReceitas}${htmlDespesas}<div class="final">RESULTADO LÍQUIDO DO PERÍODO: <span class="${classe(resumoPeriodo.resultadoLiquidoFinalPeriodo)}">${moedaPdf(resumoPeriodo.resultadoLiquidoFinalPeriodo)}</span></div><script>window.onload=()=>window.print()<\/script></body></html>`); janela.document.close();
   };
 
   const parametros = (incluirPaginacao = true) => {
@@ -182,6 +182,7 @@ export default function FinanceiroGeralAdminPage() {
     } catch (e: any) { setMensagem(e.message || 'Erro ao carregar lançamentos.'); }
     finally { setCarregando(false); }
   };
+  useEffect(() => { fetch(`${API_BASE}/financeiro-geral/tipos-lancamento`).then((r)=>r.json()).then((j)=>setTiposLancamento(Array.isArray(j.tipos)?j.tipos:[])).catch(()=>setTiposLancamento([])); }, []);
   useEffect(() => {
     fetch(`${API_BASE}/configuracoes-financeiro?empresaId=1`)
       .then((res) => res.json())
@@ -397,6 +398,7 @@ export default function FinanceiroGeralAdminPage() {
 
   const abrirNovoLancamento = () => {
     setLancamentoEditandoId(null);
+    setLancamentoOriginal(null);
     setNovoLancamento({
       data_lancamento: '',
       descricao_original: '',
@@ -410,6 +412,7 @@ export default function FinanceiroGeralAdminPage() {
 
   const prepararInclusaoNoModal = () => {
     setLancamentoEditandoId(null);
+    setLancamentoOriginal(null);
     setNovoLancamento({
       data_lancamento: '',
       descricao_original: '',
@@ -432,6 +435,7 @@ export default function FinanceiroGeralAdminPage() {
     }
     setDataLinhaSelecionada(dataLinha);
     setLancamentoEditandoId(Number(linha.id));
+    setLancamentoOriginal({ ...linha });
     setNovoLancamento({
       ...linha,
       data_lancamento: String(linha.data_lancamento || '').slice(0, 10),
@@ -472,18 +476,23 @@ export default function FinanceiroGeralAdminPage() {
     setIncluindo(true); setMensagem('');
     try {
       const editando = lancamentoEditandoId !== null;
-      const res = await fetch(editando
-        ? `${API_BASE}/financeiro-geral/lancamentos/${lancamentoEditandoId}`
-        : `${API_BASE}/financeiro-geral/lancamentos`, {
+      const numericosIguais = editando && lancamentoOriginal ? campos.filter((c) => c.key !== 'total').every((c) => Number(novoLancamento[c.key] || 0) === Number(lancamentoOriginal[c.key] || 0)) : false;
+      const somenteTipoAlterado = Boolean(editando && lancamentoOriginal && numericosIguais
+        && String(novoLancamento.data_lancamento || '').slice(0, 10) === String(lancamentoOriginal.data_lancamento || '').slice(0, 10)
+        && String(novoLancamento.descricao_original || '') === String(lancamentoOriginal.descricao_original || lancamentoOriginal.descricao_normalizada || '')
+        && String(novoLancamento.origem || '') === String(lancamentoOriginal.origem || '')
+        && Number(novoLancamento.tipo_lancamento_id || 0) !== Number(lancamentoOriginal.tipo_lancamento_id || 0));
+      const endpoint = editando ? (somenteTipoAlterado ? `${API_BASE}/financeiro-geral/lancamentos/${lancamentoEditandoId}/tipo` : `${API_BASE}/financeiro-geral/lancamentos/${lancamentoEditandoId}`) : `${API_BASE}/financeiro-geral/lancamentos`;
+      const res = await fetch(endpoint, {
         method: editando ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editando ? { ...novoLancamento, senhaAdministrativa: senhaEdicaoSaldo } : { empresa_id: 1, ...novoLancamento }),
+        body: JSON.stringify(somenteTipoAlterado ? { tipo_lancamento_id: Number(novoLancamento.tipo_lancamento_id || 0) || null } : (editando ? { ...novoLancamento, senhaAdministrativa: senhaEdicaoSaldo } : { empresa_id: 1, ...novoLancamento })),
       });
       const dados = await res.json().catch(() => ({}));
       if (!res.ok || dados.ok === false) throw new Error(dados.erro || (editando ? 'Erro ao alterar lançamento.' : 'Erro ao incluir lançamento.'));
       setNovoLancamentoAberto(false);
       setLancamentoEditandoId(null);
       if (!editando) setPagina(1);
-      setMensagem(editando ? 'Lançamento alterado e saldos posteriores recalculados.' : 'Novo lançamento incluído e saldos posteriores recalculados.');
+      setMensagem(editando ? (somenteTipoAlterado ? 'Tipo do lançamento alterado sem recalcular os saldos.' : 'Lançamento alterado e saldos posteriores recalculados.') : 'Novo lançamento incluído e saldos posteriores recalculados.');
       await carregar();
     } catch (e: any) { setMensagem(e.message || 'Erro ao salvar lançamento.'); }
     finally { setIncluindo(false); }
@@ -713,25 +722,12 @@ export default function FinanceiroGeralAdminPage() {
           const moeda = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
           const classeValor = (valor: any) => Number(valor || 0) < 0 ? 'fg-negativo' : '';
           return <>
-            <div className="fg-detalhe-dia-lista fg-detalhe-dia-grade fg-resumo-periodo-grade">
-              <div className="fg-detalhe-grade-linha"><span>Resultado Líquido dos Produtos</span><strong className={classeValor(resumoPeriodo.resultadoLiquido)}>{moeda(resumoPeriodo.resultadoLiquido)}</strong><span></span></div>
-              <div className="fg-detalhe-grade-linha"><span>Ajuste de Saldo Estoque</span><strong className={classeValor(resumoPeriodo.ajusteEstoque)}>{moeda(resumoPeriodo.ajusteEstoque)}</strong><span></span></div>
-              <div className="fg-detalhe-grade-linha"><span>Despesa Taxas Cartão</span><strong className={classeValor(resumoPeriodo.taxasCartao)}>{moeda(resumoPeriodo.taxasCartao)}</strong><span></span></div>
-              <div className="fg-detalhe-grade-linha"><span>Tarifa Pix Recebido Maquininha</span><strong className={classeValor(resumoPeriodo.tarifaPix)}>{moeda(resumoPeriodo.tarifaPix)}</strong><span></span></div>
-              <div className="fg-detalhe-separador" />
-              <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Resultado Líquido do período</span><span></span><strong className={classeValor(resumoPeriodo.resultadoLiquidoPeriodo)}>{moeda(resumoPeriodo.resultadoLiquidoPeriodo)}</strong></div>
-              {(resumoPeriodo.outrasReceitas || []).length > 0 && <>
-                <div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Outras Receitas</div>
-                <div className="fg-resumo-periodo-cabecalho" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }}><span>Data</span><span>Conta/Banco</span><span>Descrição</span><span>Valor</span></div>
-                {(resumoPeriodo.outrasReceitas || []).map((receita: any) => <div className="fg-resumo-periodo-despesa" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }} key={`receita-${receita.id}`}><span>{dataBr(receita.data)}</span><span>{receita.conta || ''}</span><span>{receita.descricao}</span><strong className={classeValor(receita.valor)}>{moeda(receita.valor)}</strong></div>)}
-                <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Total de Outras Receitas</span><span></span><strong className={classeValor(resumoPeriodo.totalOutrasReceitas)}>{moeda(resumoPeriodo.totalOutrasReceitas)}</strong></div>
-              </>}
-              <div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">Despesas pagas no período</div>
-              <div className="fg-resumo-periodo-cabecalho" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }}><span>Data</span><span>Conta/Banco</span><span>Descrição</span><span>Valor</span></div>
-              {(resumoPeriodo.despesas || []).length === 0 ? <div className="fg-detalhe-vazio fg-detalhe-vazio-grade">Nenhuma despesa paga encontrada no período.</div> : (resumoPeriodo.despesas || []).map((despesa: any) => <div className="fg-resumo-periodo-despesa" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }} key={despesa.id}><span>{dataBr(despesa.data)}</span><span>{despesa.conta || ''}</span><span>{despesa.descricao}</span><strong className={classeValor(despesa.valor)}>{moeda(despesa.valor)}</strong></div>)}
-              <div className="fg-detalhe-separador" />
-              <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Total das despesas do período</span><span></span><strong className={classeValor(resumoPeriodo.totalDespesas)}>{moeda(resumoPeriodo.totalDespesas)}</strong></div>
-              <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>RESULTADO LIQUIDO DO PERÍODO</span><span></span><strong className={classeValor(resumoPeriodo.resultadoLiquidoFinalPeriodo)}>{moeda(resumoPeriodo.resultadoLiquidoFinalPeriodo)}</strong></div>
+            <div className="fg-detalhe-dia-lista fg-resumo-periodo-grade">
+              {[{ titulo: 'Receitas / Resultado Líquido dos Produtos', itens: resumoPeriodo.resultadoProdutosItens || [], total: resumoPeriodo.resultadoLiquido },{ titulo: 'Outras Receitas', itens: resumoPeriodo.outrasReceitas || [], total: resumoPeriodo.totalOutrasReceitas },{ titulo: 'Despesas pagas no período', itens: resumoPeriodo.despesas || [], total: resumoPeriodo.totalDespesas }].map((setor) => <div key={setor.titulo} style={{marginBottom:14}}>
+                <div className="fg-detalhe-subtitulo fg-detalhe-subtitulo-grade">{setor.titulo}</div><div className="fg-resumo-periodo-cabecalho" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }}><span>Data</span><span>Conta/Banco</span><span>Descrição</span><span>Valor</span></div>
+                {setor.itens.length === 0 ? <div className="fg-detalhe-vazio fg-detalhe-vazio-grade">Nenhum lançamento configurado neste setor.</div> : setor.itens.map((item: any) => <div className="fg-resumo-periodo-despesa" style={{ gridTemplateColumns: '110px 180px 1fr 140px' }} key={`${setor.titulo}-${item.id}`}><span>{dataBr(item.data)}</span><span>{item.conta || ''}</span><span>{item.descricao}</span><strong className={classeValor(item.valor)}>{moeda(item.valor)}</strong></div>)}
+                <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>Total</span><span></span><strong className={classeValor(setor.total)}>{moeda(setor.total)}</strong></div></div>)}
+              <div className="fg-detalhe-grade-linha fg-detalhe-grade-total"><span>RESULTADO LÍQUIDO DO PERÍODO</span><span></span><strong className={classeValor(resumoPeriodo.resultadoLiquidoFinalPeriodo)}>{moeda(resumoPeriodo.resultadoLiquidoFinalPeriodo)}</strong></div>
             </div>
             <div className="fg-modal-actions fg-resumo-periodo-acoes"><button type="button" className="fg-modal-cancelar" onClick={() => setResumoPeriodo(null)}>Fechar</button><button type="button" className="admin-primary-button" onClick={baixarExcelResumoPeriodo}>Gerar Excel</button><button type="button" className="admin-primary-button" onClick={gerarPdfResumoPeriodo}>Gerar PDF</button></div>
           </>;
@@ -823,6 +819,7 @@ export default function FinanceiroGeralAdminPage() {
           <label>Data<input ref={campoDataLancamentoRef} type="date" value={novoLancamento.data_lancamento || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, data_lancamento: e.target.value }))} /></label>
           <label className="fg-modal-descricao">Descrição<input value={novoLancamento.descricao_original || ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, descricao_original: e.target.value }))} /></label>
           <label>Origem<input value={novoLancamento.origem || 'MANUAL'} onChange={(e) => setNovoLancamento((r) => ({ ...r, origem: e.target.value }))} /></label>
+          <label>Tipo do lançamento (T)<select value={novoLancamento.tipo_lancamento_id ?? ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, tipo_lancamento_id: e.target.value ? Number(e.target.value) : null }))}><option value="">Sem tipo</option>{tiposLancamento.map((t) => <option key={t.id} value={t.id}>T{t.id} — {t.nome}</option>)}</select></label>
           {campos.filter((c) => c.key !== 'total').map((c) => <label key={c.key}>{c.label}<input type="number" step={/^prod[1-4]_quant$/.test(c.key) ? '1' : (/^prod[1-4]_valor$/.test(c.key) ? '0.000001' : '0.01')} value={novoLancamento[c.key] ?? ''} onChange={(e) => setNovoLancamento((r) => ({ ...r, [c.key]: e.target.value }))} /></label>)}
         </div>
         {lancamentoEditandoId !== null && ehSaldoAnterior(novoLancamento) && <label className="fg-modal-senha-saldo">Senha administrativa<input type="password" value={senhaEdicaoSaldo} onChange={(e) => setSenhaEdicaoSaldo(e.target.value)} placeholder="Obrigatória para alterar o Saldo anterior" /></label>}

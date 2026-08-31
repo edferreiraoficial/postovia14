@@ -48,6 +48,9 @@ export async function garantirEstruturaTiposLancamento(connExterna = null) {
     if (!(await colunaExiste(conn, 'tipos_lancamento', 'considera_relatorio_periodo'))) {
       await conn.query(`ALTER TABLE tipos_lancamento ADD COLUMN considera_relatorio_periodo TINYINT(1) NOT NULL DEFAULT 1 AFTER considera_resumo_dia`)
     }
+    if (!(await colunaExiste(conn, 'tipos_lancamento', 'setor_relatorio_periodo'))) {
+      await conn.query(`ALTER TABLE tipos_lancamento ADD COLUMN setor_relatorio_periodo VARCHAR(32) NULL AFTER considera_relatorio_periodo`)
+    }
 
     if (!(await colunaExiste(conn, 'regras_tipo_lancamento', 'texto_excluir'))) {
       await conn.query(`ALTER TABLE regras_tipo_lancamento ADD COLUMN texto_excluir VARCHAR(255) NULL AFTER texto_procurado`)
@@ -143,11 +146,12 @@ export async function carregarTiposSistema(conn, _empresaId) {
 export async function carregarConfiguracaoTipos(conn, _empresaId) {
   await garantirEstruturaTiposLancamento(conn)
   const [rows] = await conn.query(
-    `SELECT id,considera_resumo_dia,considera_relatorio_periodo,ativo FROM tipos_lancamento`
+    `SELECT id,considera_resumo_dia,considera_relatorio_periodo,setor_relatorio_periodo,ativo FROM tipos_lancamento`
   )
   return new Map(rows.map((r) => [Number(r.id), {
     resumo: Number(r.ativo) === 1 && Number(r.considera_resumo_dia) === 1,
     periodo: Number(r.ativo) === 1 && Number(r.considera_relatorio_periodo) === 1,
+    setorPeriodo: String(r.setor_relatorio_periodo || '').trim().toUpperCase() || null,
   }]))
 }
 

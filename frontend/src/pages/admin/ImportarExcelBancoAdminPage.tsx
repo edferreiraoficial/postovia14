@@ -164,7 +164,7 @@ export default function ImportarExcelBancoAdminPage() {
         <section className="admin-tool-card admin-upload-card" style={{ ...cardCompacto, width: '100%', padding: '10px 12px' }}>
           <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>Importação de Extrato Bancário</strong>
           <div style={linhaCompacta}>
-            <span style={{ color: '#64748B' }}>Itaú, SPOTBANK, Haden Bank, Caixa e futuras contas cadastradas</span>
+            <span style={{ color: '#64748B' }}>Itaú, SPOTBANK, Valori, Haden Bank, Caixa e futuras contas cadastradas</span>
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', width: '100%' }}>

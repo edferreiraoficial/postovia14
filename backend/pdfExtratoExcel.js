@@ -215,6 +215,66 @@ function extrairLancamentos(texto) {
     .filter(Boolean)
 }
 
+
+
+function extrairLancamentosValori(texto = '') {
+  const linhas = String(texto).replace(/\r/g, '').split('\n').map(limparTextoLinha).filter(Boolean)
+  const saida = []
+  let dataAtual = null
+  let saldoPendente = false
+  let buffer = []
+
+  const ehData = (linha) => /^\d{2}\/\d{2}\/\d{4}$/.test(linha)
+  const ehValorSozinho = (linha) => /^-?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}$/.test(linha)
+  const ignorar = (linha) => {
+    const n = normalizarTexto(linha)
+    return !n || n === 'VALOR EM R$' || /^\d{2}\/\d{2}\/\d{4}\s+R\$/i.test(linha) || n.startsWith('EXTRATO DE CONTA') || n.startsWith('NOME:') || n.startsWith('CONTA:') || n.startsWith('AGENCIA:') || n.startsWith('INSTITUICAO FINANCEIRA:') || n.startsWith('MOVIMENTACOES') || n.startsWith('PERIODO:') || n.startsWith('SALDO EM ')
+  }
+
+  const finalizarBuffer = () => {
+    if (!dataAtual || !buffer.length) { buffer = []; return }
+    const textoItem = buffer.join(' ').replace(/\s+/g, ' ').trim()
+    const nums = obterNumerosMonetarios(textoItem)
+    if (!nums.length) { buffer = []; return }
+    const ultimo = nums.at(-1)
+    const valor = brToNumber(ultimo[0])
+    const descricao = removerUltimoNumero(textoItem, ultimo).replace(/\s+/g, ' ').trim()
+    if (descricao && valor !== null) saida.push({ data: dataAtual, descricao, valor, saldo: null, tipo: valor < 0 ? 'DEBITO' : 'CREDITO', original: textoItem })
+    buffer = []
+  }
+
+  for (const linhaOriginal of linhas) {
+    const linha = limparTextoLinha(linhaOriginal)
+    if (ehData(linha)) {
+      finalizarBuffer()
+      dataAtual = linha
+      saldoPendente = false
+      continue
+    }
+    if (!dataAtual || ignorar(linha)) continue
+    if (normalizarTexto(linha) === 'SALDO DO DIA') {
+      finalizarBuffer()
+      saldoPendente = true
+      continue
+    }
+    if (saldoPendente && ehValorSozinho(linha)) {
+      saida.push({ data: dataAtual, descricao: 'Saldo do dia', valor: null, saldo: brToNumber(linha), tipo: 'SALDO', original: linha })
+      saldoPendente = false
+      continue
+    }
+    buffer.push(linha)
+    const textoBuffer = buffer.join(' ')
+    const nums = obterNumerosMonetarios(textoBuffer)
+    if (nums.length) {
+      const ultimo = nums.at(-1)
+      const fim = Number(ultimo.index || 0) + ultimo[0].length
+      if (!textoBuffer.slice(fim).trim()) finalizarBuffer()
+    }
+  }
+  finalizarBuffer()
+  return saida
+}
+
 function ehDepositoAtmItau(lancamento) {
   const desc = normalizarTexto(lancamento.descricao)
   const valor = Number(lancamento.valor || 0)
@@ -379,8 +439,29 @@ function consolidarSpotDiariamente(lancamentos) {
 }
 
 function consolidarDiariamente(lancamentos, banco = 'itau') {
-  if (String(banco).toLowerCase() === 'spot') return consolidarSpotDiariamente(lancamentos)
+  const bancoNormalizado = String(banco).toLowerCase()
+  if (bancoNormalizado === 'spot') return consolidarSpotDiariamente(lancamentos)
+  if (bancoNormalizado === 'valori') return consolidarValoriDiariamente(lancamentos)
   return consolidarItauDiariamente(lancamentos)
+}
+
+function consolidarValoriDiariamente(lancamentos) {
+  const ordenados = [...lancamentos].sort((a, b) => dataBrParaDate(a.data) - dataBrParaDate(b.data))
+  const saida = []
+  const auditoria = []
+  const datas = [...new Set(ordenados.map((l) => l.data))].sort((a, b) => dataBrParaDate(a) - dataBrParaDate(b))
+  for (const data of datas) {
+    const linhasDia = ordenados.filter((l) => l.data === data)
+    const saldo = linhasDia.filter((l) => l.tipo === 'SALDO').at(-1) || null
+    const movimentos = linhasDia.filter((l) => l.tipo !== 'SALDO')
+    movimentos.forEach((item) => saida.push({ data, descricao: item.descricao, valor: item.valor, saldo: null }))
+    if (saldo) {
+      if (movimentos.length && saida.length) saida[saida.length - 1].saldo = saldo.saldo
+      else saida.push({ data, descricao: 'Saldo do dia', valor: null, saldo: saldo.saldo })
+    }
+    auditoria.push({ data, qtdLancamentosOriginais: movimentos.length, qtdPixDepositosAgrupados: 0, totalPixDepositos: 0, qtdDemaisLancamentos: movimentos.length, saldoFinal: saldo?.saldo ?? null })
+  }
+  return { linhas: saida, auditoria }
 }
 
 function aplicarFormatacaoPlanilha(ws) {
@@ -815,7 +896,7 @@ export async function gerarExcelExtratoBancario(arquivoPdf, opcoes = {}) {
     return gerarExcelLmc(arquivoPdf)
   }
   const texto = await extrairTextoPdf(arquivoPdf)
-  const lancamentos = extrairLancamentos(texto)
+  const lancamentos = String(banco).toLowerCase() === 'valori' ? extrairLancamentosValori(texto) : extrairLancamentos(texto)
 
   if (!lancamentos.length) {
     throw new Error('Não foi possível identificar lançamentos bancários no PDF. Verifique se o arquivo é um extrato bancário com texto pesquisável/OCR.')
