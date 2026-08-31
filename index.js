@@ -1998,14 +1998,33 @@ async function montarResumoPeriodoFinanceiroGeral(empresaId, dataInicial, dataFi
   const somaProdutos = (r) => n(r.prod1_total)+n(r.prod2_total)+n(r.prod3_total)+n(r.prod4_total)
   const valorResultado = (r) => Math.abs(somaProdutos(r)) >= 0.000005 ? somaProdutos(r) : n(r.total)
   const item = (r, valor) => ({ id:r.id, data:String(r.data_lancamento||'').slice(0,10), conta:nomeContaLancamento(r), descricao:r.descricao_original||r.descricao_normalizada||'', valor })
-  const resultadoProdutosItens = linhas.filter((r)=>setorLinha(r)==='RESULTADO_PRODUTOS').map((r)=>item(r,valorResultado(r))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
-  const outrasReceitas = linhas.filter((r)=>setorLinha(r)==='OUTRAS_RECEITAS').map((r)=>item(r,n(r.total))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
-  const despesas = linhas.filter((r)=>setorLinha(r)==='DESPESAS').map((r)=>item(r,n(r.total))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
-  const resultadoLiquido = resultadoProdutosItens.reduce((a,r)=>a+n(r.valor),0)
+  const desc = (r) => String(r?.descricao_normalizada || r?.descricao_original || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
+  const ehDescricao = (r, texto) => desc(r).includes(String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase())
+  const linhasResultado = linhas.filter((r)=>setorLinha(r)==='RESULTADO_PRODUTOS')
+  const linhasReceitas = linhas.filter((r)=>setorLinha(r)==='OUTRAS_RECEITAS')
+  const linhasDespesas = linhas.filter((r)=>setorLinha(r)==='DESPESAS')
+
+  // Bloco consolidado: não lista lançamentos individuais.
+  const resultadoLiquido = linhasResultado.filter((r)=>Number(r.tipo_lancamento_id)===2).reduce((a,r)=>a+valorResultado(r),0)
+  const ajusteEstoque = linhasResultado.filter((r)=>Number(r.tipo_lancamento_id)===18).reduce((a,r)=>a+n(r.total),0)
+  const taxasCartao = linhasResultado.filter((r)=>Number(r.tipo_lancamento_id)===11 && ehDescricao(r,'DESPESAS TAXAS CARTAO')).reduce((a,r)=>a+n(r.total),0)
+  const tarifaPix = linhasResultado.filter((r)=>Number(r.tipo_lancamento_id)===11 && ehDescricao(r,'TARIFA PIX RECEBIDO MAQUININHA')).reduce((a,r)=>a+n(r.total),0)
+  const resultadoLiquidoPeriodo = resultadoLiquido + ajusteEstoque + taxasCartao + tarifaPix
+
+  // Outras Receitas: somente T19, listadas individualmente, respeitando a configuração do setor.
+  const outrasReceitas = linhasReceitas.filter((r)=>Number(r.tipo_lancamento_id)===19).map((r)=>item(r,n(r.total))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
   const totalOutrasReceitas = outrasReceitas.reduce((a,r)=>a+n(r.valor),0)
-  const totalDespesas = despesas.reduce((a,r)=>a+n(r.valor),0)
-  const resultadoLiquidoFinalPeriodo = resultadoLiquido + totalOutrasReceitas + totalDespesas
-  return { ok:true, dataInicial, dataFinal, resultadoProdutosItens, resultadoLiquido, ajusteEstoque:0, taxasCartao:0, tarifaPix:0, resultadoLiquidoPeriodo:resultadoLiquido, outrasReceitas, totalOutrasReceitas, despesas, totalDespesas, resultadoLiquidoFinalPeriodo }
+
+  // Despesas: Tarifa Pix Enviado (T12) é consolidada; as demais configuradas ficam individualizadas.
+  const linhasTarifaPixEnviado = linhasDespesas.filter((r)=>Number(r.tipo_lancamento_id)===12 && ehDescricao(r,'TARIFA PIX ENVIADO'))
+  const tarifaPixEnviado = linhasTarifaPixEnviado.reduce((a,r)=>a+n(r.total),0)
+  const idsTarifaPixEnviado = new Set(linhasTarifaPixEnviado.map((r)=>Number(r.id)))
+  const despesas = linhasDespesas.filter((r)=>!idsTarifaPixEnviado.has(Number(r.id))).map((r)=>item(r,n(r.total))).filter((r)=>Math.abs(n(r.valor))>=0.000005)
+  const totalDespesasItens = despesas.reduce((a,r)=>a+n(r.valor),0)
+  const totalDespesas = tarifaPixEnviado + totalDespesasItens
+  const resultadoLiquidoFinalPeriodo = resultadoLiquidoPeriodo + totalOutrasReceitas + totalDespesas
+  return { ok:true, dataInicial, dataFinal, resultadoLiquido, ajusteEstoque, taxasCartao, tarifaPix, resultadoLiquidoPeriodo, outrasReceitas, totalOutrasReceitas, tarifaPixEnviado, despesas, totalDespesasItens, totalDespesas, resultadoLiquidoFinalPeriodo }
 }
 
 app.get('/api/financeiro-geral/resumo-periodo', async (req, res) => {
@@ -2055,9 +2074,20 @@ app.get('/api/financeiro-geral/resumo-periodo/excel', async (req, res) => {
       }
       ws.getCell(`C${linha}`).value = `Total - ${titulo}`; ws.getCell(`D${linha}`).value = Number(total || 0); ws.getCell(`D${linha}`).numFmt = moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}; linha += 2
     }
-    adicionarSetor('Receitas / Resultado Líquido dos Produtos', dados.resultadoProdutosItens, dados.resultadoLiquido)
+    ws.getCell(`C${linha}`).value='Resultado Líquido do Período'; ws.getCell(`C${linha}`).font={bold:true}; linha += 1
+    const linhasResultado = [
+      ['Resultado Líquido do Período', dados.resultadoLiquido],
+      ['Ajuste de Saldo Estoque', dados.ajusteEstoque],
+      ['Despesas Taxas Cartão', dados.taxasCartao],
+      ['Tarifa Pix Recebido Maquininha', dados.tarifaPix],
+    ]
+    for (const [descricao, valor] of linhasResultado) { ws.getCell(`C${linha}`).value=descricao; ws.getCell(`D${linha}`).value=Number(valor||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; linha += 1 }
+    ws.getCell(`C${linha}`).value='Total - Resultado Líquido do Período'; ws.getCell(`D${linha}`).value=Number(dados.resultadoLiquidoPeriodo||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}; linha += 2
     adicionarSetor('Outras Receitas', dados.outrasReceitas, dados.totalOutrasReceitas)
-    adicionarSetor('Despesas pagas no período', dados.despesas, dados.totalDespesas)
+    ws.getCell(`C${linha}`).value='Despesas pagas no período'; ws.getCell(`C${linha}`).font={bold:true}; linha += 1
+    ws.getCell(`C${linha}`).value='Tarifa pix enviado'; ws.getCell(`D${linha}`).value=Number(dados.tarifaPixEnviado||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; linha += 1
+    for (const item of dados.despesas || []) { ws.getCell(`A${linha}`).value=item.data?item.data.split('-').reverse().join('/'):''; ws.getCell(`B${linha}`).value=item.conta||''; ws.getCell(`C${linha}`).value=item.descricao||''; ws.getCell(`D${linha}`).value=Number(item.valor||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; linha += 1 }
+    ws.getCell(`C${linha}`).value='Total - Despesas pagas no período'; ws.getCell(`D${linha}`).value=Number(dados.totalDespesas||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}; linha += 2
     ws.getCell(`C${linha}`).value='RESULTADO LÍQUIDO DO PERÍODO'; ws.getCell(`D${linha}`).value=Number(dados.resultadoLiquidoFinalPeriodo||0); ws.getCell(`D${linha}`).numFmt=moedaFmt; ws.getCell(`C${linha}`).font={bold:true}; ws.getCell(`D${linha}`).font={bold:true}
 
     ws.eachRow((row) => {
