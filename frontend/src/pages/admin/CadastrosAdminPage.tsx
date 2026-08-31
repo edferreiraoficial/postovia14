@@ -3,7 +3,7 @@ import { hasPermission } from '../../authPermissions'
 import { useAuth } from '../../store/auth'
 
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`
-type Aba = 'empresas' | 'contas' | 'produtos' | 'mapeamentos' | 'tipos_lancamento'
+type Aba = 'empresas' | 'contas' | 'produtos' | 'mapeamentos' | 'tipos_lancamento' | 'relatorio_periodo'
 
 export default function CadastrosAdminPage() {
   const { user } = useAuth()
@@ -16,6 +16,8 @@ export default function CadastrosAdminPage() {
   const [salvando, setSalvando] = useState(false)
   const [regraForm, setRegraForm] = useState<any>({ prioridade: 100, ativo: true })
   const [salvandoRegra, setSalvandoRegra] = useState(false)
+  const [tiposRelatorio, setTiposRelatorio] = useState<any[]>([])
+  const [salvandoRelatorio, setSalvandoRelatorio] = useState(false)
 
   const carregar = async () => {
     const response = await fetch(`${API_BASE}/cadastros-diversos`)
@@ -43,6 +45,13 @@ export default function CadastrosAdminPage() {
     setDados({ ...payload, mapeamentos, tiposLancamento, regrasTipo })
   }
 
+  const carregarTiposRelatorio = async () => {
+    const response = await fetch(`${API_BASE}/relatorio-periodo/tipos`)
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok || !payload.ok) throw new Error(payload.erro || 'Erro ao carregar a configuração do Relatório do Período.')
+    setTiposRelatorio((payload.tipos || []).map((tipo: any) => ({ ...tipo, setor: String(tipo.setor_relatorio_periodo || '') })))
+  }
+
   useEffect(() => { carregar().catch((e) => setErro(e.message)) }, [podeMapeamentos])
 
   const novo = () => {
@@ -65,6 +74,9 @@ export default function CadastrosAdminPage() {
     if (novaAba === 'mapeamentos') {
       const primeiro = dados.mapeamentos?.[0]
       setForm(primeiro ? { ...primeiro, ativo: Boolean(Number(primeiro.ativo)) } : { ativo: true })
+    } else if (novaAba === 'relatorio_periodo') {
+      setForm({ ativo: true })
+      carregarTiposRelatorio().catch((e) => setErro(e.message))
     } else if (novaAba === 'tipos_lancamento') {
       const primeiro = dados.tiposLancamento?.[0]
       setForm(primeiro ? { ...primeiro, ativo: Boolean(Number(primeiro.ativo)), considera_resumo_dia: Boolean(Number(primeiro.considera_resumo_dia)), considera_relatorio_periodo: Boolean(Number(primeiro.considera_relatorio_periodo)) } : { ativo: true, natureza: 'OUTROS', ordem_relatorio: 100, considera_resumo_dia: true, considera_relatorio_periodo: true })
@@ -120,6 +132,23 @@ export default function CadastrosAdminPage() {
     } finally {
       setSalvando(false)
     }
+  }
+
+  const definirSetorRelatorio = (id: number, setor: string) => setTiposRelatorio((atuais) => atuais.map((tipo) => Number(tipo.id) === id ? { ...tipo, setor } : tipo))
+
+  const salvarConfiguracaoRelatorio = async () => {
+    setSalvandoRelatorio(true); setErro(''); setMensagem('')
+    try {
+      const response = await fetch(`${API_BASE}/relatorio-periodo/tipos`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipos: tiposRelatorio.map((tipo) => ({ id: Number(tipo.id), setor: String(tipo.setor || '') })) })
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || !payload.ok) throw new Error(payload.erro || 'Erro ao salvar a configuração.')
+      setMensagem(payload.mensagem || 'Configuração do Relatório do Período salva com sucesso.')
+      await carregarTiposRelatorio()
+    } catch (e) { setErro(e instanceof Error ? e.message : 'Erro ao salvar a configuração.') }
+    finally { setSalvandoRelatorio(false) }
   }
 
   const lista = aba === 'empresas'
@@ -199,7 +228,7 @@ export default function CadastrosAdminPage() {
         <h1>Cadastros diversos</h1>
         <p>Gerencie empresas, contas financeiras, produtos e os mapeamentos do Financeiro Geral.</p>
       </div>
-      {aba !== 'mapeamentos' && <button className="settings-btn settings-btn-secondary" onClick={novo}>{aba === 'tipos_lancamento' ? 'Novo tipo' : 'Novo cadastro'}</button>}
+      {aba !== 'mapeamentos' && aba !== 'relatorio_periodo' && <button className="settings-btn settings-btn-secondary" onClick={novo}>{aba === 'tipos_lancamento' ? 'Novo tipo' : 'Novo cadastro'}</button>}
     </header>
 
     {erro && <div className="settings-alert settings-alert-error">{erro}</div>}
@@ -211,9 +240,25 @@ export default function CadastrosAdminPage() {
       <button className={aba === 'produtos' ? 'active' : ''} onClick={() => abrirAba('produtos')}>Produtos</button>
       {podeMapeamentos && <button className={aba === 'mapeamentos' ? 'active' : ''} onClick={() => abrirAba('mapeamentos')}>Mapeamentos Financeiro Geral</button>}
       {podeMapeamentos && <button className={aba === 'tipos_lancamento' ? 'active' : ''} onClick={() => abrirAba('tipos_lancamento')}>Tipos de lançamento (T)</button>}
+      {podeMapeamentos && <button className={aba === 'relatorio_periodo' ? 'active' : ''} onClick={() => abrirAba('relatorio_periodo')}>Relatório do Período</button>}
     </div>
 
-    <div className="settings-grid">
+    {aba === 'relatorio_periodo' ? <div className="settings-grid">
+      <article className="settings-card settings-field-full">
+        <div className="settings-card-title"><div><h2>Configuração do Relatório do Período</h2><p>Defina em qual setor cada tipo será apresentado. Tipos sem setor não participam do relatório.</p></div></div>
+        <div className="settings-grid">
+          {[{ setor:'RESULTADO_PRODUTOS', titulo:'Resultado Líquido dos Produtos' },{ setor:'OUTRAS_RECEITAS', titulo:'Outras Receitas' },{ setor:'DESPESAS', titulo:'Despesas pagas no período' }].map((grupo) => <article className="settings-card" key={grupo.setor}>
+            <div className="settings-card-title"><div><h2>{grupo.titulo}</h2><p>Marque os tipos que pertencem a este setor.</p></div></div>
+            <div className="settings-users-list">{tiposRelatorio.map((tipo:any) => <label className="settings-user-row" key={`${grupo.setor}-${tipo.id}`} style={{cursor:'pointer'}}><div><strong>T {tipo.id} — {tipo.nome}</strong><span>{tipo.codigo || 'Sem código'}</span></div><input type="checkbox" checked={tipo.setor === grupo.setor} onChange={(e) => definirSetorRelatorio(Number(tipo.id), e.target.checked ? grupo.setor : '')}/></label>)}</div>
+          </article>)}
+        </div>
+        <article className="settings-card settings-field-full" style={{marginTop:16}}>
+          <div className="settings-card-title"><div><h2>Não computar no Relatório do Período</h2><p>Tipos sem setor ficam fora das listagens e totalizações.</p></div></div>
+          <div className="settings-users-list">{tiposRelatorio.filter((tipo:any)=>!tipo.setor).map((tipo:any)=><div className="settings-user-row" key={`sem-${tipo.id}`}><div><strong>T {tipo.id} — {tipo.nome}</strong><span>{tipo.codigo || 'Sem código'}</span></div><span>Não computar</span></div>)}</div>
+        </article>
+        <div className="settings-actions" style={{marginTop:16}}><button className="settings-btn settings-btn-primary" type="button" disabled={salvandoRelatorio} onClick={salvarConfiguracaoRelatorio}>{salvandoRelatorio ? 'Salvando...' : 'Salvar configuração'}</button></div>
+      </article>
+    </div> : <div className="settings-grid">
       <article className="settings-card">
         <div className="cadastros-form-header">
           <div>
@@ -315,6 +360,6 @@ export default function CadastrosAdminPage() {
         </form>
         <div className="settings-users-list">{(dados.regrasTipo || []).filter((r: any) => Number(r.tipo_lancamento_id) === Number(form.id)).map((r: any) => <div className="settings-user-row" key={r.id}><button type="button" style={{flex:1,textAlign:'left',background:'transparent',border:0}} onClick={() => editarRegra(r)}><div><strong>{r.texto_procurado}</strong><span>{r.texto_excluir ? `Exceto: ${r.texto_excluir} • ` : ''}Prioridade ${r.prioridade}</span></div></button><span>{Number(r.ativo) ? 'Ativa' : 'Inativa'}</span><button type="button" className="settings-btn settings-btn-secondary" onClick={() => excluirRegra(Number(r.id))}>Excluir</button></div>)}</div>
       </article>}
-    </div>
+    </div>}
   </section>
 }
