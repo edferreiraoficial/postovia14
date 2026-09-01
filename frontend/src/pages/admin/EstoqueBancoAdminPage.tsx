@@ -88,12 +88,12 @@ export default function EstoqueBancoAdminPage() {
         <p style={{color:'#64748B',margin:'4px 0 12px'}}>Uma única entrada para PDF e Excel. Não é necessário gerar Excel antes de importar um PDF.</p>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))',gap:10,alignItems:'end'}}>
           <label style={{display:'grid',gap:5,fontWeight:600}}>Tipo de dados
-            <select value={tipoDados} onChange={e=>setTipoDados(e.target.value as TipoDados)} disabled={importando}>
+            <select className="admin-tool-select" value={tipoDados} onChange={e=>setTipoDados(e.target.value as TipoDados)} disabled={importando}>
               <option value="extrato">Extrato bancário</option><option value="compras">Compras</option><option value="lmc">Vendas / LMC</option><option value="vendasCartao">Vendas Cartão</option>
             </select>
           </label>
           {tipoDados === 'extrato' && <label style={{display:'grid',gap:5,fontWeight:600}}>Conta bancária de destino
-            <select value={contaBancariaId} onChange={e=>setContaBancariaId(e.target.value)} disabled={importando||carregandoContas}>
+            <select className="admin-tool-select" value={contaBancariaId} onChange={e=>setContaBancariaId(e.target.value)} disabled={importando||carregandoContas}>
               <option value="">{carregandoContas?'Carregando...':'Selecione a conta'}</option>
               {contas.map(c=><option key={c.id} value={c.id}>{c.nome_conta} — {c.banco}</option>)}
             </select>

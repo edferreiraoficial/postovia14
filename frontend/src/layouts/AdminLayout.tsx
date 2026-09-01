@@ -46,8 +46,6 @@ const menuItems: Array<{ to: string; label: string; icon: IconName; permission: 
   { to: '/admin/financeiro-geral', label: 'Financeiro Geral', icon: 'finance', permission: 'dados_gravados' },
   { to: '/admin/graficos-financeiros', label: 'Gráficos Financeiros', icon: 'chart', permission: 'dados_gravados' },
   { to: '/admin/estoque-banco', label: 'Importar Dados', icon: 'upload', permission: ['importar_pdf', 'importar_excel', 'pdf_excel'] },
-  { to: '/admin/financeiro', label: 'Lançamentos Financeiros', icon: 'finance', permission: 'lancamentos' },
-  { to: '/admin/auditoria', label: 'Auditoria', icon: 'audit', permission: 'auditoria' },
   { to: '/admin/cadastros', label: 'Cadastros Diversos', icon: 'database', permission: 'cadastros' },
   { to: '/admin/config', label: 'Configurações', icon: 'settings', permission: 'configuracoes' },
 ];
