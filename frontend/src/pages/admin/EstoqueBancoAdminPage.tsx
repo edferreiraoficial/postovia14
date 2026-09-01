@@ -1,308 +1,113 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
-
 const dataIso = (data: Date) => data.toISOString().slice(0, 10);
-const primeiroDiaMesAtual = () => {
-  const agora = new Date();
-  return dataIso(new Date(agora.getFullYear(), agora.getMonth(), 1));
-};
-const ultimoDiaMesAtual = () => {
-  const agora = new Date();
-  return dataIso(new Date(agora.getFullYear(), agora.getMonth() + 1, 0));
-};
-const dataBR = (dataIsoTexto: string) => {
-  if (!dataIsoTexto) return '';
-  const [ano, mes, dia] = dataIsoTexto.split('-');
-  return `${dia}/${mes}/${ano}`;
-};
+const primeiroDiaMesAtual = () => { const a = new Date(); return dataIso(new Date(a.getFullYear(), a.getMonth(), 1)); };
+const ultimoDiaMesAtual = () => { const a = new Date(); return dataIso(new Date(a.getFullYear(), a.getMonth() + 1, 0)); };
 
-const moeda = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const valorMonetario = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const custoDecimal = (valor: any) => Number(valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6, maximumFractionDigits: 6 });
-const numero = (valor: any) => Number(valor || 0).toLocaleString('pt-BR');
-
-const textoFixo = (valor: any, largura: number) => String(valor ?? '').slice(0, largura).padEnd(largura, ' ');
-const textoNumero = (valor: any, largura: number) => String(valor ?? '').slice(0, largura).padStart(largura, ' ');
-const valorExtrato = (item: any) => String(item?.natureza || '').toUpperCase() === 'SALDO' ? '' : valorMonetario(item?.valor);
-const saldoExtrato = (valor: any) => Number(valor || 0) === 0 ? '' : valorMonetario(valor);
-
-const estilosColunas = {
-  esquerda: { textAlign: 'left' as const, fontFamily: 'Consolas, "Courier New", monospace', whiteSpace: 'pre' as const },
-  direita: { textAlign: 'right' as const, fontFamily: 'Consolas, "Courier New", monospace', whiteSpace: 'pre' as const },
-};
-
-const cardCompacto = { padding: 8, gap: 3 } as const;
-const linhaCompacta = { display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center', lineHeight: 1 } as const;
+type Conta = { id:number; nome_conta:string; banco:string };
+type TipoDados = 'extrato' | 'compras' | 'lmc' | 'vendasCartao';
 
 export default function EstoqueBancoAdminPage() {
-  const [arquivoLmc, setArquivoLmc] = useState<File | null>(null);
-  const [arquivoCompras, setArquivoCompras] = useState<File | null>(null);
-  const [arquivoSpot, setArquivoSpot] = useState<File | null>(null);
-  const [arquivoItau, setArquivoItau] = useState<File | null>(null);
-  const [importando, setImportando] = useState(false);
-  const [mensagem, setMensagem] = useState('');
-  const [abaAtiva, setAbaAtiva] = useState('compras');
-  const [compras, setCompras] = useState<any[]>([]);
-  const [lmc, setLmc] = useState<any[]>([]);
-  const [importandoDados, setImportandoDados] = useState(false);
-  const [spot, setSpot] = useState<any[]>([]);
-  const [itau, setItau] = useState<any[]>([]);
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [tipoDados, setTipoDados] = useState<TipoDados>('extrato');
+  const [contas, setContas] = useState<Conta[]>([]);
+  const [contaBancariaId, setContaBancariaId] = useState('');
   const [dataInicial, setDataInicial] = useState(primeiroDiaMesAtual());
   const [dataFinal, setDataFinal] = useState(ultimoDiaMesAtual());
-  const [dadosGravados, setDadosGravados] = useState<any>(null);
+  const [importando, setImportando] = useState(false);
+  const [carregandoContas, setCarregandoContas] = useState(false);
+  const [mensagem, setMensagem] = useState('');
 
-  const periodoSelecionado = useMemo(() => {
-    return `dataInicial=${encodeURIComponent(dataInicial)}&dataFinal=${encodeURIComponent(dataFinal)}`;
-  }, [dataInicial, dataFinal]);
+  useEffect(() => {
+    (async () => {
+      try {
+        setCarregandoContas(true);
+        const r = await fetch(`${API_BASE}/contas-bancarias`);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) throw new Error(j.erro || 'Erro ao carregar contas bancárias.');
+        const lista = Array.isArray(j.dados) ? j.dados : [];
+        setContas(lista);
+        if (lista.length === 1) setContaBancariaId(String(lista[0].id));
+      } catch (e) { setMensagem(e instanceof Error ? e.message : 'Erro ao carregar contas bancárias.'); }
+      finally { setCarregandoContas(false); }
+    })();
+  }, []);
 
-  function ajustarDataInicial(valor: string) {
-    setDataInicial(valor);
-    if (valor > dataFinal) {
-      setDataFinal(valor);
-    }
-  }
+  const extensao = arquivo?.name.split('.').pop()?.toLowerCase() || '';
+  const formato = extensao === 'pdf' ? 'PDF' : extensao === 'xls' ? 'XLS' : extensao === 'xlsx' ? 'XLSX' : '';
+  const conta = contas.find((c) => String(c.id) === contaBancariaId);
 
-  function ajustarDataFinal(valor: string) {
-    setDataFinal(valor);
-    if (valor < dataInicial) {
-      setDataInicial(valor);
-    }
-  }
-
-  async function importarPdfs(e: React.FormEvent) {
-    e.preventDefault();
-    setMensagem('');
-
-    if (!arquivoLmc && !arquivoCompras && !arquivoSpot && !arquivoItau) {
-      return setMensagem('Selecione pelo menos um PDF para importar.');
-    }
+  async function importar(e: React.FormEvent) {
+    e.preventDefault(); setMensagem('');
+    if (!arquivo) return setMensagem('Selecione um arquivo PDF, XLS ou XLSX.');
+    if (!['pdf','xls','xlsx'].includes(extensao)) return setMensagem('Formato não suportado. Use PDF, XLS ou XLSX.');
+    if (!dataInicial || !dataFinal || dataInicial > dataFinal) return setMensagem('Informe um período inicial e final válido.');
+    if (tipoDados === 'extrato' && !contaBancariaId) return setMensagem('Selecione a conta bancária de destino.');
+    if (tipoDados === 'vendasCartao' && extensao === 'pdf') return setMensagem('Vendas de cartão ainda exigem XLS/XLSX; PDF não possui parser configurado para esse tipo.');
 
     try {
       setImportando(true);
-      if (!dataInicial || !dataFinal) {
-        return setMensagem('Informe a data inicial e final do período que deseja importar.');
-      }
-      if (dataInicial > dataFinal) {
-        return setMensagem('A data inicial não pode ser maior que a data final.');
-      }
-
-      const formData = new FormData();
-      formData.append('dataInicial', dataInicial);
-      formData.append('dataFinal', dataFinal);
-      if (arquivoLmc) formData.append('lmc', arquivoLmc);
-      if (arquivoCompras) formData.append('compras', arquivoCompras);
-      if (arquivoSpot) formData.append('spot', arquivoSpot);
-      if (arquivoItau) formData.append('itau', arquivoItau);
-
-      const response = await fetch(`${API_BASE}/importar-pdfs`, { method: 'POST', body: formData });
-      const json = await response.json().catch(() => null);
-
-      if (!response.ok || !json?.ok) {
-        throw new Error(json?.erro || json?.message || 'Erro ao importar dados.');
-      }
-
-      setMensagem(
-        `${json.mensagem} ` +
-        `Recebidos: Vendas ${json.recebidos?.lmc || 0}, ` +
-        `Compras ${json.recebidos?.compras || 0}, ` +
-        `SPOT ${json.recebidos?.spot || 0}, ` +
-        `ITAÚ ${json.recebidos?.itau || 0}. ` +
-        `Importados: Vendas ${json.resultado?.lmc || 0}, ` +
-        `Compras ${json.resultado?.compras || 0}, ` +
-        `SPOT ${json.resultado?.spot || 0}, ` +
-        `ITAÚ ${json.resultado?.itau || 0}.`
-      );
-
-      carregarTodosDados();
-    } catch (error) {
-      setMensagem(error instanceof Error ? error.message : 'Erro ao importar dados.');
-    } finally {
-      setImportando(false);
-    }
+      const fd = new FormData();
+      fd.append('arquivo', arquivo);
+      fd.append('tipoDados', tipoDados);
+      fd.append('dataInicial', dataInicial);
+      fd.append('dataFinal', dataFinal);
+      if (contaBancariaId) fd.append('contaBancariaId', contaBancariaId);
+      const r = await fetch(`${API_BASE}/importar-dados-financeiros`, { method:'POST', body:fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.erro || 'Erro ao importar arquivo.');
+      const x = j.resultado || {};
+      const qtd = tipoDados === 'extrato' ? x.extrato : tipoDados === 'compras' ? x.compras : tipoDados === 'lmc' ? x.lmc : x.vendasCartao;
+      setMensagem(`${j.mensagem} ${Number(qtd || 0)} registro(s) importado(s).`);
+      setArquivo(null);
+      const input = document.getElementById('arquivo-financeiro') as HTMLInputElement | null;
+      if (input) input.value = '';
+    } catch (e) { setMensagem(e instanceof Error ? e.message : 'Erro ao importar arquivo.'); }
+    finally { setImportando(false); }
   }
 
-  async function carregarDadosGravados() {
-    const response = await fetch(`${API_BASE}/dados-gravados?${periodoSelecionado}`);
-    const json = await response.json();
-    setDadosGravados(json.resumo || null);
-  }
+  return <div className="admin-tool-page">
+    <section className="admin-tool-hero" style={{width:'100%',padding:'12px 14px',marginBottom:6}}>
+      <h1 style={{marginBottom:4}}>Importar Dados Financeiros</h1>
+      <p style={{margin:0}}>Selecione o destino e o arquivo. O sistema reconhece automaticamente PDF, XLS ou XLSX e importa diretamente para o banco de dados.</p>
+    </section>
 
-  async function carregarCompras() {
-    const response = await fetch(`${API_BASE}/compras?${periodoSelecionado}`);
-    const json = await response.json();
-    setCompras(json.dados || []);
-  }
-
-  async function carregarLmc() {
-    const response = await fetch(`${API_BASE}/lmc?${periodoSelecionado}`);
-    const json = await response.json();
-    setLmc(json.dados || []);
-  }
-
-  async function carregarSpot() {
-    const response = await fetch(`${API_BASE}/spot?${periodoSelecionado}`);
-    const json = await response.json();
-    setSpot(json.dados || []);
-  }
-
-  async function carregarItau() {
-    const response = await fetch(`${API_BASE}/itau?${periodoSelecionado}`);
-    const json = await response.json();
-    setItau(json.dados || []);
-  }
-
-  async function carregarTodosDados() {
-    try {
-      setImportandoDados(true);
-      await Promise.all([
-        carregarDadosGravados(),
-        carregarCompras(),
-        carregarLmc(),
-        carregarSpot(),
-        carregarItau(),
-      ]);
-    } catch (error) {
-      console.error(error);
-      setMensagem(error instanceof Error ? error.message : 'Erro ao carregar dados gravados no banco.');
-    } finally {
-      setImportandoDados(false);
-    }
-  }
-
-  async function limparPeriodo(tipo: 'vendas' | 'compras', descricao: string) {
-    const periodoTexto = `${dataBR(dataInicial)} até ${dataBR(dataFinal)}`;
-    const confirmar = window.confirm(
-      `Tem certeza que deseja limpar ${descricao} do período ${periodoTexto}? Essa ação não pode ser desfeita.`
-    );
-
-    if (!confirmar) return;
-
-    const senha = window.prompt('Digite a senha para confirmar a exclusão dos dados do período selecionado:');
-    if (!senha) {
-      setMensagem('Exclusão cancelada. A senha não foi informada.');
-      return;
-    }
-
-    try {
-      setImportandoDados(true);
-      setMensagem(`Limpando ${descricao} do período ${periodoTexto}...`);
-
-      const response = await fetch(`${API_BASE}/periodo/limpar`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tipo, dataInicial, dataFinal, senha }),
-      });
-
-      const json = await response.json();
-
-      if (!response.ok || !json.ok) {
-        throw new Error(json.erro || 'Erro ao limpar período.');
-      }
-
-      setMensagem(`${json.mensagem} Removidos: ${json.removidos || 0} registros.`);
-      carregarTodosDados();
-    } catch (error) {
-      setMensagem(error instanceof Error ? error.message : 'Erro ao limpar período.');
-    } finally {
-      setImportandoDados(false);
-    }
-  }
-
-  useEffect(() => {
-    carregarTodosDados();
-  }, [periodoSelecionado]);
-
-  return (
-    <div className="admin-tool-page">
-      <section className="admin-tool-hero" style={{ width: '100%', padding: '12px 14px', marginBottom: 6 }}>
-        <h1 style={{ marginBottom: 4 }}>Importar PDFs para o Banco de Dados</h1>
-        <p style={{ margin: 0 }}>Importação de arquivos PDF (Vendas, Compras e Extratos).</p>
+    <form onSubmit={importar} className="admin-tool-form" style={{width:'100%',gap:8}}>
+      <section className="admin-tool-card" style={{width:'100%',padding:'10px 12px'}}>
+        <strong style={{color:'#1F4F73',fontSize:'1.08rem'}}>Período da importação</strong>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'flex-end',marginTop:8}}>
+          <label style={{display:'grid',gap:5,fontWeight:600}}>Data inicial<input type="date" value={dataInicial} onChange={e=>setDataInicial(e.target.value)} disabled={importando}/></label>
+          <label style={{display:'grid',gap:5,fontWeight:600}}>Data final<input type="date" value={dataFinal} onChange={e=>setDataFinal(e.target.value)} disabled={importando}/></label>
+          <span style={{color:'#64748B',paddingBottom:9}}>Somente registros dentro deste período serão importados.</span>
+        </div>
       </section>
 
-      <form onSubmit={importarPdfs} className="admin-tool-form" style={{ width: '100%', gap: 6 }}>
-        <section className="admin-tool-card" style={{ width: '100%', padding: '10px 12px' }}>
-          <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>Período da importação</strong>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
-            <label style={{ display: 'grid', gap: 5, color: '#334155', fontWeight: 600 }}>
-              Data inicial
-              <input type="date" value={dataInicial} onChange={(e) => ajustarDataInicial(e.target.value)} disabled={importando} style={{ minHeight: 38, border: '1px solid #CBD5E1', borderRadius: 7, padding: '0 10px' }} />
-            </label>
-            <label style={{ display: 'grid', gap: 5, color: '#334155', fontWeight: 600 }}>
-              Data final
-              <input type="date" value={dataFinal} onChange={(e) => ajustarDataFinal(e.target.value)} disabled={importando} style={{ minHeight: 38, border: '1px solid #CBD5E1', borderRadius: 7, padding: '0 10px' }} />
-            </label>
-            <span style={{ color: '#64748B', paddingBottom: 9 }}>Somente registros dentro deste período serão importados. Datas anteriores e posteriores serão preservadas.</span>
-          </div>
-        </section>
-        <section className="admin-tool-card admin-upload-card" style={{ ...cardCompacto, width: '100%', padding: '8px 12px' }}>
-          <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>PDF Extrato Itaú</strong>
-          <div style={linhaCompacta}>
-            <span style={{ color: '#64748B' }}>Movimentação bancária Itaú</span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 6, alignItems: 'center' }}>
-            <div style={{ display: 'grid', gap: 2 }}>
-              <input type="file" accept="application/pdf" onChange={(e) => setArquivoItau(e.target.files?.[0] || null)} />
-              {arquivoItau && <small style={{ color: '#64748B' }}>{arquivoItau.name}</small>}
-            </div>
-            <button className="admin-primary-button" type="submit" disabled={importando}>
-              {importando ? 'Importando...' : 'Importar Dados'}
-            </button>
-          </div>
-        </section>
-
-        <section className="admin-tool-card admin-upload-card" style={{ ...cardCompacto, width: '100%', padding: '8px 12px' }}>
-          <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>PDF Extrato SPOT</strong>
-          <div style={linhaCompacta}>
-            <span style={{ color: '#64748B' }}>Movimentação bancária SPOT</span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 6, alignItems: 'center' }}>
-            <div style={{ display: 'grid', gap: 2 }}>
-              <input type="file" accept="application/pdf" onChange={(e) => setArquivoSpot(e.target.files?.[0] || null)} />
-              {arquivoSpot && <small style={{ color: '#64748B' }}>{arquivoSpot.name}</small>}
-            </div>
-            <button className="admin-primary-button" type="submit" disabled={importando}>
-              {importando ? 'Importando...' : 'Importar Dados'}
-            </button>
-          </div>
-        </section>
-
-        <section className="admin-tool-card admin-upload-card" style={{ ...cardCompacto, width: '100%', padding: '8px 12px' }}>
-          <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>PDF Compras</strong>
-          <div style={linhaCompacta}>
-            <span style={{ color: '#64748B' }}>Notas e compras de combustível</span>
-            <button type="button" className="admin-link-button" onClick={() => limparPeriodo('compras', 'compras')}>limpar compras do período</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 6, alignItems: 'center' }}>
-            <div style={{ display: 'grid', gap: 2 }}>
-              <input type="file" accept="application/pdf" onChange={(e) => setArquivoCompras(e.target.files?.[0] || null)} />
-              {arquivoCompras && <small style={{ color: '#64748B' }}>{arquivoCompras.name}</small>}
-            </div>
-            <button className="admin-primary-button" type="submit" disabled={importando}>
-              {importando ? 'Importando...' : 'Importar Dados'}
-            </button>
-          </div>
-        </section>
-
-        <section className="admin-tool-card admin-upload-card" style={{ ...cardCompacto, width: '100%', padding: '8px 12px' }}>
-          <strong style={{ color: '#1F4F73', fontSize: '1.08rem' }}>PDF Vendas</strong>
-          <div style={linhaCompacta}>
-            <span style={{ color: '#64748B' }}>Livro de Movimentação de Combustíveis</span>
-            <button type="button" className="admin-link-button" onClick={() => limparPeriodo('vendas', 'vendas')}>limpar vendas do período</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 6, alignItems: 'center' }}>
-            <div style={{ display: 'grid', gap: 2 }}>
-              <input type="file" accept="application/pdf" onChange={(e) => setArquivoLmc(e.target.files?.[0] || null)} />
-              {arquivoLmc && <small style={{ color: '#64748B' }}>{arquivoLmc.name}</small>}
-            </div>
-            <button className="admin-primary-button" type="submit" disabled={importando}>
-              {importando ? 'Importando...' : 'Importar Dados'}
-            </button>
-          </div>
-        </section>
-      </form>
-
-      {mensagem && <p className="admin-tool-message">{mensagem}</p>}
-    </div>
-  );
+      <section className="admin-tool-card admin-upload-card" style={{width:'100%',padding:'12px'}}>
+        <strong style={{color:'#1F4F73',fontSize:'1.08rem'}}>Arquivo para importação</strong>
+        <p style={{color:'#64748B',margin:'4px 0 12px'}}>Uma única entrada para PDF e Excel. Não é necessário gerar Excel antes de importar um PDF.</p>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))',gap:10,alignItems:'end'}}>
+          <label style={{display:'grid',gap:5,fontWeight:600}}>Tipo de dados
+            <select value={tipoDados} onChange={e=>setTipoDados(e.target.value as TipoDados)} disabled={importando}>
+              <option value="extrato">Extrato bancário</option><option value="compras">Compras</option><option value="lmc">Vendas / LMC</option><option value="vendasCartao">Vendas Cartão</option>
+            </select>
+          </label>
+          {tipoDados === 'extrato' && <label style={{display:'grid',gap:5,fontWeight:600}}>Conta bancária de destino
+            <select value={contaBancariaId} onChange={e=>setContaBancariaId(e.target.value)} disabled={importando||carregandoContas}>
+              <option value="">{carregandoContas?'Carregando...':'Selecione a conta'}</option>
+              {contas.map(c=><option key={c.id} value={c.id}>{c.nome_conta} — {c.banco}</option>)}
+            </select>
+          </label>}
+          <label style={{display:'grid',gap:5,fontWeight:600}}>Arquivo PDF, XLS ou XLSX
+            <input id="arquivo-financeiro" type="file" accept=".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={e=>setArquivo(e.target.files?.[0]||null)} disabled={importando}/>
+          </label>
+        </div>
+        {arquivo && <div style={{marginTop:12,padding:10,background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:8}}>
+          <strong>{arquivo.name}</strong><div style={{color:'#64748B',marginTop:3}}>Formato detectado: {formato}{tipoDados==='extrato'&&conta?` • Destino: ${conta.nome_conta} — ${conta.banco}`:''}</div>
+        </div>}
+        <div style={{display:'flex',justifyContent:'flex-end',marginTop:12}}><button className="admin-primary-button" type="submit" disabled={importando||carregandoContas}>{importando?'Importando...':'Importar para o Banco de Dados'}</button></div>
+      </section>
+    </form>
+    {mensagem && <p className="admin-tool-message">{mensagem}</p>}
+  </div>;
 }

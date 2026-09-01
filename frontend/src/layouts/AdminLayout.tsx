@@ -40,14 +40,12 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-const menuItems: Array<{ to: string; label: string; icon: IconName; permission: PermissionKey; end?: boolean }> = [
+const menuItems: Array<{ to: string; label: string; icon: IconName; permission: PermissionKey | PermissionKey[]; end?: boolean }> = [
   { to: '/admin', label: 'Dashboard', icon: 'dashboard', permission: 'dashboard', end: true },
   { to: '/admin/consultas-banco', label: 'Dados Gravados', icon: 'database', permission: 'dados_gravados' },
   { to: '/admin/financeiro-geral', label: 'Financeiro Geral', icon: 'finance', permission: 'dados_gravados' },
   { to: '/admin/graficos-financeiros', label: 'Gráficos Financeiros', icon: 'chart', permission: 'dados_gravados' },
-  { to: '/admin/estoque-banco', label: 'Importar Dados', icon: 'upload', permission: 'importar_pdf' },
-  { to: '/admin/importar-excel', label: 'Importar Excel', icon: 'sheet', permission: 'importar_excel' },
-  { to: '/admin/pdf-excel', label: 'PDF para Excel', icon: 'pdf', permission: 'pdf_excel' },
+  { to: '/admin/estoque-banco', label: 'Importar Dados', icon: 'upload', permission: ['importar_pdf', 'importar_excel', 'pdf_excel'] },
   { to: '/admin/financeiro', label: 'Lançamentos Financeiros', icon: 'finance', permission: 'lancamentos' },
   { to: '/admin/auditoria', label: 'Auditoria', icon: 'audit', permission: 'auditoria' },
   { to: '/admin/cadastros', label: 'Cadastros Diversos', icon: 'database', permission: 'cadastros' },
@@ -95,7 +93,7 @@ export default function AdminLayout() {
         </div>
 
         <nav className="admin-sidebar__nav">
-          {menuItems.filter((item) => hasPermission(user, item.permission)).map((item) => (
+          {menuItems.filter((item) => Array.isArray(item.permission) ? item.permission.some((p) => hasPermission(user, p)) : hasPermission(user, item.permission)).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -12,10 +12,9 @@ import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { db } from './backend/db.js';
 import { gerarPlanilhaAuxiliarDoBanco } from './backend/gerarAuxiliarBanco.js'
-import { importarPdfsBanco } from './backend/importarPdfsBanco.js'
 import { importarExcelBanco } from './backend/importarExcelBanco.js'
 import { processarPlanilhas } from './backend/processar.js'
-import { gerarExcelExtratoBancario } from './backend/pdfExtratoExcel.js'
+import { importarDadosFinanceiros } from './backend/importarDadosFinanceiros.js'
 import { migrarContasFinanceiras, garantirMapeamentosContasFinanceiras } from './backend/migrarContasFinanceiras.js'
 import { consolidarFinanceiroGeral, recalcularFinanceiroGeralAPartirDe } from './backend/consolidarFinanceiroGeral.js'
 import { garantirEstruturaTiposLancamento, carregarConfiguracaoTipos, carregarTiposSistema, carregarRegrasTipoLancamento, obterTipoLancamentoId, codigoTipoNormalizado } from './backend/tiposLancamento.js'
@@ -375,12 +374,8 @@ async function autorizarApiPorPermissao(req, res, next) {
       permitido = possuiPermissao(req.usuario, permissoes, 'auditoria')
     } else if (caminho === '/competencias') {
       permitido = possuiAlgumaPermissao(req.usuario, permissoes, ['dashboard', 'auditoria'])
-    } else if (caminho.startsWith('/importar-pdfs')) {
-      permitido = possuiPermissao(req.usuario, permissoes, 'importar_pdf')
-    } else if (caminho.startsWith('/importar-excel-banco')) {
-      permitido = possuiPermissao(req.usuario, permissoes, 'importar_excel')
-    } else if (caminho.startsWith('/pdf-extrato-excel')) {
-      permitido = possuiPermissao(req.usuario, permissoes, 'pdf_excel')
+    } else if (caminho.startsWith('/importar-dados-financeiros')) {
+      permitido = possuiAlgumaPermissao(req.usuario, permissoes, ['importar_pdf', 'importar_excel', 'pdf_excel'])
     } else if (
       caminho.startsWith('/processar-financeiro-banco') ||
       caminho.startsWith('/gerar-auxiliar-banco') ||
@@ -497,13 +492,6 @@ app.get('/api/teste-gerar-auxiliar', async (req, res) => {
   }
 })
 
-app.get('/teste-importador', (req, res) => {
-  res.json({
-    ok: true,
-    tipo: typeof importarPdfsBanco
-  })
-})
-
 app.get('/teste-processar', (req, res) => {
   res.json({
     ok: true,
@@ -555,153 +543,18 @@ app.get('/api/contas-bancarias', async (req, res) => {
   }
 })
 
-app.post('/api/importar-excel-banco', upload.fields([
-  { name: 'lmc', maxCount: 1 },
-  { name: 'compras', maxCount: 1 },
-  { name: 'vendasCartao', maxCount: 1 },
-  { name: 'extrato', maxCount: 1 },
-  { name: 'spot', maxCount: 1 },
-  { name: 'itau', maxCount: 1 },
-]), async (req, res) => {
+app.post('/api/importar-dados-financeiros', upload.single('arquivo'), async (req, res) => {
   try {
-    const files = req.files || {}
-
-    const arquivoLmc = files.lmc?.[0] || null
-    const arquivoCompras = files.compras?.[0] || null
-    const arquivoVendasCartao = files.vendasCartao?.[0] || null
-    const arquivoExtrato = files.extrato?.[0] || null
-    const arquivoSpot = files.spot?.[0] || null
-    const arquivoItau = files.itau?.[0] || null
-    const contaBancariaId = Number(req.body?.contaBancariaId || 0) || null
-    const dataInicial = String(req.body?.dataInicial || '').trim()
-    const dataFinal = String(req.body?.dataFinal || '').trim()
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal) || dataInicial > dataFinal) {
-      return res.status(400).json({ ok: false, erro: 'Informe um período inicial e final válido para a importação.' })
+    const dataInicial=String(req.body?.dataInicial||'').trim()
+    const dataFinal=String(req.body?.dataFinal||'').trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal) || dataInicial>dataFinal) {
+      return res.status(400).json({ok:false,erro:'Informe um período inicial e final válido para a importação.'})
     }
-
-    if (!arquivoLmc && !arquivoCompras && !arquivoVendasCartao && !arquivoExtrato && !arquivoSpot && !arquivoItau) {
-      return res.status(400).json({
-        ok: false,
-        erro: 'Nenhum arquivo Excel foi recebido.',
-      })
-    }
-
-    if (arquivoExtrato && !contaBancariaId) {
-      return res.status(400).json({
-        ok: false,
-        erro: 'Selecione a conta bancária que receberá o extrato.',
-      })
-    }
-
-    const resultado = await importarExcelBanco({
-      arquivoLmc,
-      arquivoCompras,
-      arquivoVendasCartao,
-      arquivoExtrato,
-      contaBancariaId,
-      arquivoSpot,
-      arquivoItau,
-      dataInicial,
-      dataFinal,
-    })
-
-    res.json({
-      ok: true,
-      mensagem: 'Arquivos Excel importados para o banco de dados com sucesso.',
-      resultado,
-      recebidos: {
-        lmc: arquivoLmc ? 1 : 0,
-        compras: arquivoCompras ? 1 : 0,
-        vendasCartao: arquivoVendasCartao ? 1 : 0,
-        extrato: (arquivoExtrato || arquivoSpot || arquivoItau) ? 1 : 0,
-      },
-    })
-  } catch (error) {
-    console.error('ERRO /api/importar-excel-banco:', error)
-    res.status(500).json({ ok: false, erro: error.message || 'Erro ao importar Excel para o banco.' })
-  }
-})
-
-app.post('/api/importar-pdfs', upload.fields([
-  { name: 'lmc', maxCount: 10 },
-  { name: 'compras', maxCount: 10 },
-  { name: 'spot', maxCount: 10 },
-  { name: 'itau', maxCount: 10 },
-]), async (req, res) => {
-  try {
-    const files = req.files || {}
-
-    const arquivoLmc = files.lmc?.[0] || null
-    const arquivoCompras = files.compras?.[0] || null
-    const arquivoSpot = files.spot?.[0] || null
-    const arquivoItau = files.itau?.[0] || null
-    const dataInicial = String(req.body?.dataInicial || '').trim()
-    const dataFinal = String(req.body?.dataFinal || '').trim()
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicial) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFinal) || dataInicial > dataFinal) {
-      return res.status(400).json({ ok: false, erro: 'Informe um período inicial e final válido para a importação.' })
-    }
-
-    if (!arquivoLmc && !arquivoCompras && !arquivoSpot && !arquivoItau) {
-      return res.status(400).json({
-        ok: false,
-        erro: 'Nenhum arquivo PDF foi recebido.',
-      })
-    }
-
-    const resultado = await importarPdfsBanco({
-      arquivoLmc,
-      arquivoCompras,
-      arquivoSpot,
-      arquivoItau,
-      dataInicial,
-      dataFinal,
-    })
-
-    res.json({
-      ok: true,
-      mensagem: 'PDFs importados para o banco de dados com sucesso.',
-      resultado,
-      recebidos: {
-        lmc: arquivoLmc ? 1 : 0,
-        compras: arquivoCompras ? 1 : 0,
-        spot: arquivoSpot ? 1 : 0,
-        itau: arquivoItau ? 1 : 0,
-      },
-    })
-  } catch (error) {
-    console.error('ERRO /api/importar-pdfs:', error)
-
-    res.status(500).json({
-      ok: false,
-      erro: error.message,
-    })
-  }
-})
-
-
-app.post('/api/pdf-extrato-excel', upload.single('pdf'), async (req, res) => {
-  try {
-    const arquivoPdf = req.file
-
-    if (!arquivoPdf) {
-      return res.status(400).json({ ok: false, erro: 'Nenhum arquivo PDF foi recebido.' })
-    }
-
-    const banco = req.body?.banco || 'itau'
-    const bufferExcel = await gerarExcelExtratoBancario(arquivoPdf, { banco })
-    const nomeBase = String(arquivoPdf.originalname || 'extrato')
-      .replace(/\.pdf$/i, '')
-      .replace(/[^a-zA-Z0-9_-]+/g, '_')
-      .slice(0, 80) || 'extrato'
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    res.setHeader('Content-Disposition', `attachment; filename="${nomeBase}_consolidado.xlsx"`)
-    res.send(Buffer.from(bufferExcel))
-  } catch (error) {
-    console.error('ERRO /api/pdf-extrato-excel:', error)
-    res.status(500).json({ ok: false, erro: error.message || 'Erro ao converter PDF em Excel.' })
+    const resultado=await importarDadosFinanceiros({arquivo:req.file,tipoDados:req.body?.tipoDados,contaBancariaId:req.body?.contaBancariaId,dataInicial,dataFinal})
+    res.json({ok:true,mensagem:'Arquivo importado para o banco de dados com sucesso.',resultado})
+  } catch(error) {
+    console.error('ERRO /api/importar-dados-financeiros:',error)
+    res.status(500).json({ok:false,erro:error.message||'Erro ao importar arquivo.'})
   }
 })
 

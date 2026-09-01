@@ -6,9 +6,9 @@ const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api`
 const PERMISSOES = [
   ['dashboard', 'Dashboard'],
   ['dados_gravados', 'Dados gravados'],
-  ['importar_pdf', 'Importar PDF'],
-  ['importar_excel', 'Importar Excel'],
-  ['pdf_excel', 'PDF para Excel'],
+  ['importar_pdf', 'Importar Dados Financeiros'],
+  ['importar_excel', 'Importar Dados Financeiros (compatibilidade Excel)'],
+  ['pdf_excel', 'Importar Dados Financeiros (compatibilidade PDF)'],
   ['lancamentos', 'Lançamentos financeiros'],
   ['auditoria', 'Auditoria'],
   ['cadastros', 'Cadastros diversos'],
