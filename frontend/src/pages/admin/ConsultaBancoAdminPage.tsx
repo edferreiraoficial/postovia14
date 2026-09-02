@@ -894,11 +894,20 @@ export default function ConsultaBancoAdminPage() {
         {visualizandoExtrato && (
           <div className="consulta-planilha-wrap">
             <table className="admin-table admin-fixed-table consulta-planilha-tabela">
+              <colgroup>
+                <col style={{ width: '11ch' }} />
+                {podeNumeroLancamento && <col style={{ width: '10ch' }} />}
+                <col style={{ width: '122ch', minWidth: '122ch' }} />
+                <col style={{ width: '15ch' }} />
+                <col style={{ width: '14ch' }} />
+                <col style={{ width: '14ch' }} />
+                <col style={{ width: '132px' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th style={{ ...estilosColunas.esquerda, width: '11ch' }}>Data</th>
                   {podeNumeroLancamento && <th style={{ ...estilosColunas.direita, width: '10ch' }}>Nº Lanc</th>}
-                  <th style={{ ...estilosColunas.esquerda, width: '122ch' }}>Descrição</th>
+                  <th style={{ ...estilosColunas.esquerda, width: '122ch', minWidth: '122ch', maxWidth: '122ch' }}>Descrição</th>
                   <th style={{ ...estilosColunas.direita, width: '15ch' }}>Natureza</th>
                   <th style={{ ...estilosColunas.direita, width: '14ch' }}>Valor</th>
                   <th style={{ ...estilosColunas.direita, width: '14ch' }}>Saldo</th>
@@ -912,7 +921,7 @@ export default function ConsultaBancoAdminPage() {
                       <td>{campoEdicao('data', 'date')}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('extrato', item)}>{item.id}</td>}<td>{campoEdicao('descricao_original')}</td><td>{campoEdicao('natureza')}</td>
                       <td>{campoEdicao('valor', 'number')}</td><td>{campoEdicao('saldo', 'number')}</td>
                     </> : <>
-                      <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" style={estilosColunas.direita} title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('extrato', item)}>{item.id}</td>}<td style={estilosColunas.esquerda}>{textoFixo(item.descricao_original, 122)}</td>
+                      <td style={estilosColunas.esquerda}>{textoFixo(item.data_lancamento, 11)}</td>{podeNumeroLancamento && <td className="fg-numero-lancamento" style={estilosColunas.direita} title="Duplo clique para ajustar" onDoubleClick={() => abrirAjusteNumero('extrato', item)}>{item.id}</td>}<td style={{ ...estilosColunas.esquerda, width: '122ch', minWidth: '122ch', maxWidth: '122ch' }} title={String(item.descricao_original || '')}>{textoFixo(item.descricao_original, 122)}</td>
                       <td style={estilosColunas.direita}>{textoNumero(item.natureza, 13) + '  '}</td><td style={estilosColunas.direita}>{textoNumero(valorExtrato(item), 14)}</td>
                       <td style={estilosColunas.direita}>{textoNumero(saldoExtrato(item.saldo), 14)}</td>
                     </>}
